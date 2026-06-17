@@ -5,14 +5,16 @@
   - `frontend/src/test/e2e/core_journeys.spec.ts` now uses the captured J1 application number in a real assertion (`HRMS/2026/<digits>` format).
   - The captured leave-apply request body is explicitly typed and asserts `employee_id` as a non-empty UUID-shaped value instead of relying on `never` inference.
   - `frontend/tsconfig.json` excludes `src/test`, and `frontend/tsconfig.e2e.json` plus `package.json -> typecheck:e2e` keep the e2e suite strictly type-checked outside the production bundle path.
-- A first local git baseline now exists on `main`:
-  - commit: `09894f29cf3936e1b1054bf603b35d4b76a1eed9` (`chore: baseline repository snapshot`)
-  - `.gitignore` covers local env/runtime outputs including `.venv/`, `node_modules/`, `frontend/dist/`, `frontend/test-results/`, `backend/test-results/`, `*.png`, `.env` (while preserving `.env.example`), `uploads/`, `logs/`, and local PostgreSQL data dirs.
-- The prod-like HTTPS dry-run completed successfully on the local machine:
+- Local git history now has a clean deployment checkpoint on `main`:
+  - baseline commit: `09894f29cf3936e1b1054bf603b35d4b76a1eed9` (`chore: baseline repository snapshot`)
+  - latest closure commit: `5924402823cead98776f15b8de963ce439d76879` (`docs+deploy: record completed HTTPS dry-run`)
+  - `.gitignore` covers local env/runtime outputs including `.venv/`, `node_modules/`, `frontend/dist/`, `frontend/test-results/`, `backend/test-results/`, `*.png`, `.env` (while preserving `.env.example`), `uploads/`, `logs/`, local PostgreSQL data dirs, and generated `repomix-output.xml` / `repomix-*.xml` snapshots.
+- The deployment dry-run is fully closed on the local machine:
   - official nginx Windows ZIP was installed to `C:\nginx`
   - a self-signed cert was generated under `C:\nginx\conf\server.crt` / `server.key`
-  - uvicorn was run with production env against PostgreSQL on `localhost:5433`
+  - uvicorn was run successfully in production mode against PostgreSQL on both `localhost:5433` and later the local PostgreSQL 18 dev server on `localhost:5432`
   - nginx terminated HTTPS and proxied to the backend successfully
+  - the built frontend was staged at `C:\aiims-hrms\frontend\dist`, matching the checked-in nginx root without changing `deployment/nginx.conf`
 - The repo nginx config now matches the working Windows deployment shape:
   - `deployment/nginx.conf` uses absolute cert paths `C:/nginx/conf/server.crt` and `C:/nginx/conf/server.key`
   - `C:\nginx\nginx.exe -p C:\nginx -t -c conf\nginx.conf` passes with the checked-in config
@@ -47,12 +49,20 @@
     - self password change succeeded
     - re-login returned `must_change_password=false`
     - refresh cookie `Set-Cookie` included `Secure`
+- Static SPA smoke through the checked-in nginx config:
+  - `GET https://localhost/`
+  - `GET https://localhost/assets/index-BTk-W6hy.js`
+  - `GET https://localhost/health`
+  - result:
+    - `/` returned `200 text/html` with the SPA `div#root` and built asset references
+    - the hashed JS asset returned `200 application/javascript`
+    - `/health` continued to return `200 {"status":"ok","database":"connected","version":"0.1.0"}`
 - Teardown:
   - nginx stopped
   - uvicorn workers stopped
-  - the local PostgreSQL process on `localhost:5433` stopped
+  - PostgreSQL 18 on `localhost:5432` was intentionally left running as the local dev server
   - repo working tree returned clean (`git status --short` empty)
 
 ## Next Action
 
-- If a fuller production smoke is needed beyond admin auth, seed or create production-safe workflow users explicitly, then run the apply -> approve -> balance journey over the proxied UI.
+- Phase 5 reporting/dashboards is the next build surface per `docs/HRMS_IMPLEMENTATION_PLAN_FINAL_PATCHED_v3.md`; it should be additive and should not disturb the proven deployment/core workflow path.
