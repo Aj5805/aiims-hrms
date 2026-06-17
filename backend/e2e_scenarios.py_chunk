@@ -1,0 +1,185 @@
+        # ── SCENARIO 1: RESIDENT CHAIN ──────────────────────────────────────
+        print("\n=== SCENARIO 1: RESIDENT chain routing ===")
+        # 1. Create DEAN_ACADEMIC user
+        r = await client.post("/api/v1/users", json={"username": "dean_acad", "role": "DEAN_ACADEMIC", "password": "dean_pass123", "must_change_password": False}, headers=admin_headers)
+        if r.status_code not in (201, 409):
+            print(f"  [FAIL] create dean_acad failed: {r.status_code}")
+            sys.exit(1)
+        r = await client.post("/api/v1/auth/login", json={"username": "dean_acad", "password": "dean_pass123"})
+        dean_headers = {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+        # 2. Create Resident employee
+        r = await client.post("/api/v1/employees", json={
+            "emp_code": "RES001", "name": "Resident Doc", "gender": "FEMALE",
+            "doj": "2025-01-01", "category_code": "JR_ACAD",
+            "department_code": "ANAT", "designation_name": "Section Officer", # Reuse designation
+        }, headers=admin_headers)
+        if r.status_code not in (201, 409):
+            print(f"  [FAIL] create resident failed: {r.status_code}")
+            sys.exit(1)
+        
+        res_id = None
+        r = await client.get("/api/v1/employees?search=RES001", headers=admin_headers)
+        res_items = r.json()
+        if res_items: res_id = res_items[0]["id"]
+        
+        # 3. Add balance
+        await client.post("/api/v1/leave-balances/opening", json=[{"emp_code": "RES001", "leave_type_code": "CL", "opening_balance": 10}], headers=admin_headers)
+        
+        # 4. Submit leave
+        r = await client.post("/api/v1/leave-applications", json={
+            "employee_id": res_id, "leave_type_code": "CL",
+            "from_date": "2026-08-01", "to_date": "2026-08-02",
+            "reason": "Resident leave", "address_during_leave": "Hostel"
+        }, headers=admin_headers)
+        res_app = ok("Resident leave submit", r, 201)
+        res_app_id = res_app["id"]
+
+        # 5. HOD approve
+        r = await client.post(f"/api/v1/leave-approvals/{res_app_id}/action", json={"action": "APPROVED", "remarks": "OK HOD"}, headers=hod_headers)
+        ok("HOD approve resident", r, 200)
+
+        # 6. DEAN_ACADEMIC approve (FINAL)
+        r = await client.post(f"/api/v1/leave-approvals/{res_app_id}/action", json={"action": "APPROVED", "remarks": "OK DEAN"}, headers=dean_headers)
+        ok("DEAN approve resident", r, 200)
+        
+        r = await client.get(f"/api/v1/leave-applications/{res_app_id}", headers=admin_headers)
+        if r.json()["status"] != "APPROVED":
+            print("  [FAIL] Resident leave not APPROVED after Dean.")
+            sys.exit(1)
+        print("  [OK] Resident routed HOD -> DEAN_ACADEMIC successfully.")
+
+        # ── SCENARIO 2: REJECT ──────────────────────────────────────────────
+        print("\n=== SCENARIO 2: REJECT with/without remarks ===")
+        # Submit a leave
+        r = await client.post("/api/v1/leave-applications", json={
+            "employee_id": hrms004_id, "leave_type_code": "CL",
+            "from_date": "2026-08-10", "to_date": "2026-08-10",
+            "reason": "To be rejected", "address_during_leave": "Home"
+        }, headers=admin_headers)
+        rej_app_id = r.json()["id"]
+
+        # Reject without remarks -> 400
+        r = await client.post(f"/api/v1/leave-approvals/{rej_app_id}/action", json={"action": "REJECTED", "remarks": ""}, headers=hod_headers)
+        if r.status_code != 400:
+            print("  [FAIL] Reject without remarks should be 400")
+            sys.exit(1)
+        print("  [OK] Reject without remarks -> 400")
+
+        # Reject with remarks -> 200
+        r = await client.post(f"/api/v1/leave-approvals/{rej_app_id}/action", json={"action": "REJECTED", "remarks": "No"}, headers=hod_headers)
+        ok("Reject with remarks", r, 200)
+        
+        r = await client.get(f"/api/v1/leave-applications/{rej_app_id}", headers=admin_headers)
+        if r.json()["status"] != "REJECTED":
+            print("  [FAIL] Status should be REJECTED")
+            sys.exit(1)
+        print("  [OK] Leave REJECTED successfully.")
+
+        # ── SCENARIO 3: MODIFIED DAYS ───────────────────────────────────────
+        print("\n=== SCENARIO 3: MODIFIED days tracking ===")
+        r = await client.post("/api/v1/leave-applications", json={
+            "employee_id": hrms004_id, "leave_type_code": "CL",
+            "from_date": "2026-09-01", "to_date": "2026-09-03",
+            "reason": "Mod test", "address_during_leave": "Home"
+        }, headers=admin_headers)
+        mod_app_id = r.json()["id"]
+
+        r = await client.post(f"/api/v1/leave-approvals/{mod_app_id}/action", json={
+            "action": "MODIFIED", "modified_from_date": "2026-09-01", "modified_to_date": "2026-09-02", "modified_days": 2.0
+        }, headers=hod_headers)
+        ok("MODIFIED action", r, 200)
+        
+        # After modified, HOD approves it
+        r = await client.post(f"/api/v1/leave-approvals/{mod_app_id}/action", json={"action": "APPROVED", "remarks": "OK"}, headers=hod_headers)
+        ok("MODIFIED then APPROVED by HOD", r, 200)
+        
+        r = await client.post(f"/api/v1/leave-approvals/{mod_app_id}/action", json={"action": "APPROVED", "remarks": "OK"}, headers=estab_headers)
+        ok("ESTAB approve modified", r, 200)
+        r = await client.post(f"/api/v1/leave-approvals/{mod_app_id}/action", json={"action": "APPROVED", "remarks": "OK"}, headers=reg_headers)
+        ok("REGISTRAR approve modified", r, 200)
+
+        # Check balance
+        r = await client.get(f"/api/v1/leave-balances/{hrms004_id}", headers=admin_headers)
+        cl_bal = next((b for b in r.json()["balances"] if b["leave_type_code"] == "CL"), None)
+        # Opening was 8. First leave took 2. This leave took 2. Closing should be 4.
+        if float(cl_bal["closing_balance"]) != 4.0:
+            print(f"  [FAIL] Expected closing 4.0 after MODIFIED, got {cl_bal['closing_balance']}")
+            sys.exit(1)
+        print("  [OK] MODIFIED balance deducted correctly.")
+
+        # ── SCENARIO 4: RECALL ──────────────────────────────────────────────
+        print("\n=== SCENARIO 4: RECALL ===")
+        r = await client.post(f"/api/v1/leave-approvals/{mod_app_id}/action", json={"action": "RECALLED"}, headers=hod_headers)
+        # Wait, recall is a separate endpoint POST /{id}/recall, not an action in approve_action!
+        r = await client.post(f"/api/v1/leave-approvals/{mod_app_id}/recall", headers=admin_headers) # Caller doesn't matter much for this test
+        ok("Recall leave", r, 200)
+
+        r = await client.get(f"/api/v1/leave-applications/{mod_app_id}", headers=admin_headers)
+        if r.json()["status"] != "RECALLED":
+            print("  [FAIL] Status should be RECALLED")
+            sys.exit(1)
+
+        r = await client.get(f"/api/v1/leave-balances/{hrms004_id}", headers=admin_headers)
+        cl_bal = next((b for b in r.json()["balances"] if b["leave_type_code"] == "CL"), None)
+        # Restored 2 days, closing should be 6.0
+        if float(cl_bal["closing_balance"]) != 6.0:
+            print(f"  [FAIL] Expected closing 6.0 after RECALL, got {cl_bal['closing_balance']}")
+            sys.exit(1)
+        print("  [OK] RECALL restored balance.")
+
+        # ── SCENARIO 5: CL BUSINESS RULES ───────────────────────────────────
+        print("\n=== SCENARIO 5: CL BUSINESS RULES ===")
+        # 5a. Adjacent to holiday 2026-07-15
+        r = await client.post("/api/v1/leave-applications", json={
+            "employee_id": hrms004_id, "leave_type_code": "CL",
+            "from_date": "2026-07-16", "to_date": "2026-07-16", # Suffixed to 07-15
+            "reason": "Adj", "address_during_leave": "Home"
+        }, headers=admin_headers)
+        if r.status_code != 400:
+            print(f"  [FAIL] CL adjacent to holiday should 400, got {r.status_code}")
+            sys.exit(1)
+        print("  [OK] CL adjacent holiday rejected.")
+
+        # 5b. Exceeds max stretch
+        r = await client.post("/api/v1/leave-applications", json={
+            "employee_id": hrms004_id, "leave_type_code": "CL",
+            "from_date": "2026-10-01", "to_date": "2026-10-10",
+            "reason": "Stretch", "address_during_leave": "Home"
+        }, headers=admin_headers)
+        if r.status_code != 400:
+            print(f"  [FAIL] CL max stretch should 400, got {r.status_code}")
+            sys.exit(1)
+        print("  [OK] CL max stretch rejected.")
+
+        # 5c. Overlapping dates
+        # Submit a valid leave
+        r = await client.post("/api/v1/leave-applications", json={
+            "employee_id": hrms004_id, "leave_type_code": "CL",
+            "from_date": "2026-11-01", "to_date": "2026-11-02",
+            "reason": "Overlap1", "address_during_leave": "Home"
+        }, headers=admin_headers)
+        ok("Valid leave 1", r, 201)
+        
+        # Submit overlapping leave
+        r = await client.post("/api/v1/leave-applications", json={
+            "employee_id": hrms004_id, "leave_type_code": "CL",
+            "from_date": "2026-11-02", "to_date": "2026-11-03",
+            "reason": "Overlap2", "address_during_leave": "Home"
+        }, headers=admin_headers)
+        if r.status_code not in (400, 409):
+            print(f"  [FAIL] Overlapping leave should 400/409, got {r.status_code}")
+            sys.exit(1)
+        print("  [OK] Overlapping leave rejected.")
+
+        # ── SCENARIO 6: INSUFFICIENT BALANCE ────────────────────────────────
+        print("\n=== SCENARIO 6: INSUFFICIENT BALANCE ===")
+        r = await client.post("/api/v1/leave-applications", json={
+            "employee_id": hrms004_id, "leave_type_code": "CL",
+            "from_date": "2026-12-01", "to_date": "2026-12-20", # 20 days
+            "reason": "Too much", "address_during_leave": "Home"
+        }, headers=admin_headers)
+        if r.status_code != 400:
+            print(f"  [FAIL] Insufficient balance should 400, got {r.status_code}")
+            sys.exit(1)
+        print("  [OK] Insufficient balance rejected.")

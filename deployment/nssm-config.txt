@@ -1,0 +1,25 @@
+# NSSM Configuration for AIIMS HRMS FastAPI Service
+# Download NSSM from: https://nssm.cc/
+#
+# Run as Administrator in PowerShell:
+#
+#   nssm install AIIMS_HRMS "C:\Python311\python.exe" "-m uvicorn main:app --host 127.0.0.1 --port 8000"
+#   nssm set AIIMS_HRMS AppDirectory "C:\aiims-hrms\backend"
+#   nssm set AIIMS_HRMS AppStdout "C:\aiims-hrms\logs\uvicorn_stdout.log"
+#   nssm set AIIMS_HRMS AppStderr "C:\aiims-hrms\logs\uvicorn_stderr.log"
+#   nssm set AIIMS_HRMS AppRestartDelay 5000
+#   nssm set AIIMS_HRMS AppThrottle 1500
+#   nssm set AIIMS_HRMS AppExit Default Restart
+#   nssm set AIIMS_HRMS Start SERVICE_AUTO_START
+#   nssm start AIIMS_HRMS
+#   nssm status AIIMS_HRMS
+
+SERVICE_NAME=AIIMS_HRMS
+PYTHON_EXE=C:\Python311\python.exe
+APP_DIR=C:\aiims-hrms\backend
+LOG_DIR=C:\aiims-hrms\logs
+UVICORN_ARGS=-m uvicorn main:app --host 127.0.0.1 --port 8000 --workers 4
+RESTART_DELAY_MS=5000
+THROTTLE_MS=1500
+MAX_CONSECUTIVE_CRASHES=3
+CRASH_WINDOW_SECONDS=60

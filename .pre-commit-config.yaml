@@ -1,0 +1,67 @@
+# Pre-commit hooks for AIIMS HRMS
+# Install: pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  # Python: lint + format with Ruff
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.0
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+        files: ^backend/
+      - id: ruff-format
+        files: ^backend/
+
+  # Python: type checking with mypy
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.13.0
+    hooks:
+      - id: mypy
+        files: ^backend/
+        args: [--ignore-missing-imports, --strict]
+        additional_dependencies: [pydantic>=2.0, sqlalchemy>=2.0]
+
+  # JavaScript/TypeScript: lint
+  - repo: https://github.com/pre-commit/mirrors-eslint
+    rev: v9.15.0
+    hooks:
+      - id: eslint
+        files: ^frontend/src/.*\.(ts|tsx|js|jsx)$
+        args: [--fix]
+
+  # JavaScript/TypeScript: format
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v3.4.0
+    hooks:
+      - id: prettier
+        files: ^frontend/src/.*\.(ts|tsx|js|jsx|css|json)$
+
+  # Python: run unit tests (fast verification only)
+  - repo: local
+    hooks:
+      - id: pytest-unit
+        name: pytest (unit only)
+        entry: bash -c 'cd backend && pytest tests/unit -x --tb=short'
+        language: system
+        pass_filenames: false
+        files: ^backend/
+
+  # General: check for secrets in code
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: [--baseline, .secrets.baseline]
+
+  # General: prevent large files
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-added-large-files
+        args: [--maxkb=5000]
+      - id: check-merge-conflict
+      - id: end-of-file-fixer
+        exclude: \.json$|dist/
+      - id: trailing-whitespace
+        exclude: \.md$
