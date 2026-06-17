@@ -47,6 +47,8 @@ frontend/tsconfig.tsbuildinfo
 frontend/test-results/
 backend/test-results/
 *.png
+repomix-output.xml
+repomix-*.xml
 
 # Uploads and local runtime data
 uploads/
