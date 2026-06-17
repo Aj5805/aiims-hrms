@@ -105,8 +105,30 @@ test.describe.serial('Core Journeys E2E', () => {
     await page.locator('button', { hasText: 'Load Account' }).click();
 
     const elCard = page.locator('.bg-white').filter({ hasText: 'EL' }).first();
-    await expect(elCard).toContainText('Availed: 2');
+    await expect(elCard).toContainText('Used 2.0');
     await expect(elCard).toContainText('8.0');
+
+    await context.close();
+  });
+
+  test('J4: Admin views another employee account and ledger', async ({ browser }) => {
+    const context = await newIsolatedContext(browser);
+    const page = await context.newPage();
+
+    await login(page, 'admin', 'password');
+    await expect(page.locator('a', { hasText: 'Account' })).toBeVisible();
+
+    await page.goto('/leave-account');
+    await page.getByPlaceholder('Search by employee code or name').fill('staff');
+    await page.locator('button', { hasText: 'Search' }).first().click();
+    await page.locator('select').nth(0).selectOption({ index: 1 });
+    await page.locator('button', { hasText: 'Load Account' }).click();
+
+    const elCard = page.locator('.rounded-xl').filter({ hasText: 'EL' }).first();
+    await expect(elCard).toBeVisible();
+    await page.getByRole('button', { name: 'Show Ledger' }).first().click();
+    await expect(page.getByText('Ledger', { exact: true })).toBeVisible();
+    await expect(page.locator('table')).toBeVisible();
 
     await context.close();
   });
