@@ -1,68 +1,36 @@
 ## Current State
 
 - Repo root: `C:\Users\aiims\Desktop\FS\HRMS\aiims-hrms`
-- Frontend production build is unblocked:
-  - `frontend/src/test/e2e/core_journeys.spec.ts` now uses the captured J1 application number in a real assertion (`HRMS/2026/<digits>` format).
-  - The captured leave-apply request body is explicitly typed and asserts `employee_id` as a non-empty UUID-shaped value instead of relying on `never` inference.
-  - `frontend/tsconfig.json` excludes `src/test`, and `frontend/tsconfig.e2e.json` plus `package.json -> typecheck:e2e` keep the e2e suite strictly type-checked outside the production bundle path.
-- Local git history now has a clean deployment checkpoint on `main`:
-  - baseline commit: `09894f29cf3936e1b1054bf603b35d4b76a1eed9` (`chore: baseline repository snapshot`)
-  - latest closure commit: `5924402823cead98776f15b8de963ce439d76879` (`docs+deploy: record completed HTTPS dry-run`)
-  - `.gitignore` covers local env/runtime outputs including `.venv/`, `node_modules/`, `frontend/dist/`, `frontend/test-results/`, `backend/test-results/`, `*.png`, `.env` (while preserving `.env.example`), `uploads/`, `logs/`, local PostgreSQL data dirs, and generated `repomix-output.xml` / `repomix-*.xml` snapshots.
-- The deployment dry-run is fully closed on the local machine:
-  - official nginx Windows ZIP was installed to `C:\nginx`
-  - a self-signed cert was generated under `C:\nginx\conf\server.crt` / `server.key`
-  - uvicorn was run successfully in production mode against PostgreSQL on both `localhost:5433` and later the local PostgreSQL 18 dev server on `localhost:5432`
-  - nginx terminated HTTPS and proxied to the backend successfully
-  - the built frontend was staged at `C:\aiims-hrms\frontend\dist`, matching the checked-in nginx root without changing `deployment/nginx.conf`
-- The repo nginx config now matches the working Windows deployment shape:
+- Phase 5 leave accounts are now audited, implemented, and verified on `main` at commit `afccf15` (`Implement and verify phase 5 leave accounts`):
+  - backend `leave-balances` now enforces employee scope on balance, ledger, and projection reads;
+  - annual credit now handles both EL and HPL financial-year credits and is idempotent;
+  - carry-forward now follows `leave_types.carry_forward` and enforces the EL 300 cap through policy data;
+  - manual-adjust requires reason, writes audit rows, and is surfaced in the derived ledger;
+  - projection now returns cached/fresh state with a 5-minute in-memory TTL;
+  - frontend leave-account page now supports staff self-view plus admin/establishment lookup of any employee, expandable ledger, and inline manual adjustment;
+  - frontend year-end page now wires annual credit, carry-forward, and manual-adjust actions with role gating.
+- The deployment dry-run remains closed and the checked-in Windows nginx path is still valid:
   - `deployment/nginx.conf` uses absolute cert paths `C:/nginx/conf/server.crt` and `C:/nginx/conf/server.key`
   - `C:\nginx\nginx.exe -p C:\nginx -t -c conf\nginx.conf` passes with the checked-in config
+- The production go-live run book in `docs/aiims hrms production go live run book.txt` has been updated to match the real verified Phase 5 state and the actual remaining launch constraints.
 
 ## Validation Run
 
-- Frontend strict type checks:
-  - `frontend`: `npm.cmd run typecheck:e2e`
-  - result: passed
-- Frontend production build:
-  - `frontend`: `npm.cmd run build`
-  - result: passed and produced `frontend/dist`
-- Prod-like backend/bootstrap:
+- Backend clean-schema proof:
+  - `backend`: `.venv\Scripts\python.exe -m alembic downgrade base`
   - `backend`: `.venv\Scripts\python.exe -m alembic upgrade head`
   - `backend`: `.venv\Scripts\python.exe seeds\run.py`
   - `backend`: `.venv\Scripts\python.exe ..\scripts\init_admin.py`
-  - result:
-    - schema upgrade succeeded
-    - production seeding skipped `007_test_users.py` as intended
-    - admin row already existed
-- HTTPS proxy smoke through nginx:
-  - `https://localhost/health`
-  - result: `200 {"status":"ok","database":"connected","version":"0.1.0"}`
-- HTTPS auth smoke through nginx:
-  - `POST https://localhost/api/v1/auth/login` as `admin`
-  - `GET https://localhost/api/v1/auth/me`
-  - `POST https://localhost/api/v1/auth/change-my-password`
-  - re-login as `admin`
-  - result:
-    - initial login returned `must_change_password=true`
-    - authenticated `/api/v1/auth/me` returned real user data
-    - self password change succeeded
-    - re-login returned `must_change_password=false`
-    - refresh cookie `Set-Cookie` included `Secure`
-- Static SPA smoke through the checked-in nginx config:
-  - `GET https://localhost/`
-  - `GET https://localhost/assets/index-BTk-W6hy.js`
-  - `GET https://localhost/health`
-  - result:
-    - `/` returned `200 text/html` with the SPA `div#root` and built asset references
-    - the hashed JS asset returned `200 application/javascript`
-    - `/health` continued to return `200 {"status":"ok","database":"connected","version":"0.1.0"}`
-- Teardown:
-  - nginx stopped
-  - uvicorn workers stopped
-  - PostgreSQL 18 on `localhost:5432` was intentionally left running as the local dev server
-  - repo working tree returned clean (`git status --short` empty)
+  - `backend`: `.venv\Scripts\python.exe test_phase5_leave_balances.py`
+  - result: passed; proved annual credit, carry-forward cap/policy, manual-adjust audit+ledger, and projection non-mutation/cache behavior
+- Frontend build and typed e2e compile:
+  - `frontend`: `npm.cmd run build`
+  - `frontend`: `npm.cmd run typecheck:e2e`
+  - result: both passed
+- Frontend Playwright regression:
+  - `frontend`: `npx.cmd playwright test --project=chromium`
+  - result: passed all 4 tests, including the new admin leave-account lookup/ledger scenario (J4)
 
 ## Next Action
 
-- Phase 5 reporting/dashboards is the next build surface per `docs/HRMS_IMPLEMENTATION_PLAN_FINAL_PATCHED_v3.md`; it should be additive and should not disturb the proven deployment/core workflow path.
+- Execute the real production cutover using `docs/aiims hrms production go live run book.txt`, or, if product work resumes first, move to the next additive reporting/dashboard slice without disturbing the now-verified deployment and Phase 5 leave-account path.

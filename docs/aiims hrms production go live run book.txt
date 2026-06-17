@@ -1,0 +1,151 @@
+<aside>
+
+OK
+
+Everything up to go-live is proven: HTTPS deployment dry-run (termination -> static SPA -> API proxy -> auth + Secure cookie, against the checked-in `deployment/nginx.conf`) and Phase 5 leave accounts (audited + tested, commit `afccf15`). This runbook is the cutover to the real Windows + PostgreSQL 16 server. Work top to bottom; do not skip Section 0.
+
+</aside>
+
+## 0. Pre-go-live decisions (go / no-go)
+
+Decide each consciously. These are known launch constraints, not newly found bugs:
+
+- [ ] Email notifications are still a stub. `email_sender.start_email_scheduler` is not started, so approval/notification emails will not send. Accept for launch, or wire real Zoho SMTP first. If enabled, it must run in exactly one worker; the current `--workers 4` service shape would duplicate the scheduler.
+- [ ] 5.6 resident pro-rata recompute is not implemented. There is still no contract-lifecycle event model or endpoint to recompute resident balances on contract completion/extension. Acceptable only if resident contracts are stable at launch.
+- [ ] Leave ledger is still schema-derived, not a dedicated immutable leave-transaction table. The `/leave-balances/:employee_id/ledger/:leave_type_id` endpoint now combines opening, annual credit, manual adjust, and approved/recalled application events, but this is still derived from current schema.
+- [ ] Preview-before-commit for year-end processing is not implemented. The admin screen can run carry-forward, annual credit, and manual adjust actions, but does not yet show a preview simulation step.
+- [ ] Git tags do not exist yet. `ROLLBACK.md` references release tags that still need to be created during cutover.
+- [ ] Confirm the real access hostname (for example `hrms.aiims-bibinagar.local` or a fixed server IP). It is needed for the cert CN, `CORS_ORIGINS`, and UAT URLs.
+
+## 1. Prerequisites on the production server
+
+- [ ] Windows server reachable; admin PowerShell available.
+- [ ] PostgreSQL 16 installed and running; role + database `aiims_hrms` created.
+- [ ] Python 3.11 at `C:\Python311\python.exe`.
+- [ ] Node.js installed for the frontend build.
+- [ ] nginx for Windows at `C:\nginx`.
+- [ ] NSSM installed from https://nssm.cc/.
+- [ ] Repo deployed to `C:\aiims-hrms`. Do not relocate without also updating nginx root, NSSM config, OPS/ROLLBACK scripts, and any path assumptions.
+
+## 2. Code and frontend build
+
+```powershell
+cd C:\aiims-hrms
+git pull
+cd C:\aiims-hrms\backend
+py -3.11 -m venv .venv
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+cd C:\aiims-hrms\frontend
+npm install
+npm run build
+```
+
+- [ ] Confirm `frontend\dist` exists after `npm run build`.
+
+## 3. Production `.env` (backend only; never commit)
+
+Copy `.env.example` -> `.env` and set real production values. The config guards should refuse startup if these are wrong:
+
+```dotenv
+APP_ENV=production
+DATABASE_URL=postgresql+asyncpg://aiims_hrms:<STRONG_DB_PW>@localhost:5432/aiims_hrms
+DATABASE_URL_SYNC=postgresql+psycopg2://aiims_hrms:<STRONG_DB_PW>@localhost:5432/aiims_hrms
+JWT_SECRET=<RANDOM 32+ CHAR SECRET>
+COOKIE_SECURE=True
+CORS_ORIGINS=https://<real-hostname>
+BCRYPT_ROUNDS=12
+# Optional, only if enabling real email:
+ZOHO_EMAIL=...
+ZOHO_APP_PASSWORD=...
+```
+
+<aside>
+
+WARN
+
+Production PG16 is expected on `5432` here. The earlier dry-run used an isolated `5433` cluster only for local validation and that setup is not the production target.
+
+</aside>
+
+## 4. Database: migrate, seed, bootstrap admin
+
+```powershell
+cd C:\aiims-hrms\backend
+.venv\Scripts\python.exe -m alembic upgrade head
+.venv\Scripts\python.exe seeds\run.py
+.venv\Scripts\python.exe ..\scripts\init_admin.py
+```
+
+- [ ] Confirm `007_test_users.py` logs `Skipping test users in production environment`.
+- [ ] Record the real admin credentials securely; first login forces password change.
+
+## 5. nginx (HTTPS)
+
+- [ ] Generate the production cert with the real CN. Intranet self-signed is acceptable only if the hostname matches:
+
+```powershell
+cd C:\nginx\conf
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 `
+  -keyout server.key -out server.crt `
+  -subj "/C=IN/ST=Telangana/L=Bibinagar/O=AIIMS/CN=<real-hostname>"
+```
+
+- [ ] Validate config: `C:\nginx\nginx.exe -p C:\nginx -t -c conf\nginx.conf`
+- [ ] Start nginx: `start C:\nginx\nginx.exe`
+
+## 6. Backend as a service (NSSM)
+
+```powershell
+nssm install AIIMS_HRMS "C:\Python311\python.exe" "-m uvicorn main:app --host 127.0.0.1 --port 8000 --workers 4"
+nssm set AIIMS_HRMS AppDirectory "C:\aiims-hrms\backend"
+nssm set AIIMS_HRMS AppStdout "C:\aiims-hrms\logs\uvicorn_stdout.log"
+nssm set AIIMS_HRMS AppStderr "C:\aiims-hrms\logs\uvicorn_stderr.log"
+nssm set AIIMS_HRMS AppRestartDelay 5000
+nssm set AIIMS_HRMS Start SERVICE_AUTO_START
+nssm start AIIMS_HRMS
+nssm status AIIMS_HRMS
+```
+
+<aside>
+
+WARN
+
+If real email is enabled later, do not keep the scheduler inside a four-worker uvicorn service. Move it out of process or run exactly one scheduler-bearing worker.
+
+</aside>
+
+## 7. Go-live smoke (over the real hostname)
+
+- [ ] `https://<hostname>/health` -> `200 {"status":"ok","database":"connected"}`
+- [ ] `https://<hostname>/` serves the SPA; the hashed `/assets/*` files return `200`
+- [ ] Admin login -> forced password change -> re-login succeeds
+- [ ] Confirm refresh cookie carries `Secure`
+- [ ] Run one real regular-staff journey end to end: staff apply -> HOD -> ESTAB -> REGISTRAR approve -> balance reflects deduction
+- [ ] Run one leave-account verification:
+  - [ ] staff can load their own leave account
+  - [ ] admin or establishment can search another employee and view balances + ledger
+  - [ ] manual adjustment with reason changes balance and appears in ledger
+- [ ] Optional but recommended: run one projection call on a real employee and confirm it changes only the projected value, not the stored balance
+- [ ] Confirm the backend service is alive locally: `curl http://127.0.0.1:8000/health`
+
+## 8. Post-deploy hardening
+
+- [ ] Create git tags so `ROLLBACK.md` is actionable. Tag the pre-cutover stable point and the go-live point.
+- [ ] Schedule `backup_db.ps1` daily.
+- [ ] Schedule `rotate_logs.ps1` daily at 02:00 IST.
+- [ ] Add a health-check task hitting `/health`.
+- [ ] Verify at least one backup restore into a scratch database.
+
+## 9. Rollback readiness
+
+- [ ] Confirm the previous stable tag exists before cutover.
+- [ ] Dry-read the rollback steps: stop service + nginx -> `alembic downgrade <rev>` if needed -> `git checkout <tag>` -> rebuild frontend -> restart -> verify `/health`.
+
+## 10. UAT sign-off
+
+- [ ] Real users across STAFF, HOD, ESTAB, REGISTRAR, DEAN_ACADEMIC, DIRECTOR, and ADMIN run their core journeys.
+- [ ] Capture issues; only mark `v1.0.0` after sign-off.
+
+---
+
+Still open after go-live roadmap items: real email sending, 5.6 resident pro-rata recompute, preview-before-commit year-end processing, and a dedicated persisted leave-transaction ledger.
