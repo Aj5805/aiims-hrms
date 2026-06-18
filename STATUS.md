@@ -2,6 +2,13 @@
 
 Phase 9 (Data Migration & Go-Live) applied: 2026-06-17
 
+## Latest Verified Checkpoint (2026-06-18)
+- J6 Playwright scenario is now passing.
+- Verified command: `npx playwright test --project=chromium src/test/e2e/core_journeys.spec.ts -g "J6"`
+- Result: `1 passed (9.0s)`
+- Recent fix: the Playwright login helper now handles the seeded staff password-change flow correctly, including the initial password `password` and the post-change password `NewPassword123!`.
+- Relevant files: [frontend/src/test/e2e/core_journeys.spec.ts](frontend/src/test/e2e/core_journeys.spec.ts), [frontend/src/pages/Phase678Pages.tsx](frontend/src/pages/Phase678Pages.tsx), [backend/app/api/v1/notifications.py](backend/app/api/v1/notifications.py), [backend/seeds/versions/007_test_users.py](backend/seeds/versions/007_test_users.py)
+
 ## Phase 0 (Scaffold) -- DONE
 ## Phase 1 (DB Schema + Seeds) -- DONE
 ## Phase 2 (Auth + Employee Master) -- DONE

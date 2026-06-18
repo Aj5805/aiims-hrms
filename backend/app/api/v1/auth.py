@@ -210,9 +210,10 @@ async def change_password(
     return {"message": "Password reset. User must change on next login."}
 
 
-@router.post("/change-my-password")
+@router.post("/change-my-password", response_model=TokenResponse)
 async def change_my_password(
     body: SelfPasswordChangeRequest,
+    response: Response,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -232,7 +233,43 @@ async def change_my_password(
         {"ph": new_hashed, "uid": uid}
     )
     await db.commit()
-    return {"message": "Password changed successfully"}
+
+    result = await db.execute(
+        text(
+            """
+            SELECT u.username, u.role, u.must_change_password, e.id AS employee_id, e.emp_code
+            FROM users u
+            LEFT JOIN employees e ON u.employee_id = e.id
+            WHERE u.id = :uid
+            """
+        ),
+        {"uid": uid},
+    )
+    updated_user = result.fetchone()
+
+    access_token = create_access_token(uid, updated_user.role, updated_user.username)
+    refresh_token = create_refresh_token(uid)
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=settings.COOKIE_SECURE,
+        samesite="strict",
+        max_age=7 * 24 * 3600,
+        path="/api/v1/auth",
+    )
+
+    return TokenResponse(
+        access_token=access_token,
+        user={
+            "id": uid,
+            "username": updated_user.username,
+            "role": updated_user.role,
+            "must_change_password": updated_user.must_change_password,
+            "employee_id": str(updated_user.employee_id) if updated_user.employee_id else None,
+            "emp_code": updated_user.emp_code,
+        },
+    )
 
 
 @router.get("/me")

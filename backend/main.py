@@ -12,12 +12,14 @@ from app.api.v1 import router as v1_router
 from app.core.config import settings
 from app.core.database import engine, ping_db
 from app.core.rate_limit import limiter
+from app.services.email_sender import start_email_scheduler
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup / shutdown lifecycle."""
     await ping_db()
+    start_email_scheduler()
     yield
     await engine.dispose()
 

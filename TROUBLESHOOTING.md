@@ -34,6 +34,23 @@ pip install -e ".[dev]"
 
 ## Frontend
 
+### Playwright J6 / login helper gets stuck
+**Symptom:** the J6 test hangs waiting for the login step or never reaches the apply-leave page.
+
+**Root cause:** the seeded staff account starts with `must_change_password = true` and the initial password `password`. The test flow must handle the password-change screen before it can submit a leave application.
+
+**Fix pattern:**
+- Try the initial seeded password first.
+- If the app redirects to the password-change screen, complete that flow.
+- If the test is intentionally using the changed password later, fall back to that password only after the first attempt fails.
+
+**Verified command:**
+```bash
+npx playwright test --project=chromium src/test/e2e/core_journeys.spec.ts -g "J6"
+```
+
+**Expected result:** `1 passed (9.0s)`
+
 ### `npm install` fails
 ```bash
 node --version                   # Must be 20+

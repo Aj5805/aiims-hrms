@@ -1,6 +1,21 @@
 ## Current State
 
 - Repo root: `C:\Users\aiims\Desktop\FS\HRMS\aiims-hrms`
+- Current handoff note (2026-06-18): the notification/J6 e2e path is now green. The next agent should continue from the verified Playwright state rather than re-investigating the earlier auth/login loop.
+- Verified status:
+  - J6 flow passes end to end for the HOD notification bell read/unread behavior.
+  - Command run: `npx playwright test --project=chromium src/test/e2e/core_journeys.spec.ts -g "J6"`
+  - Result: `1 passed (9.0s)`
+- Important implementation detail:
+  - The seeded staff account is created with `must_change_password = true` and the initial password `password`.
+  - The e2e helper must first complete the password-change screen before continuing to the leave application form.
+  - After the password change, the app uses `NewPassword123!` for the staff account in the J6 flow.
+- Main files to inspect next:
+  - [frontend/src/test/e2e/core_journeys.spec.ts](frontend/src/test/e2e/core_journeys.spec.ts)
+  - [frontend/src/pages/Phase678Pages.tsx](frontend/src/pages/Phase678Pages.tsx)
+  - [backend/app/api/v1/notifications.py](backend/app/api/v1/notifications.py)
+  - [backend/seeds/versions/007_test_users.py](backend/seeds/versions/007_test_users.py)
+- Suggested next step: run the broader Playwright suite or the relevant backend notification tests before moving to any new feature work.
 - Phase 8 security hardening now covers the planned lockout, password policy, rate limiting, and import upload validation:
   - DB-backed login lockout is live via `users.failed_login_attempts` and `users.locked_until`; `/api/v1/auth/login` now locks after 5 failed attempts for 15 minutes, persists the failure-path updates across workers, and resets the counters on successful login;
   - password complexity is enforced through one shared schema validator for both admin reset and self-change flows: minimum 8 chars, at least 1 uppercase, 1 digit, and 1 special;

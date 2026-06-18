@@ -10,8 +10,36 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, employee_scope
 from app.core.database import get_db
+from app.services.notifications import notify_event
 
 router = APIRouter(prefix="/leave-applications", tags=["leave-applications"])
+
+
+async def _resolve_user_for_employee(db: AsyncSession, employee_id: str | None):
+    if not employee_id:
+        return None
+    result = await db.execute(text("SELECT id FROM users WHERE employee_id = :eid AND is_active = true ORDER BY created_at LIMIT 1"), {"eid": employee_id})
+    row = result.fetchone()
+    return str(row[0]) if row and row[0] else None
+
+
+async def _resolve_approver_user(db: AsyncSession, config_id: str, step_order: int):
+    step_result = await db.execute(
+        text("SELECT id, approver_role, specific_approver_id FROM workflow_steps WHERE config_id = :cid AND step_order = :so LIMIT 1"),
+        {"cid": config_id, "so": step_order},
+    )
+    step_row = step_result.fetchone()
+    if not step_row:
+        return None
+    step_dict = dict(step_row._mapping)
+    if step_dict.get("specific_approver_id"):
+        return str(step_dict["specific_approver_id"])
+    user_result = await db.execute(
+        text("SELECT id FROM users WHERE role = :role AND is_active = true ORDER BY created_at LIMIT 1"),
+        {"role": step_dict["approver_role"]},
+    )
+    user_row = user_result.fetchone()
+    return str(user_row[0]) if user_row and user_row[0] else None
 
 
 def _count_working_days(from_date: date, to_date: date, holidays: set[date]) -> int:
@@ -134,6 +162,29 @@ async def submit_application(
             "hd": is_half_day, "hds": half_day_session,
             "reason": reason, "addr": address,
         })
+
+        applicant_user_id = await _resolve_user_for_employee(db, emp_id)
+        approver_user_id = await _resolve_approver_user(db, str(wf_row.id), 1)
+        await notify_event(
+            db,
+            "APP_SUBMITTED",
+            app_id,
+            {
+                "app_number": app_number,
+                "employee_name": emp_dict.get("name"),
+                "applicant_name": emp_dict.get("name"),
+                "approver_name": None,
+                "leave_type": lt_dict.get("name") or lt_dict.get("code"),
+                "from_date": from_date.isoformat(),
+                "to_date": to_date.isoformat(),
+                "days": applied_days,
+                "status": "SUBMITTED",
+                "reason": reason,
+                "recipient_id": applicant_user_id,
+                "approver_id": approver_user_id,
+                "emp_code": emp_dict.get("emp_code"),
+            },
+        )
         await db.commit()
     except IntegrityError:
         await db.rollback()
@@ -194,6 +245,22 @@ async def withdraw_application(application_id: str, current_user: dict = Depends
     if not row: raise HTTPException(status_code=404)
     if row.status not in ("SUBMITTED", "UNDER_REVIEW"): raise HTTPException(status_code=400, detail=f"Cannot withdraw in status {row.status}")
     await db.execute(text("UPDATE leave_applications SET status = 'WITHDRAWN', last_action_at = now() WHERE id = :id"), {"id": application_id})
+    app_row = await db.execute(text("SELECT a.*, e.name AS employee_name, e.emp_code, lt.code AS leave_type_code, lt.name AS leave_type_name FROM leave_applications a JOIN employees e ON a.employee_id = e.id JOIN leave_types lt ON a.leave_type_id = lt.id WHERE a.id = :id"), {"id": application_id})
+    app_data = app_row.fetchone()
+    if app_data:
+        applicant_user_id = await _resolve_user_for_employee(db, str(app_data.employee_id))
+        await notify_event(
+            db,
+            "APP_WITHDRAWN",
+            application_id,
+            {
+                "app_number": app_data.app_number,
+                "employee_name": app_data.employee_name,
+                "applicant_name": app_data.employee_name,
+                "leave_type": app_data.leave_type_name or app_data.leave_type_code,
+                "recipient_id": applicant_user_id,
+            },
+        )
     await db.commit()
     return {"message": "Withdrawn"}
 

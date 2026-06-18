@@ -1,40 +1,80 @@
 """Notification service -- queue writer, event triggers."""
 
-from fastapi import Depends
+from jinja2 import Template
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.core.database import get_db
 
 
 async def enqueue_notification(db: AsyncSession, application_id: str, recipient_id: str, channel: str, subject: str, body: str):
     """Write to notification_queue. EMAIL channel skips if user has no institutional email."""
     if channel == "EMAIL":
-        has_email = await db.execute(text("SELECT has_institutional_email FROM users u JOIN employees e ON u.employee_id = e.id WHERE u.id = :uid"), {"uid": recipient_id})
+        has_email = await db.execute(
+            text(
+                "SELECT has_institutional_email FROM users u JOIN employees e ON u.employee_id = e.id WHERE u.id = :uid"
+            ),
+            {"uid": recipient_id},
+        )
         row = has_email.fetchone()
-        if not row or not row[0]:
-            return  # Skip silently
-    await db.execute(text("""INSERT INTO notification_queue (id, application_id, recipient_id, channel, subject, body) VALUES (uuid_generate_v4(), :aid, :rid, :ch, :subj, :body)"""),
-        {"aid": application_id, "rid": recipient_id, "ch": channel, "subj": subject, "body": body})
+        if not row:
+            return
+        if isinstance(row, (tuple, list)):
+            has_institutional_email = bool(row[0])
+        else:
+            has_institutional_email = bool(row)
+        if not has_institutional_email:
+            return
+    await db.execute(
+        text(
+            """
+            INSERT INTO notification_queue (id, application_id, recipient_id, channel, subject, body)
+            VALUES (uuid_generate_v4(), :aid, :rid, :ch, :subj, :body)
+            """
+        ),
+        {"aid": application_id, "rid": recipient_id, "ch": channel, "subj": subject, "body": body},
+    )
 
 
 async def notify_event(db: AsyncSession, event_code: str, application_id: str, context: dict):
     """Trigger notifications for a workflow event based on email_templates."""
-    tmpl = await db.execute(text("SELECT * FROM email_templates WHERE event_code = :ec AND is_active = true"), {"ec": event_code})
-    t = tmpl.fetchone()
-    if not t:
+    tmpl = await db.execute(
+        text("SELECT * FROM email_templates WHERE event_code = :ec AND is_active = true"),
+        {"ec": event_code},
+    )
+    template_row = tmpl.fetchone()
+    if not template_row:
         return
-    from jinja2 import Template
-    subj_tmpl = Template(t.subject_template)
-    body_tmpl = Template(t.body_template)
-    subject = subj_tmpl.render(context)
-    body = body_tmpl.render(context)
 
-    # Determine recipients from context
-    if "recipient_id" in context:
-        await enqueue_notification(db, application_id, context["recipient_id"], "IN_APP", subject, body)
-        await enqueue_notification(db, application_id, context["recipient_id"], "EMAIL", subject, body)
-    if "approver_id" in context:
-        await enqueue_notification(db, application_id, context["approver_id"], "IN_APP", subject, body)
-        await enqueue_notification(db, application_id, context["approver_id"], "EMAIL", subject, body)
-    await db.commit()
+    template_context = {
+        "app_number": context.get("app_number"),
+        "employee_name": context.get("employee_name") or context.get("applicant_name"),
+        "applicant_name": context.get("applicant_name") or context.get("employee_name"),
+        "approver_name": context.get("approver_name"),
+        "leave_type": context.get("leave_type"),
+        "from_date": context.get("from_date"),
+        "to_date": context.get("to_date"),
+        "days": context.get("days"),
+        "status": context.get("status"),
+        "reason": context.get("reason"),
+        "remarks": context.get("remarks"),
+        "emp_code": context.get("emp_code"),
+        "original_from": context.get("original_from"),
+        "original_to": context.get("original_to"),
+        "modified_from": context.get("modified_from"),
+        "modified_to": context.get("modified_to"),
+        "pending_hours": context.get("pending_hours"),
+        "sla_hours": context.get("sla_hours"),
+        "balance": context.get("balance"),
+    }
+    subject_template = Template(template_row.subject_template)
+    body_template = Template(template_row.body_template)
+    subject = subject_template.render(template_context)
+    body = body_template.render(template_context)
+
+    recipients = []
+    if context.get("recipient_id"):
+        recipients.append(context["recipient_id"])
+    if context.get("approver_id"):
+        recipients.append(context["approver_id"])
+    for recipient_id in dict.fromkeys(recipients):
+        await enqueue_notification(db, application_id, recipient_id, "IN_APP", subject, body)
+        await enqueue_notification(db, application_id, recipient_id, "EMAIL", subject, body)

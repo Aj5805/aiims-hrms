@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     ZOHO_SMTP_PORT: int = 587
     ZOHO_EMAIL: str = ""
     ZOHO_APP_PASSWORD: str = ""
+    EMAIL_SENDING_ENABLED: bool = False
 
     RATE_LIMIT_AUTH: str = "5/minute"
     RATE_LIMIT_GENERAL: str = "100/minute"

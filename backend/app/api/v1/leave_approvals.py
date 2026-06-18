@@ -8,8 +8,55 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_current_user, require_role
 from app.core.database import get_db
+from app.services.notifications import notify_event
 
 router = APIRouter(prefix="/leave-approvals", tags=["leave-approvals"])
+
+
+async def _resolve_applicant_user(db: AsyncSession, employee_id: str | None):
+    if not employee_id:
+        return None
+    result = await db.execute(text("SELECT id FROM users WHERE employee_id = :eid AND is_active = true ORDER BY created_at LIMIT 1"), {"eid": employee_id})
+    row = result.fetchone()
+    return str(row[0]) if row and row[0] else None
+
+
+def _format_date(value: str | None):
+    return value.isoformat() if value else None
+
+
+async def _resolve_approver_user(db: AsyncSession, config_id: str, step_order: int):
+    step_result = await db.execute(
+        text("SELECT id, approver_role, specific_approver_id FROM workflow_steps WHERE config_id = :cid AND step_order = :so LIMIT 1"),
+        {"cid": config_id, "so": step_order},
+    )
+    step_row = step_result.fetchone()
+    if not step_row:
+        return None
+    step_dict = dict(step_row._mapping)
+    if step_dict.get("specific_approver_id"):
+        return str(step_dict["specific_approver_id"])
+    user_result = await db.execute(
+        text("SELECT id FROM users WHERE role = :role AND is_active = true ORDER BY created_at LIMIT 1"),
+        {"role": step_dict["approver_role"]},
+    )
+    user_row = user_result.fetchone()
+    return str(user_row[0]) if user_row and user_row[0] else None
+
+
+def _build_notification_context(app_row, base_status: str, reason: str | None = None):
+    return {
+        "app_number": app_row.app_number,
+        "employee_name": app_row.employee_name,
+        "applicant_name": app_row.employee_name,
+        "approver_name": None,
+        "leave_type": app_row.leave_type_name or app_row.leave_type_code,
+        "from_date": _format_date(app_row.from_date),
+        "to_date": _format_date(app_row.to_date),
+        "days": float(app_row.applied_days) if app_row.applied_days is not None else None,
+        "status": base_status,
+        "reason": reason,
+    }
 
 
 @router.get("/inbox")
@@ -61,10 +108,20 @@ async def approve_action(application_id: str, body: dict, current_user: dict = D
     if action == "REJECTED" and not remarks:
         raise HTTPException(status_code=400, detail="Remarks required")
 
-    app = await db.execute(text("SELECT * FROM leave_applications WHERE id = :id FOR UPDATE"), {"id": application_id})
+    app = await db.execute(text("""
+        SELECT a.*, e.name AS employee_name, e.emp_code, lt.code AS leave_type_code,
+               lt.name AS leave_type_name
+        FROM leave_applications a
+        JOIN employees e ON a.employee_id = e.id
+        JOIN leave_types lt ON a.leave_type_id = lt.id
+        WHERE a.id = :id
+        FOR UPDATE
+    """), {"id": application_id})
     app_row = app.fetchone()
-    if not app_row: raise HTTPException(status_code=404)
-    if app_row.status not in ("SUBMITTED", "UNDER_REVIEW"): raise HTTPException(status_code=400, detail=f"Already {app_row.status}")
+    if not app_row:
+        raise HTTPException(status_code=404)
+    if app_row.status not in ("SUBMITTED", "UNDER_REVIEW"):
+        raise HTTPException(status_code=400, detail=f"Already {app_row.status}")
 
     step = await db.execute(text("""
         SELECT ws.* FROM workflow_steps ws
@@ -125,6 +182,23 @@ async def approve_action(application_id: str, body: dict, current_user: dict = D
             else:
                 await db.execute(text("UPDATE leave_applications SET status = 'UNDER_REVIEW', current_step_order = current_step_order + 1, last_action_at = now() WHERE id = :id"), {"id": application_id})
                 
+            applicant_user_id = await _resolve_applicant_user(db, str(app_row.employee_id))
+            next_approver_id = None
+            if not is_final:
+                next_approver_id = await _resolve_approver_user(db, str(app_row.config_id), app_row.current_step_order + 1)
+            notify_context = _build_notification_context(app_row, "UNDER_REVIEW" if not is_final else "APPROVED", remarks)
+            notify_context.update({
+                "recipient_id": applicant_user_id,
+                "approver_id": next_approver_id,
+                "original_from": _format_date(app_row.from_date),
+                "original_to": _format_date(app_row.to_date),
+                "modified_from": _format_date(modified_from),
+                "modified_to": _format_date(modified_to),
+            })
+            notify_context["from_date"] = _format_date(modified_from)
+            notify_context["to_date"] = _format_date(modified_to)
+            notify_context["days"] = modified_days
+            await notify_event(db, "APP_MODIFIED", application_id, notify_context)
             await db.commit()
             return {"message": action}
         except IntegrityError:
@@ -141,20 +215,47 @@ async def approve_action(application_id: str, body: dict, current_user: dict = D
         else:
             await db.execute(text("UPDATE leave_applications SET status = 'UNDER_REVIEW', current_step_order = current_step_order + 1, last_action_at = now() WHERE id = :id"), {"id": application_id})
 
+    applicant_user_id = await _resolve_applicant_user(db, str(app_row.employee_id))
+    base_notify_context = _build_notification_context(app_row, "REJECTED", remarks)
+    if action == "REJECTED":
+        base_notify_context.update({"status": "REJECTED", "recipient_id": applicant_user_id})
+        await notify_event(db, "APP_REJECTED", application_id, base_notify_context)
+    elif action == "APPROVED" and step_dict.get("is_final_authority", False):
+        base_notify_context.update({"status": "APPROVED", "recipient_id": applicant_user_id})
+        await notify_event(db, "APP_APPROVED", application_id, base_notify_context)
+    elif action == "APPROVED" and not step_dict.get("is_final_authority", False):
+        next_approver_id = await _resolve_approver_user(db, str(app_row.config_id), app_row.current_step_order + 1)
+        base_notify_context.update({"status": "UNDER_REVIEW", "approver_id": next_approver_id})
+        await notify_event(db, "APPROVAL_REQUEST", application_id, base_notify_context)
+
     await db.commit()
     return {"message": action}
 
 
 @router.post("/{application_id}/recall")
 async def recall_application(application_id: str, current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    app = await db.execute(text("SELECT * FROM leave_applications WHERE id = :id FOR UPDATE"), {"id": application_id})
+    app = await db.execute(text("""
+        SELECT a.*, e.name AS employee_name, e.emp_code, lt.code AS leave_type_code,
+               lt.name AS leave_type_name
+        FROM leave_applications a
+        JOIN employees e ON a.employee_id = e.id
+        JOIN leave_types lt ON a.leave_type_id = lt.id
+        WHERE a.id = :id
+        FOR UPDATE
+    """), {"id": application_id})
     app_row = app.fetchone()
-    if not app_row: raise HTTPException(status_code=404)
-    if app_row.status != "APPROVED": raise HTTPException(status_code=400, detail="Only APPROVED leave can be recalled")
+    if not app_row:
+        raise HTTPException(status_code=404)
+    if app_row.status != "APPROVED":
+        raise HTTPException(status_code=400, detail="Only APPROVED leave can be recalled")
     bal = await db.execute(text("SELECT id FROM leave_balances WHERE employee_id = :eid AND leave_type_id = :lid ORDER BY leave_year DESC LIMIT 1 FOR UPDATE"), {"eid": str(app_row.employee_id), "lid": str(app_row.leave_type_id)})
     bal_row = bal.fetchone()
     if bal_row:
         await db.execute(text("UPDATE leave_balances SET availed = GREATEST(0, availed - :days), last_updated = now() WHERE id = :bid"), {"days": float(app_row.applied_days), "bid": str(bal_row[0])})
     await db.execute(text("UPDATE leave_applications SET status = 'RECALLED', last_action_at = now() WHERE id = :id"), {"id": application_id})
+    applicant_user_id = await _resolve_applicant_user(db, str(app_row.employee_id))
+    withdraw_context = _build_notification_context(app_row, "RECALLED")
+    withdraw_context.update({"recipient_id": applicant_user_id})
+    await notify_event(db, "APP_WITHDRAWN", application_id, withdraw_context)
     await db.commit()
     return {"message": "Recalled -- balance restored"}

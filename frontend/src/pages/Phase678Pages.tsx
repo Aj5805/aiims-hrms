@@ -131,12 +131,14 @@ export function NotificationBell() {
 
   const markRead = async (id: string) => {
     await notificationsApi.markRead(id);
-    await Promise.all([loadUnreadCount(), loadItems()]);
+    setUnreadCount((current) => Math.max(0, current - 1));
+    await loadItems();
   };
 
   const markAllRead = async () => {
     await notificationsApi.markAllRead();
-    await Promise.all([loadUnreadCount(), loadItems()]);
+    setUnreadCount(0);
+    await loadItems();
   };
 
   return (

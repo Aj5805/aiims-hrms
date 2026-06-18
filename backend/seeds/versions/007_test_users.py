@@ -80,14 +80,17 @@ def run(session):
         must_change_password = e["role"] == "STAFF"
         session.execute(
             text("""
-                INSERT INTO users (id, username, password_hash, role, employee_id, is_active, must_change_password)
-                VALUES (:id, :un, :ph, :role, :eid, true, :must_change_password)
+                INSERT INTO users (id, username, password_hash, role, employee_id, is_active, must_change_password, failed_login_attempts, locked_until, tokens_valid_from)
+                VALUES (:id, :un, :ph, :role, :eid, true, :must_change_password, 0, NULL, now())
                 ON CONFLICT (username) DO UPDATE SET
                     password_hash = :ph,
                     must_change_password = :must_change_password,
                     is_active = true,
                     employee_id = :eid,
-                    role = :role
+                    role = :role,
+                    failed_login_attempts = 0,
+                    locked_until = NULL,
+                    tokens_valid_from = now()
             """),
             {
                 "id": uid,

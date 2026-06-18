@@ -27,10 +27,8 @@ export default function ChangePasswordPage() {
 
     setLoading(true);
     try {
-      await authApi.changeMyPassword(currentPassword, newPassword);
-      if (user && token) {
-        setAuth(token, { ...user, must_change_password: false } as any);
-      }
+      const { data } = await authApi.changeMyPassword(currentPassword, newPassword);
+      setAuth(data.access_token, data.user as any);
       navigate('/');
     } catch (err: any) {
       console.error("Change password error:", err);
