@@ -38,6 +38,7 @@ class Settings(BaseSettings):
 
     UPLOAD_MAX_SIZE_MB: int = 5
     UPLOAD_DIR: str = "uploads"
+    BACKUP_DIR: str = "backups"
 
     BCRYPT_ROUNDS: int = 12
 

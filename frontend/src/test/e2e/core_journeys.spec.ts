@@ -154,14 +154,15 @@ test.describe.serial('Core Journeys E2E', () => {
     );
     const downloadPromise = page.waitForEvent('download');
 
-    await page.getByRole('button', { name: 'Download Current Output' }).first().click();
+    await page.getByRole('button', { name: 'Download XLSX' }).first().click();
 
     const [response, download] = await Promise.all([responsePromise, downloadPromise]);
     expect(response.ok()).toBeTruthy();
+    expect(response.headers()['content-type']).toContain('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 
     const body = await response.body();
     expect(body.byteLength).toBeGreaterThan(0);
-    expect(await download.suggestedFilename()).toContain('leave-register');
+    expect(await download.suggestedFilename()).toContain('.xlsx');
 
     await context.close();
   });

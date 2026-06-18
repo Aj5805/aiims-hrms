@@ -56,10 +56,12 @@ export const reportsApi = {
     api.get('/reports/leave-register', { params, responseType: 'blob' }),
   leaveAbstract: (params: Record<string, string>) =>
     api.get('/reports/leave-abstract', { params, responseType: 'blob' }),
+  leaveAbstractDepartment: (params: Record<string, string>) =>
+    api.get('/reports/leave-abstract-department', { params, responseType: 'blob' }),
   pendingApplications: () =>
     api.get('/reports/pending-applications', { responseType: 'blob' }),
-  balanceSummary: () =>
-    api.get('/reports/balance-summary', { responseType: 'blob' }),
+  balanceSummary: (params: Record<string, string>) =>
+    api.get('/reports/balance-summary', { params, responseType: 'blob' }),
   sanctionPdf: (applicationId: string) =>
     api.get(`/reports/sanction-pdf/${applicationId}`, { responseType: 'blob' }),
   leaveCalendar: (params: Record<string, string>) =>

@@ -238,7 +238,7 @@ export function ReportsPage() {
       <div>
         <h2 className="text-2xl font-bold text-slate-900">Reports & Payroll Export</h2>
         <p className="mt-1 text-sm text-slate-600">
-          This page fronts the existing Phase 6/7 backend routes. Downloads save the blob the API actually returns.
+          Phase 7 report downloads now stream the locked file formats from the backend.
         </p>
       </div>
 
@@ -273,20 +273,37 @@ export function ReportsPage() {
 
         <ReportCard
           title="Leave Register"
-          description="Expected by plan: locked columns with XLSX and PDF outputs. Current API response is downloaded as-is."
+          description="Locked columns with both XLSX and PDF exports."
           controls={['Emp Code', 'Name', 'Dept', 'Leave Type', 'From', 'To', 'Days', 'Status', 'Approval Date']}
           actions={[
             {
-              label: 'Download Current Output',
-              key: 'leave-register',
-              pending: loadingKey === 'leave-register',
+              label: 'Download XLSX',
+              key: 'leave-register-xlsx',
+              pending: loadingKey === 'leave-register-xlsx',
               onClick: () =>
                 runDownload(
-                  'leave-register',
+                  'leave-register-xlsx',
                   'leave-register',
                   () => reportsApi.leaveRegister({
                     from_date: shared.from_date,
                     to_date: shared.to_date,
+                    format: 'xlsx',
+                    ...(shared.department_code ? { department_code: shared.department_code } : {}),
+                  })
+                ),
+            },
+            {
+              label: 'Download PDF',
+              key: 'leave-register-pdf',
+              pending: loadingKey === 'leave-register-pdf',
+              onClick: () =>
+                runDownload(
+                  'leave-register-pdf',
+                  'leave-register',
+                  () => reportsApi.leaveRegister({
+                    from_date: shared.from_date,
+                    to_date: shared.to_date,
+                    format: 'pdf',
                     ...(shared.department_code ? { department_code: shared.department_code } : {}),
                   })
                 ),
@@ -296,11 +313,11 @@ export function ReportsPage() {
 
         <ReportCard
           title="Category-wise Summary"
-          description="Plan 7.7 calls for category-wise summary in Excel; current route is `leave-abstract` and returns the current backend payload."
+          description="Locked category-wise leave summary in Excel."
           controls={['Category', 'Total Staff', 'Total Leave Days by type', 'Avg per staff']}
           actions={[
             {
-              label: 'Download Current Output',
+              label: 'Download XLSX',
               key: 'leave-abstract',
               pending: loadingKey === 'leave-abstract',
               onClick: () =>
@@ -318,11 +335,11 @@ export function ReportsPage() {
 
         <ReportCard
           title="Pending Applications (Aged)"
-          description="Plan expects App #, Employee, Leave Type, Submitted Date, Days Pending, Current Approver as PDF. Current API output is downloaded as returned."
+          description="Locked aged-pending report in PDF."
           controls={['App #', 'Employee', 'Leave Type', 'Submitted Date', 'Days Pending', 'Current Approver']}
           actions={[
             {
-              label: 'Download Current Output',
+              label: 'Download PDF',
               key: 'pending',
               pending: loadingKey === 'pending',
               onClick: () => runDownload('pending', 'pending-applications', () => reportsApi.pendingApplications()),
@@ -355,25 +372,30 @@ export function ReportsPage() {
 
         <ReportCard
           title="Balance Summary"
-          description="Additional existing route surfaced for administrators."
+          description="Current leave balance workbook for the selected year."
           controls={['Emp Code', 'Name', 'Dept', 'Leave Type', 'Opening', 'Credited', 'Availed', 'Closing']}
           actions={[
             {
-              label: 'Download Current Output',
+              label: 'Download XLSX',
               key: 'balance-summary',
               pending: loadingKey === 'balance-summary',
-              onClick: () => runDownload('balance-summary', 'balance-summary', () => reportsApi.balanceSummary()),
+              onClick: () =>
+                runDownload(
+                  'balance-summary',
+                  'balance-summary',
+                  () => reportsApi.balanceSummary(shared.as_of_date ? { as_of_date: shared.as_of_date } : {})
+                ),
             },
           ]}
         />
 
         <ReportCard
           title="Leave Calendar"
-          description="Department-wise approved leave calendar for the selected month."
+          description="Department-wise approved leave calendar workbook for the selected month."
           controls={['Emp Code', 'Name', 'From', 'To', 'Leave Type']}
           actions={[
             {
-              label: 'Download Current Output',
+              label: 'Download XLSX',
               key: 'leave-calendar',
               pending: loadingKey === 'leave-calendar',
               onClick: () =>
@@ -455,6 +477,8 @@ export function AdminDashboardPage() {
       ...(auditFilters.entity_type ? { entity_type: auditFilters.entity_type } : {}),
       ...(auditFilters.actor_id ? { actor_id: auditFilters.actor_id } : {}),
       ...(auditFilters.action ? { action: auditFilters.action } : {}),
+      ...(auditFilters.from_date ? { from_date: auditFilters.from_date } : {}),
+      ...(auditFilters.to_date ? { to_date: auditFilters.to_date } : {}),
       skip: 0,
       limit: 50,
     });
@@ -492,9 +516,6 @@ export function AdminDashboardPage() {
       </div>
 
       {message && <PageNotice>{message}</PageNotice>}
-      {(auditFilters.from_date || auditFilters.to_date) && (
-        <PageNotice>Date filters are shown for the Phase 8 target, but the current backend audit endpoint does not apply them yet.</PageNotice>
-      )}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="Queue Depth" value={String(dashboard?.queue_depth ?? '-')} />
@@ -537,7 +558,7 @@ export function AdminDashboardPage() {
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
             <div className="text-lg font-semibold text-slate-900">Audit Log</div>
-            <div className="text-sm text-slate-500">Current API supports entity, actor, and action filters.</div>
+            <div className="text-sm text-slate-500">Filter by entity, actor, action, and date range.</div>
           </div>
           <button onClick={() => void loadAudit()} className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
             Refresh

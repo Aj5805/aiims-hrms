@@ -1,15 +1,12 @@
 ## Current State
 
 - Repo root: `C:\Users\aiims\Desktop\FS\HRMS\aiims-hrms`
-- Phase 6/7/8 frontend surfacing is now implemented on top of the existing backend routers:
-  - frontend now exposes role-gated `/reports` for `ESTABLISHMENT_OFFICER` / `REGISTRAR` / `DIRECTOR`, `/admin` for `ADMIN`, and a top-nav notification bell with unread badge, dropdown list, mark-read, and mark-all-read;
-  - reports page fronts the current `reports.py` endpoints and saves the blob each endpoint actually returns; admin page fronts `health-dashboard`, `audit-log`, and `force-logout`;
-  - Playwright J5 now proves an establishment user can open Reports and trigger the leave-register download flow;
-  - the notification bell is intentionally suppressed during forced password change because those users are blocked from notification API calls until `change-my-password` completes.
-- Backend Phase 6/7/8 APIs are still only partially aligned with the implementation plan:
-  - `reports.py` exists but several endpoints still return raw JSON instead of the locked Excel/PDF artifacts and some role gates are broader than plan 7.7;
-  - `admin.py` is missing the planned date filter on audit-log and does not expose `last_backup` / explicit error-rate fields on health-dashboard;
-  - `notifications.py` in-app read/list flows work, while email sending remains the known stub / retry-only path.
+- Phase 6/7/8 surfacing and backend hardening are now aligned for the live report/admin slice:
+  - report routes now enforce the exact plan gates: `leave-register`, `leave-abstract`, `pending-applications`, `balance-summary`, and `leave-calendar` are restricted to `ESTABLISHMENT_OFFICER` / `REGISTRAR` / `DIRECTOR`; `payroll-export` now also allows `REGISTRAR` / `DIRECTOR` and excludes `ADMIN`;
+  - locked report outputs now stream real files: leave register (`xlsx` and `pdf` with actual approval timestamp), category-wise summary (`xlsx`), pending aged applications (`pdf` with current approver), payroll export (`csv` with a clearly marked NIC-mapping placeholder), plus workbook exports for balance summary and leave calendar;
+  - the previous department/type aggregate was retained separately at `GET /api/v1/reports/leave-abstract-department`;
+  - admin APIs now support `from_date` / `to_date` on `audit-log` and expose `last_backup` plus explicit `error_rate` on `health-dashboard`;
+  - frontend reports/admin pages now target the corrected file outputs and filters, and Playwright J5 asserts the leave-register download is an `xlsx`.
 - Phase 5 leave accounts are now audited, implemented, and verified on `main` at commit `afccf15` (`Implement and verify phase 5 leave accounts`):
   - backend `leave-balances` now enforces employee scope on balance, ledger, and projection reads;
   - annual credit now handles both EL and HPL financial-year credits and is idempotent;
@@ -29,6 +26,9 @@
 
 ## Validation Run
 
+- Backend Phase 7/8 proof:
+  - `backend`: `$env:APP_ENV='test'; .\.venv\Scripts\python.exe -m seeds.run; .\.venv\Scripts\python.exe test_phase678_reports.py`
+  - result: passed; proved the locked report content types/non-empty bodies, the corrected report role gates with 200/403 checks, and the new `audit-log` date filter / `health-dashboard` field surface
 - Backend clean-schema proof:
   - `backend`: `.venv\Scripts\python.exe -m alembic downgrade base`
   - `backend`: `.venv\Scripts\python.exe -m alembic upgrade head`
@@ -51,4 +51,4 @@
 
 ## Next Action
 
-- If the next slice stays on Phase 7/8 backend hardening, bring `reports.py` and `admin.py` into line with the locked plan outputs and fields that the new frontend now surfaces honestly as current-API behavior.
+- If the next slice stays in Phase 7/8, the main deferred backend item is the real AIIMS Finance / NIC payroll column contract; once Finance provides it, replace the placeholder payroll mapping dict without changing the route shape again.
