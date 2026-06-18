@@ -13,6 +13,10 @@
   - `deployment/nginx.conf` uses absolute cert paths `C:/nginx/conf/server.crt` and `C:/nginx/conf/server.key`
   - `C:\nginx\nginx.exe -p C:\nginx -t -c conf\nginx.conf` passes with the checked-in config
 - The production go-live run book in `docs/aiims hrms production go live run book.txt` has been updated to match the real verified Phase 5 state and the actual remaining launch constraints.
+- GitHub remote is now live:
+  - repository: `https://github.com/Aj5805/aiims-hrms`
+  - current development continues on `main`
+  - current pushed development tag: `v0.1.0-dev`
 
 ## Validation Run
 
@@ -30,7 +34,12 @@
 - Frontend Playwright regression:
   - `frontend`: `npx.cmd playwright test --project=chromium`
   - result: passed all 4 tests, including the new admin leave-account lookup/ledger scenario (J4)
+- GitHub publish:
+  - created remote repo `Aj5805/aiims-hrms`
+  - pushed `main`
+  - pushed tag `v0.1.0-dev`
+  - result: remote wiring succeeded and local worktree remained clean
 
 ## Next Action
 
-- Execute the real production cutover using `docs/aiims hrms production go live run book.txt`, or, if product work resumes first, move to the next additive reporting/dashboard slice without disturbing the now-verified deployment and Phase 5 leave-account path.
+- Continue active development on `main` for now. Near release, split active work to a `dev` branch and hold the approved release line stable without disturbing `main` during cutover/release finalization.
