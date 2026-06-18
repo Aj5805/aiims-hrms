@@ -989,3 +989,7 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+
+def test_e2e_harness() -> None:
+    asyncio.run(main())

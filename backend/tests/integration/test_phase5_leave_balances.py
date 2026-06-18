@@ -357,3 +357,7 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+
+def test_phase5_leave_balances() -> None:
+    asyncio.run(main())
