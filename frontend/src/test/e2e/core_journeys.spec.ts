@@ -29,11 +29,13 @@ test.describe.serial('Core Journeys E2E', () => {
     await login(page, 'staff', 'password');
     await expect(page.locator('h1', { hasText: 'Update Password' })).toBeVisible();
 
-    await page.locator('#current_password').fill('password');
-    await page.locator('#new_password').fill(STAFF_NEW_PASSWORD);
-    await page.locator('#confirm_password').fill(STAFF_NEW_PASSWORD);
-    await page.locator('button[type="submit"]').click();
-    await page.waitForURL('http://localhost:5173/');
+    await page.locator('#current_password').first().fill('password');
+    await page.locator('#new_password').first().fill(STAFF_NEW_PASSWORD);
+    await page.locator('#confirm_password').first().fill(STAFF_NEW_PASSWORD);
+    await Promise.all([
+      page.waitForURL('http://localhost:5173/'),
+      page.locator('#confirm_password').first().press('Enter'),
+    ]);
 
     await login(page, 'staff', STAFF_NEW_PASSWORD);
     await expect(page.locator('a', { hasText: 'Apply' })).toBeVisible();
@@ -129,6 +131,37 @@ test.describe.serial('Core Journeys E2E', () => {
     await page.getByRole('button', { name: 'Show Ledger' }).first().click();
     await expect(page.getByText('Ledger', { exact: true })).toBeVisible();
     await expect(page.locator('table')).toBeVisible();
+
+    await context.close();
+  });
+
+  test('J5: Establishment user opens reports and triggers leave-register download', async ({ browser }) => {
+    const context = await newIsolatedContext(browser);
+    const page = await context.newPage();
+
+    await login(page, 'estab', 'password');
+    await expect(page.locator('a', { hasText: 'Reports' })).toBeVisible();
+
+    await page.goto('/reports');
+    await expect(page.locator('h2', { hasText: 'Reports & Payroll Export' })).toBeVisible();
+
+    const dateInputs = page.locator('input[type="date"]');
+    await dateInputs.nth(0).fill('2026-07-01');
+    await dateInputs.nth(1).fill('2026-07-31');
+
+    const responsePromise = page.waitForResponse((response) =>
+      response.url().includes('/api/v1/reports/leave-register') && response.request().method() === 'GET'
+    );
+    const downloadPromise = page.waitForEvent('download');
+
+    await page.getByRole('button', { name: 'Download Current Output' }).first().click();
+
+    const [response, download] = await Promise.all([responsePromise, downloadPromise]);
+    expect(response.ok()).toBeTruthy();
+
+    const body = await response.body();
+    expect(body.byteLength).toBeGreaterThan(0);
+    expect(await download.suggestedFilename()).toContain('leave-register');
 
     await context.close();
   });

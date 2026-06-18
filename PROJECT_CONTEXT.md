@@ -1,6 +1,15 @@
 ## Current State
 
 - Repo root: `C:\Users\aiims\Desktop\FS\HRMS\aiims-hrms`
+- Phase 6/7/8 frontend surfacing is now implemented on top of the existing backend routers:
+  - frontend now exposes role-gated `/reports` for `ESTABLISHMENT_OFFICER` / `REGISTRAR` / `DIRECTOR`, `/admin` for `ADMIN`, and a top-nav notification bell with unread badge, dropdown list, mark-read, and mark-all-read;
+  - reports page fronts the current `reports.py` endpoints and saves the blob each endpoint actually returns; admin page fronts `health-dashboard`, `audit-log`, and `force-logout`;
+  - Playwright J5 now proves an establishment user can open Reports and trigger the leave-register download flow;
+  - the notification bell is intentionally suppressed during forced password change because those users are blocked from notification API calls until `change-my-password` completes.
+- Backend Phase 6/7/8 APIs are still only partially aligned with the implementation plan:
+  - `reports.py` exists but several endpoints still return raw JSON instead of the locked Excel/PDF artifacts and some role gates are broader than plan 7.7;
+  - `admin.py` is missing the planned date filter on audit-log and does not expose `last_backup` / explicit error-rate fields on health-dashboard;
+  - `notifications.py` in-app read/list flows work, while email sending remains the known stub / retry-only path.
 - Phase 5 leave accounts are now audited, implemented, and verified on `main` at commit `afccf15` (`Implement and verify phase 5 leave accounts`):
   - backend `leave-balances` now enforces employee scope on balance, ledger, and projection reads;
   - annual credit now handles both EL and HPL financial-year credits and is idempotent;
@@ -33,7 +42,7 @@
   - result: both passed
 - Frontend Playwright regression:
   - `frontend`: `npx.cmd playwright test --project=chromium`
-  - result: passed all 4 tests, including the new admin leave-account lookup/ledger scenario (J4)
+  - result: passed all 5 tests, including the new establishment reports download scenario (J5)
 - GitHub publish:
   - created remote repo `Aj5805/aiims-hrms`
   - pushed `main`
@@ -42,4 +51,4 @@
 
 ## Next Action
 
-- Continue active development on `main` for now. Near release, split active work to a `dev` branch and hold the approved release line stable without disturbing `main` during cutover/release finalization.
+- If the next slice stays on Phase 7/8 backend hardening, bring `reports.py` and `admin.py` into line with the locked plan outputs and fields that the new frontend now surfaces honestly as current-API behavior.

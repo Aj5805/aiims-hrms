@@ -41,3 +41,35 @@ export const usersApi = {
   list: (role?: string) => api.get('/users', { params: role ? { role } : {} }),
   update: (id: string, data: Record<string, unknown>) => api.put(`/users/${id}`, data),
 };
+
+export const notificationsApi = {
+  list: () => api.get('/notifications'),
+  unreadCount: () => api.get('/notifications/unread-count'),
+  markRead: (id: string) => api.put(`/notifications/${id}/read`),
+  markAllRead: () => api.put('/notifications/read-all'),
+  emailLog: () => api.get('/notifications/email-log'),
+  retryEmail: (id: string) => api.post(`/notifications/email-log/${id}/retry`),
+};
+
+export const reportsApi = {
+  leaveRegister: (params: Record<string, string>) =>
+    api.get('/reports/leave-register', { params, responseType: 'blob' }),
+  leaveAbstract: (params: Record<string, string>) =>
+    api.get('/reports/leave-abstract', { params, responseType: 'blob' }),
+  pendingApplications: () =>
+    api.get('/reports/pending-applications', { responseType: 'blob' }),
+  balanceSummary: () =>
+    api.get('/reports/balance-summary', { responseType: 'blob' }),
+  sanctionPdf: (applicationId: string) =>
+    api.get(`/reports/sanction-pdf/${applicationId}`, { responseType: 'blob' }),
+  leaveCalendar: (params: Record<string, string>) =>
+    api.get('/reports/leave-calendar', { params, responseType: 'blob' }),
+  payrollExport: (params: Record<string, string>) =>
+    api.get('/reports/payroll-export', { params, responseType: 'blob' }),
+};
+
+export const adminApi = {
+  auditLog: (params: Record<string, string | number>) => api.get('/admin/audit-log', { params }),
+  healthDashboard: () => api.get('/admin/health-dashboard'),
+  forceLogout: (userId: string) => api.post(`/admin/force-logout/${userId}`),
+};
