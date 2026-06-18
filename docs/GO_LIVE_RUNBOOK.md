@@ -2,13 +2,15 @@
 
 Everything up to go-live is proven: HTTPS deployment dry-run (termination to static SPA to API proxy to auth plus secure cookie, against the checked-in `deployment/nginx.conf`), Phase 5 leave accounts, Phase 7/8 reports and admin, Phase 8 security hardening, and the notification/auth fix in `0bbb590`. This runbook is the cutover to the real Windows plus PostgreSQL 16 server. Work top to bottom; do not skip Section 0.
 
-## 0. Pre-go-live decisions
+## 0. Pre-go-live decisions (go / no-go)
 
-- [ ] Email sending is wired but disabled by default. Launch in-app notifications only, or set real Zoho credentials and `EMAIL_SENDING_ENABLED=True` if you want outbound email. The scheduler is safe under `--workers 4` because it uses a PostgreSQL advisory lock to elect a single sender.
+Decide each consciously. These are known, deliberate gaps, not bugs:
+
+- [ ] In-app notifications are live; email sending is gated off. Workflow events now enqueue and display in-app notifications end to end, independently code-verified in `0bbb590`. Email is fully wired (Zoho SMTP plus Jinja2 templates) but disabled by default behind `EMAIL_SENDING_ENABLED=False` and blank Zoho credentials, so no email sends until you set real creds and flip the flag. The poller is safe under `--workers 4` because a PostgreSQL advisory lock elects a single sender. Decision: launch in-app-only, or set `EMAIL_SENDING_ENABLED=True` plus Zoho credentials to turn email on.
 - [ ] 5.6 resident pro-rata recompute is not implemented. There is still no contract-lifecycle event model or endpoint to recompute resident balances on contract completion or extension.
-- [ ] Leave ledger is still schema-derived, not a dedicated immutable leave-transaction table.
+- [ ] Leave ledger is still schema-derived, not a dedicated immutable leave-transaction table. Fine for launch, but keep it flagged as future hardening.
 - [ ] Git tags do not exist yet. `deployment/ROLLBACK.md` references release tags that still need to be created during cutover.
-- [ ] Confirm the real access hostname. It is needed for the cert CN, `CORS_ORIGINS`, and UAT URLs.
+- [ ] Confirm the real access hostname. It is needed for the certificate CN, `CORS_ORIGINS`, and UAT URLs.
 
 ## 1. Prerequisites on the production server
 
@@ -114,7 +116,12 @@ The NSSM command must include `--proxy-headers --forwarded-allow-ips 127.0.0.1` 
 - [ ] Add a health-check task hitting `/health`
 - [ ] Verify at least one backup restore into a scratch database
 
-## 9. UAT sign-off
+## 9. Rollback readiness
+
+- [ ] Confirm the previous stable tag exists before cutover.
+- [ ] Dry-read `deployment/ROLLBACK.md`: stop service plus nginx, downgrade Alembic if needed, check out the prior tag or commit, rebuild frontend, restart, and verify `/health`.
+
+## 10. UAT sign-off
 
 - [ ] Real users across all roles run their core journeys
 - [ ] Capture issues; only mark `v1.0.0` after sign-off
