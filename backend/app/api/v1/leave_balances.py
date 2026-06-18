@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import employee_scope, get_current_user, require_role
 from app.core.cache import cache_clear, cached, cache_set
 from app.core.database import get_db
+from app.core.upload_validation import validate_import_upload
 
 router = APIRouter(prefix="/leave-balances", tags=["leave-balances"])
 
@@ -134,6 +135,12 @@ async def import_opening_balances(
     db: AsyncSession = Depends(get_db),
 ):
     """Excel import. Columns: emp_code, leave_type_code, opening_balance."""
+    await validate_import_upload(
+        file,
+        allowed_extensions={".xlsx"},
+        allowed_content_types={"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
+        label="Opening balance XLSX import",
+    )
     content = await file.read()
     wb = load_workbook(io.BytesIO(content), read_only=True)
     ws = wb.active

@@ -1,6 +1,6 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
 
-const STAFF_NEW_PASSWORD = 'newpassword123';
+const STAFF_NEW_PASSWORD = 'NewPassword123!';
 
 interface LeaveApplicationRequestBody {
   employee_id?: string;

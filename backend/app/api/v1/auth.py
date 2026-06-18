@@ -1,6 +1,6 @@
 """Auth routes: login, refresh, logout, change-password, me."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from jose import JWTError
@@ -17,17 +17,20 @@ from app.auth.jwt import (
 )
 from app.core.database import get_db
 from app.core.config import settings
+from app.core.rate_limit import limiter
 from app.schemas import LoginRequest, PasswordResetRequest, TokenResponse, SelfPasswordChangeRequest
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(body: LoginRequest, response: Response, db: AsyncSession = Depends(get_db)):
+@limiter.limit(settings.RATE_LIMIT_AUTH)
+async def login(request: Request, body: LoginRequest, response: Response, db: AsyncSession = Depends(get_db)):
     """Authenticate user, return access + refresh tokens."""
     result = await db.execute(
         text("""
             SELECT u.id, u.username, u.password_hash, u.role, u.must_change_password, u.is_active,
+                   u.failed_login_attempts, u.locked_until,
                    e.id AS employee_id, e.emp_code
             FROM users u
             LEFT JOIN employees e ON u.employee_id = e.id
@@ -36,7 +39,29 @@ async def login(body: LoginRequest, response: Response, db: AsyncSession = Depen
         {"un": body.username},
     )
     user = result.fetchone()
+    now = datetime.now(timezone.utc)
+    if user and user.locked_until:
+        locked_until = user.locked_until.astimezone(timezone.utc) if user.locked_until.tzinfo else user.locked_until.replace(tzinfo=timezone.utc)
+        if locked_until > now:
+            raise HTTPException(status_code=429, detail="Account temporarily locked. Please try again later.")
+
     if not user or not verify_password(body.password, user.password_hash):
+        if user:
+            failed_attempts = int(user.failed_login_attempts or 0) + 1
+            locked_until = now + timedelta(minutes=15) if failed_attempts >= 5 else None
+            await db.execute(
+                text(
+                    """
+                    UPDATE users
+                    SET failed_login_attempts = :failed_attempts,
+                        locked_until = :locked_until,
+                        updated_at = now()
+                    WHERE id = :uid
+                    """
+                ),
+                {"failed_attempts": failed_attempts, "locked_until": locked_until, "uid": str(user.id)},
+            )
+            await db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Account deactivated")
@@ -56,7 +81,18 @@ async def login(body: LoginRequest, response: Response, db: AsyncSession = Depen
         path="/api/v1/auth",
     )
 
-    await db.execute(text("UPDATE users SET last_login = now() WHERE id = :uid"), {"uid": uid})
+    await db.execute(
+        text(
+            """
+            UPDATE users
+            SET last_login = now(),
+                failed_login_attempts = 0,
+                locked_until = NULL
+            WHERE id = :uid
+            """
+        ),
+        {"uid": uid},
+    )
     await db.commit()
 
     return TokenResponse(
@@ -71,6 +107,7 @@ async def login(body: LoginRequest, response: Response, db: AsyncSession = Depen
 
 
 @router.post("/refresh", response_model=TokenResponse)
+@limiter.limit(settings.RATE_LIMIT_AUTH)
 async def refresh_token(request: Request, response: Response, db: AsyncSession = Depends(get_db)):
     """Issue new tokens using refresh token cookie and rotate."""
     refresh_token = request.cookies.get("refresh_token")

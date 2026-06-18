@@ -8,6 +8,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Integer,
     String,
     Text,
     func,
@@ -32,6 +33,8 @@ class User(Base):
     )
     is_active = Column(Boolean, default=True)
     must_change_password = Column(Boolean, default=False)
+    failed_login_attempts = Column(Integer, nullable=False, default=0, server_default="0")
+    locked_until = Column(DateTime(timezone=True), nullable=True)
     tokens_valid_from = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False, server_default=func.now())
     last_login = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)

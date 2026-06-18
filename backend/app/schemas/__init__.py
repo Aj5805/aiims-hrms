@@ -2,7 +2,22 @@
 
 from datetime import date, datetime
 from typing import Optional
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+def validate_password_complexity(value: str) -> str:
+    failures: list[str] = []
+    if len(value) < 8:
+        failures.append("at least 8 characters")
+    if not any(char.isupper() for char in value):
+        failures.append("at least 1 uppercase letter")
+    if not any(char.isdigit() for char in value):
+        failures.append("at least 1 digit")
+    if not any(not char.isalnum() for char in value):
+        failures.append("at least 1 special character")
+    if failures:
+        raise ValueError("Password must contain " + ", ".join(failures))
+    return value
 
 
 # â”€â”€ Auth â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -21,12 +36,16 @@ class TokenResponse(BaseModel):
 
 class PasswordResetRequest(BaseModel):
     user_id: str
-    new_password: str = Field(min_length=8)
+    new_password: str
+
+    _validate_new_password = field_validator("new_password")(validate_password_complexity)
 
 
 class SelfPasswordChangeRequest(BaseModel):
     current_password: str
-    new_password: str = Field(min_length=8)
+    new_password: str
+
+    _validate_new_password = field_validator("new_password")(validate_password_complexity)
 
 
 # â”€â”€ Employees â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

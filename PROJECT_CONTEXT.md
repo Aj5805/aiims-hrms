@@ -1,6 +1,12 @@
 ## Current State
 
 - Repo root: `C:\Users\aiims\Desktop\FS\HRMS\aiims-hrms`
+- Phase 8 security hardening now covers the planned lockout, password policy, rate limiting, and import upload validation:
+  - DB-backed login lockout is live via `users.failed_login_attempts` and `users.locked_until`; `/api/v1/auth/login` now locks after 5 failed attempts for 15 minutes, persists the failure-path updates across workers, and resets the counters on successful login;
+  - password complexity is enforced through one shared schema validator for both admin reset and self-change flows: minimum 8 chars, at least 1 uppercase, 1 digit, and 1 special;
+  - `slowapi` is wired in `main.py`; `/auth/login` and `/auth/refresh` use `RATE_LIMIT_AUTH`, report exports use `RATE_LIMIT_EXPORT`, and the app has a general default limit with an explicit comment that the in-memory storage is per-process under `uvicorn --workers 4`;
+  - upload validation is now enforced only on the two import endpoints that actually exist: `employees/import` (`.csv`, csv content-type, <= 5 MB) and `leave-balances/opening/import` (`.xlsx`, openxml spreadsheet content-type, <= 5 MB);
+  - attachment-upload whitelisting for PDF/JPG/PNG remains intentionally deferred because there is still no user-facing attachment upload endpoint in this repo.
 - Phase 6/7/8 surfacing and backend hardening are now aligned for the live report/admin slice:
   - report routes now enforce the exact plan gates: `leave-register`, `leave-abstract`, `pending-applications`, `balance-summary`, and `leave-calendar` are restricted to `ESTABLISHMENT_OFFICER` / `REGISTRAR` / `DIRECTOR`; `payroll-export` now also allows `REGISTRAR` / `DIRECTOR` and excludes `ADMIN`;
   - locked report outputs now stream real files: leave register (`xlsx` and `pdf` with actual approval timestamp), category-wise summary (`xlsx`), pending aged applications (`pdf` with current approver), payroll export (`csv` with a clearly marked NIC-mapping placeholder), plus workbook exports for balance summary and leave calendar;
@@ -26,6 +32,9 @@
 
 ## Validation Run
 
+- Backend Phase 8 security proof:
+  - `backend`: `$env:APP_ENV='test'; .\.venv\Scripts\python.exe -m alembic downgrade base; .\.venv\Scripts\python.exe -m alembic upgrade head; .\.venv\Scripts\python.exe -m seeds.run; .\.venv\Scripts\python.exe test_phase8_security.py; .\.venv\Scripts\python.exe -m pytest tests/integration/test_auth_and_rbac.py::TestAuthFlow::test_lockout_after_5_failures -q`
+  - result: passed; proved 6th-attempt lockout + successful reset, weak-password rejection, 6th `/auth/login` rate-limit 429, both import endpoints rejecting wrong type / oversize uploads, and the real integration lockout test now passing
 - Backend Phase 7/8 proof:
   - `backend`: `$env:APP_ENV='test'; .\.venv\Scripts\python.exe -m seeds.run; .\.venv\Scripts\python.exe test_phase678_reports.py`
   - result: passed; proved the locked report content types/non-empty bodies, the corrected report role gates with 200/403 checks, and the new `audit-log` date filter / `health-dashboard` field surface
@@ -51,4 +60,4 @@
 
 ## Next Action
 
-- If the next slice stays in Phase 7/8, the main deferred backend item is the real AIIMS Finance / NIC payroll column contract; once Finance provides it, replace the placeholder payroll mapping dict without changing the route shape again.
+- The next concrete deferred item is still the real AIIMS Finance / NIC payroll column contract; once Finance provides it, replace the placeholder payroll mapping dict without changing the Phase 7 route shape again.

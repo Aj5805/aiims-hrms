@@ -7,7 +7,7 @@ from collections import defaultdict
 from datetime import date, datetime
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
@@ -21,6 +21,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import require_role
 from app.core.database import get_db
+from app.core.rate_limit import limiter
+from app.core.config import settings
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -298,7 +300,9 @@ async def _fetch_calendar_rows(db: AsyncSession, department_code: str | None, mo
 
 
 @router.get("/leave-register")
+@limiter.limit(settings.RATE_LIMIT_EXPORT)
 async def leave_register(
+    request: Request,
     from_date: str = Query(),
     to_date: str = Query(),
     department_code: str | None = Query(None),
@@ -336,7 +340,9 @@ async def leave_register(
 
 
 @router.get("/leave-abstract")
+@limiter.limit(settings.RATE_LIMIT_EXPORT)
 async def leave_abstract(
+    request: Request,
     from_date: str = Query(),
     to_date: str = Query(),
     _: dict = Depends(require_role(*REPORT_ROLES)),
@@ -354,7 +360,9 @@ async def leave_abstract(
 
 
 @router.get("/leave-abstract-department")
+@limiter.limit(settings.RATE_LIMIT_EXPORT)
 async def leave_abstract_department(
+    request: Request,
     from_date: str = Query(),
     to_date: str = Query(),
     _: dict = Depends(require_role(*REPORT_ROLES)),
@@ -379,7 +387,9 @@ async def leave_abstract_department(
 
 
 @router.get("/pending-applications")
+@limiter.limit(settings.RATE_LIMIT_EXPORT)
 async def pending_applications(
+    request: Request,
     _: dict = Depends(require_role(*REPORT_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
@@ -401,7 +411,9 @@ async def pending_applications(
 
 
 @router.get("/balance-summary")
+@limiter.limit(settings.RATE_LIMIT_EXPORT)
 async def balance_summary(
+    request: Request,
     as_of_date: str | None = Query(None),
     _: dict = Depends(require_role(*REPORT_ROLES)),
     db: AsyncSession = Depends(get_db),
@@ -431,7 +443,9 @@ async def balance_summary(
 
 
 @router.get("/sanction-pdf/{application_id}")
+@limiter.limit(settings.RATE_LIMIT_EXPORT)
 async def sanction_pdf(
+    request: Request,
     application_id: str,
     current_user: dict = Depends(require_role("ADMIN", "ESTABLISHMENT_OFFICER", "REGISTRAR", "DIRECTOR", "HOD", "DEAN_ACADEMIC")),
     db: AsyncSession = Depends(get_db),
@@ -496,7 +510,9 @@ async def sanction_pdf(
 
 
 @router.get("/leave-calendar")
+@limiter.limit(settings.RATE_LIMIT_EXPORT)
 async def leave_calendar(
+    request: Request,
     department_code: str | None = Query(None),
     month: str | None = Query(None),
     _: dict = Depends(require_role(*REPORT_ROLES)),
@@ -515,7 +531,9 @@ async def leave_calendar(
 
 
 @router.get("/payroll-export")
+@limiter.limit(settings.RATE_LIMIT_EXPORT)
 async def payroll_export(
+    request: Request,
     from_date: str = Query(),
     to_date: str = Query(),
     export_type: str = Query("LOP"),

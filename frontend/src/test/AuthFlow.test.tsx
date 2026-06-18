@@ -102,8 +102,8 @@ describe('Auth Flow & forced password change', () => {
 
     // Fill form
     fireEvent.change(screen.getByLabelText(/Current Password/i), { target: { value: 'oldpass123' } });
-    fireEvent.change(screen.getByLabelText(/^New Password/i), { target: { value: 'newpass123' } });
-    fireEvent.change(screen.getByLabelText(/Confirm New Password/i), { target: { value: 'newpass123' } });
+    fireEvent.change(screen.getByLabelText(/^New Password/i), { target: { value: 'NewPass123!' } });
+    fireEvent.change(screen.getByLabelText(/Confirm New Password/i), { target: { value: 'NewPass123!' } });
     
     // Submit
     fireEvent.click(screen.getByRole('button', { name: /Update Password/i }));

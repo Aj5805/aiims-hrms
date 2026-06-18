@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.jwt import hash_password
 from app.auth.dependencies import get_current_user, require_role
 from app.core.database import get_db
+from app.core.upload_validation import validate_import_upload
 from sqlalchemy.exc import IntegrityError
 from app.schemas import (
     CsvImportResult,
@@ -224,6 +225,12 @@ async def import_csv(
     db: AsyncSession = Depends(get_db),
 ):
     """Import employees from CSV. Columns: emp_code, name, gender, doj, category, department, designation."""
+    await validate_import_upload(
+        file,
+        allowed_extensions={".csv"},
+        allowed_content_types={"text/csv", "application/csv"},
+        label="Employee CSV import",
+    )
     content = await file.read()
     text_content = content.decode("utf-8", errors="replace")
     reader = csv.DictReader(io.StringIO(text_content))
