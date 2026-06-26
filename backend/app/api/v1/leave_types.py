@@ -13,9 +13,12 @@ from app.core.database import get_db
 router = APIRouter(prefix="/leave-types", tags=["leave-types"])
 
 
+_MASTER_VIEWER_ROLES = ("ADMIN", "ESTABLISHMENT_OFFICER", "REGISTRAR", "DIRECTOR", "HOD", "DEAN_ACADEMIC")
+
+
 @router.get("")
 async def list_leave_types(
-    _: dict = Depends(require_role("ADMIN", "ESTABLISHMENT_OFFICER", "DEAN_ACADEMIC", "REGISTRAR", "DIRECTOR")),
+    _: dict = Depends(require_role(*_MASTER_VIEWER_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(text("SELECT * FROM leave_types ORDER BY code"))

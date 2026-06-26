@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { employeesApi } from '../api/endpoints';
 import { useAuthStore } from '../stores';
+import AddStaffForm from '../components/AddStaffForm';
 
 interface Employee {
   id: string;
@@ -21,7 +22,7 @@ export default function EmployeeListPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
+  const [activeTab, setActiveTab] = useState<'directory' | 'onboard'>('directory');
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
 
@@ -39,8 +40,10 @@ export default function EmployeeListPage() {
 
   useEffect(() => {
     if (!user) { navigate('/login'); return; }
-    fetchEmployees();
-  }, [search]);
+    if (activeTab === 'directory') {
+      fetchEmployees();
+    }
+  }, [search, activeTab]);
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -55,121 +58,100 @@ export default function EmployeeListPage() {
   };
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-bold text-gray-800">Employee Master</h2>
-        <div className="flex gap-2">
-          <label className="px-3 py-2 bg-green-600 text-white rounded cursor-pointer hover:bg-green-700 text-sm">
-            Import CSV
-            <input id="csv-import" type="file" accept=".csv" onChange={handleImport} className="hidden" />
-          </label>
-          <button
-            id="add-employee-btn"
-            onClick={() => setShowForm(true)}
-            className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
-          >
-            + Add Employee
-          </button>
-        </div>
-      </div>
-
-      <input
-        id="employee-search"
-        type="text"
-        placeholder="Search by name or emp_code..."
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        className="w-full border border-gray-300 rounded-md px-3 py-2 mb-4 outline-none focus:ring-2 focus:ring-blue-500"
-      />
-
-      {loading ? (
-        <p className="text-gray-500">Loading...</p>
-      ) : (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-2 text-left">Code</th>
-                <th className="px-4 py-2 text-left">Name</th>
-                <th className="px-4 py-2 text-left">Dept</th>
-                <th className="px-4 py-2 text-left">Designation</th>
-                <th className="px-4 py-2 text-left">Category</th>
-                <th className="px-4 py-2 text-center">Active</th>
-              </tr>
-            </thead>
-            <tbody>
-              {employees.map((emp) => (
-                <tr key={emp.id} className="border-t hover:bg-gray-50">
-                  <td className="px-4 py-2 font-mono">{emp.emp_code}</td>
-                  <td className="px-4 py-2">{emp.name}</td>
-                  <td className="px-4 py-2">{emp.department_name}</td>
-                  <td className="px-4 py-2">{emp.designation_name}</td>
-                  <td className="px-4 py-2">{emp.category_name}</td>
-                  <td className="px-4 py-2 text-center">
-                    <span className={`text-xs px-2 py-1 rounded ${emp.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                      {emp.is_active ? 'Active' : 'Inactive'}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-              {employees.length === 0 && (
-                <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">No employees found</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {showForm && <EmployeeFormModal onClose={() => setShowForm(false)} onSaved={fetchEmployees} />}
-    </div>
-  );
-}
-
-function EmployeeFormModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const [form, setForm] = useState({
-    emp_code: '', name: '', gender: 'MALE', doj: '',
-    category_code: '', department_code: '', designation_name: '', email: '',
-  });
-  const [saving, setSaving] = useState(false);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSaving(true);
-    try {
-      await employeesApi.create(form);
-      onSaved();
-      onClose();
-    } catch {
-      alert('Failed to create employee');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-lg">
-        <h3 className="text-lg font-bold mb-4">Add Employee</h3>
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <input placeholder="Emp Code *" value={form.emp_code} onChange={(e) => setForm({ ...form, emp_code: e.target.value })} className="w-full border rounded px-3 py-2" required />
-          <input placeholder="Name *" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full border rounded px-3 py-2" required />
-          <select value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })} className="w-full border rounded px-3 py-2">
-            <option value="MALE">Male</option>
-            <option value="FEMALE">Female</option>
-            <option value="OTHER">Other</option>
-          </select>
-          <input type="date" value={form.doj} onChange={(e) => setForm({ ...form, doj: e.target.value })} className="w-full border rounded px-3 py-2" required />
-          <input placeholder="Category Code *" value={form.category_code} onChange={(e) => setForm({ ...form, category_code: e.target.value })} className="w-full border rounded px-3 py-2" required />
-          <input placeholder="Department Code *" value={form.department_code} onChange={(e) => setForm({ ...form, department_code: e.target.value })} className="w-full border rounded px-3 py-2" required />
-          <input placeholder="Designation *" value={form.designation_name} onChange={(e) => setForm({ ...form, designation_name: e.target.value })} className="w-full border rounded px-3 py-2" required />
-          <input type="email" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full border rounded px-3 py-2" />
-          <div className="flex gap-2 pt-2">
-            <button type="submit" disabled={saving} className="flex-1 bg-blue-600 text-white py-2 rounded hover:bg-blue-700 disabled:opacity-50">
-              {saving ? 'Saving...' : 'Save'}
-            </button>
-            <button type="button" onClick={onClose} className="flex-1 bg-gray-200 py-2 rounded hover:bg-gray-300">Cancel</button>
+    <div className="max-w-7xl mx-auto space-y-6">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="border-b border-gray-200 px-6 py-4 flex flex-wrap gap-4 justify-between items-center bg-gray-50">
+          <div>
+            <h2 className="text-xl font-bold text-gray-800">Staff Management Console</h2>
+            <p className="text-sm text-gray-500 mt-1">Manage personnel, onboarding, and directory.</p>
           </div>
-        </form>
+          <div className="flex gap-2 bg-gray-200/50 p-1 rounded-lg">
+            <button
+              onClick={() => setActiveTab('directory')}
+              className={`px-4 py-2 text-sm font-medium rounded-md transition ${activeTab === 'directory' ? 'bg-white shadow-sm text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}
+            >
+              Staff Directory
+            </button>
+            <button
+              onClick={() => setActiveTab('onboard')}
+              className={`px-4 py-2 text-sm font-medium rounded-md transition ${activeTab === 'onboard' ? 'bg-white shadow-sm text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}
+            >
+              Onboard Staff
+            </button>
+          </div>
+        </div>
+
+        <div className="p-6">
+          {activeTab === 'directory' && (
+            <div>
+              <div className="flex flex-wrap gap-4 items-center justify-between mb-4">
+                <input
+                  type="text"
+                  placeholder="Search by name or emp_code..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="w-full md:w-96 border border-gray-300 rounded-lg px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                
+                <label className="px-4 py-2 bg-green-600 text-white rounded-lg cursor-pointer hover:bg-green-700 text-sm font-medium transition shadow-sm">
+                  Bulk Import (CSV)
+                  <input type="file" accept=".csv" onChange={handleImport} className="hidden" />
+                </label>
+              </div>
+
+              {loading ? (
+                <div className="py-12 text-center text-gray-500">Loading directory...</div>
+              ) : (
+                <div className="border border-gray-200 rounded-lg overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-gray-50 border-b border-gray-200 text-gray-500 uppercase tracking-wider text-xs">
+                      <tr>
+                        <th className="px-6 py-3 text-left font-medium">Employee</th>
+                        <th className="px-6 py-3 text-left font-medium">Department</th>
+                        <th className="px-6 py-3 text-left font-medium">Designation & Category</th>
+                        <th className="px-6 py-3 text-center font-medium">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {employees.map((emp) => (
+                        <tr key={emp.id} className="hover:bg-gray-50 transition cursor-pointer">
+                          <td className="px-6 py-4">
+                            <div className="font-medium text-gray-900">{emp.name}</div>
+                            <div className="font-mono text-xs text-gray-500 mt-1">{emp.emp_code}</div>
+                          </td>
+                          <td className="px-6 py-4 text-gray-700">{emp.department_name}</td>
+                          <td className="px-6 py-4">
+                            <div className="text-gray-900">{emp.designation_name}</div>
+                            <div className="text-xs text-gray-500 mt-1">{emp.category_name}</div>
+                          </td>
+                          <td className="px-6 py-4 text-center">
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${emp.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                              {emp.is_active ? 'Active' : 'Inactive'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                      {employees.length === 0 && (
+                        <tr><td colSpan={4} className="px-6 py-12 text-center text-gray-400 bg-gray-50/50">No employees found matching your criteria.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'onboard' && (
+            <AddStaffForm 
+              onSaved={() => {
+                setActiveTab('directory');
+                setSearch(''); // clear search to show new employee
+                fetchEmployees();
+              }}
+              onCancel={() => setActiveTab('directory')}
+            />
+          )}
+        </div>
       </div>
     </div>
   );

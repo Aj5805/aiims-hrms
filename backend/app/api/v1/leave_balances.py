@@ -169,20 +169,11 @@ async def get_balances(
     _require_employee_scope(scope, employee_id)
     result = await db.execute(
         text("""
-            WITH latest AS (
-                SELECT employee_id, leave_type_id, MAX(leave_year) AS leave_year
-                FROM leave_balances
-                WHERE employee_id = :eid
-                GROUP BY employee_id, leave_type_id
-            )
             SELECT lb.*, lt.code AS leave_type_code, lt.name AS leave_type_name, lt.max_accumulation
-            FROM latest x
-            JOIN leave_balances lb
-              ON lb.employee_id = x.employee_id
-             AND lb.leave_type_id = x.leave_type_id
-             AND lb.leave_year = x.leave_year
+            FROM leave_balances lb
             JOIN leave_types lt ON lb.leave_type_id = lt.id
-            ORDER BY lt.code
+            WHERE lb.employee_id = :eid
+            ORDER BY lb.leave_year DESC, lt.code ASC
         """),
         {"eid": employee_id},
     )

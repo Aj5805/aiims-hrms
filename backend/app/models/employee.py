@@ -51,6 +51,23 @@ class Department(Base):
     # Self-referential
     parent = relationship("Department", remote_side=[id], backref="children")
     employees = relationship("Employee", back_populates="department")
+    nodal_assignments = relationship("DeptNodalAssignment", back_populates="department", foreign_keys="DeptNodalAssignment.department_id")
+
+
+class DeptNodalAssignment(Base):
+    """Configurable mapping: which NODAL_OFFICER user handles a given department."""
+
+    __tablename__ = "dept_nodal_assignments"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    department_id = Column(UUID(as_uuid=True), ForeignKey("departments.id", ondelete="CASCADE"), nullable=False)
+    nodal_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    assigned_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    assigned_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+
+    # Relationships
+    department = relationship("Department", back_populates="nodal_assignments", foreign_keys=[department_id])
 
 
 class Designation(Base):

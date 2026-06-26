@@ -88,6 +88,20 @@ def set_deterministic_admin_password():
     engine = create_engine(settings.DATABASE_URL_SYNC)
     ph = hash_password(FIXED_ADMIN_PASS)
     with engine.connect() as conn:
+        # Clean up stale data from previous E2E test runs to ensure repeatability
+        conn.execute(sa_text("DELETE FROM notification_queue WHERE application_id IN (SELECT id FROM leave_applications WHERE employee_id IN (SELECT id FROM employees WHERE emp_code LIKE 'HRMS%'))"))
+        conn.execute(sa_text("DELETE FROM leave_approvals WHERE application_id IN (SELECT id FROM leave_applications WHERE employee_id IN (SELECT id FROM employees WHERE emp_code LIKE 'HRMS%'))"))
+        conn.execute(sa_text("DELETE FROM leave_approvals WHERE approver_id IN (SELECT id FROM users WHERE username IN ('hod_user', 'estab_user', 'reg_user', 'HRMS004') OR employee_id IN (SELECT id FROM employees WHERE emp_code LIKE 'HRMS%'))"))
+        conn.execute(sa_text("DELETE FROM leave_applications WHERE employee_id IN (SELECT id FROM employees WHERE emp_code LIKE 'HRMS%')"))
+        conn.execute(sa_text("DELETE FROM leave_balances WHERE employee_id IN (SELECT id FROM employees WHERE emp_code LIKE 'HRMS%')"))
+        conn.execute(sa_text("DELETE FROM workflow_steps WHERE config_id NOT IN (SELECT id FROM workflow_configs WHERE config_name = 'Regular Staff — Default (All Types, All Durations)' OR config_name LIKE 'Resident — Default (%)')"))
+        conn.execute(sa_text("DELETE FROM workflow_configs WHERE config_name NOT IN ('Regular Staff — Default (All Types, All Durations)') AND config_name NOT LIKE 'Resident — Default (%)'"))
+        conn.execute(sa_text("DELETE FROM token_blacklist WHERE user_id IN (SELECT id FROM users WHERE username IN ('hod_user', 'estab_user', 'reg_user', 'HRMS004') OR employee_id IN (SELECT id FROM employees WHERE emp_code LIKE 'HRMS%'))"))
+        conn.execute(sa_text("DELETE FROM users WHERE username IN ('hod_user', 'estab_user', 'reg_user', 'HRMS004') OR employee_id IN (SELECT id FROM employees WHERE emp_code LIKE 'HRMS%')"))
+        conn.execute(sa_text("DELETE FROM employees WHERE emp_code LIKE 'HRMS%'"))
+        conn.execute(sa_text("DELETE FROM holiday_master WHERE holiday_date = '2026-07-15'::date"))
+        conn.execute(sa_text("UPDATE users SET failed_login_attempts = 0, locked_until = NULL, is_active = true"))
+        
         result = conn.execute(
             sa_text("UPDATE users SET password_hash = :ph, must_change_password = false WHERE username = 'admin' AND is_active = true"),
             {"ph": ph},

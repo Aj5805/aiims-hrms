@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import api from '../api/client';
 import { useAuthStore } from '../stores';
 
@@ -81,7 +81,7 @@ function entryLabel(entry: LedgerEntry): string {
   return entry.entry_type;
 }
 
-function BalanceCard({
+function BalanceTableRow({
   balance,
   expanded,
   onToggle,
@@ -104,96 +104,74 @@ function BalanceCard({
   const available = asNumber(balance.closing_balance);
   const usedBase = Math.max(opening + credited, availed + available);
   const max = Math.max(asNumber(balance.max_accumulation), usedBase || available || 1);
-  const usedPct = Math.min(100, (availed / max) * 100);
-  const availPct = Math.min(100 - usedPct, (available / max) * 100);
 
   return (
-    <div className={`rounded-xl border bg-white shadow-sm ${selectedForAdjust ? 'border-blue-500 ring-2 ring-blue-100' : 'border-slate-200'}`}>
-      <div className="p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="text-sm font-semibold text-slate-900">{balance.leave_type_code}</div>
-            <div className="text-xs text-slate-500">{balance.leave_type_name}</div>
-          </div>
-          <div className="rounded-full bg-slate-100 px-2 py-1 text-[11px] text-slate-600">FY {balance.leave_year}</div>
-        </div>
-
-        <div className="mt-3 flex items-end justify-between">
-          <div>
-            <div className="text-3xl font-bold text-slate-900">{available.toFixed(1)}</div>
-            <div className="text-xs text-slate-500">available days</div>
-          </div>
-          <div className="text-right text-xs text-slate-500">
-            <div>Used {availed.toFixed(1)}</div>
-            <div>Credited {credited.toFixed(1)}</div>
-            <div>Max {max.toFixed(1)}</div>
-          </div>
-        </div>
-
-        <div className="mt-4 overflow-hidden rounded-full bg-slate-200">
-          <div className="flex h-3 w-full">
-            <div className="bg-rose-500" style={{ width: `${usedPct}%` }} />
-            <div className="bg-emerald-500" style={{ width: `${availPct}%` }} />
-          </div>
-        </div>
-        <div className="mt-2 flex justify-between text-[11px] text-slate-500">
-          <span>Used</span>
-          <span>Available</span>
-          <span>Cap</span>
-        </div>
-
-        <div className="mt-4 flex gap-2">
-          <button onClick={onToggle} className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
-            {expanded ? 'Hide Ledger' : 'Show Ledger'}
+    <>
+      <tr className={`border-b border-slate-100 hover:bg-slate-50 transition-colors ${selectedForAdjust ? 'bg-blue-50/50' : ''}`}>
+        <td className="py-3 px-4">
+          <div className="text-sm font-semibold text-slate-900">{balance.leave_type_code}</div>
+          <div className="text-[11px] text-slate-500 max-w-[150px] truncate">{balance.leave_type_name}</div>
+        </td>
+        <td className="py-3 px-4 text-sm text-slate-600">{opening.toFixed(1)}</td>
+        <td className="py-3 px-4 text-sm text-emerald-600 font-medium">+{credited.toFixed(1)}</td>
+        <td className="py-3 px-4 text-sm text-amber-600 font-medium">-{availed.toFixed(1)}</td>
+        <td className="py-3 px-4 text-sm text-slate-900 font-bold">{available.toFixed(1)}</td>
+        <td className="py-3 px-4 text-sm text-slate-400">{max.toFixed(1)}</td>
+        <td className="py-3 px-4 text-sm flex items-center gap-2">
+          <button onClick={onToggle} className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-100">
+            {expanded ? 'Hide Ledger' : 'Ledger'}
           </button>
           {canAdjust && onSelectAdjust && (
-            <button onClick={onSelectAdjust} className="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">
-              {selectedForAdjust ? 'Adjusting' : 'Manual Adjust'}
+            <button onClick={onSelectAdjust} className="rounded bg-blue-50 px-2 py-1 text-xs text-blue-700 hover:bg-blue-100 font-medium">
+              {selectedForAdjust ? 'Selected' : 'Adjust'}
             </button>
           )}
-        </div>
-      </div>
-
+        </td>
+      </tr>
       {expanded && (
-        <div className="border-t border-slate-200 bg-slate-50 p-4">
-          <div className="mb-3 text-sm font-semibold text-slate-800">Ledger</div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="text-left text-slate-500">
-                  <th className="pb-2 pr-3">Date</th>
-                  <th className="pb-2 pr-3">Event</th>
-                  <th className="pb-2 pr-3">Delta</th>
-                  <th className="pb-2 pr-3">Details</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(ledger?.transactions ?? []).map((entry, index) => (
-                  <tr key={`${entry.entry_type}-${entry.event_date ?? 'na'}-${index}`} className="border-t border-slate-200">
-                    <td className="py-2 pr-3 text-slate-600">{formatDate(entry.event_date)}</td>
-                    <td className="py-2 pr-3 font-medium text-slate-800">{entryLabel(entry)}</td>
-                    <td className={`py-2 pr-3 font-mono ${asNumber(entry.delta) < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                      {asNumber(entry.delta) >= 0 ? '+' : ''}
-                      {asNumber(entry.delta).toFixed(1)}
-                    </td>
-                    <td className="py-2 pr-3 text-slate-600">
-                      {entry.reason || (entry.from_date && entry.to_date ? `${formatDate(entry.from_date)} to ${formatDate(entry.to_date)}` : '—')}
-                    </td>
-                  </tr>
-                ))}
-                {(!ledger || ledger.transactions.length === 0) && (
-                  <tr>
-                    <td colSpan={4} className="py-4 text-center text-slate-400">
-                      No ledger entries found.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <tr>
+          <td colSpan={8} className="p-0 border-b border-slate-200">
+            <div className="bg-slate-50/80 p-4 shadow-inner">
+              <div className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500">Ledger Details</div>
+              <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="py-2 px-3 font-semibold text-slate-600">Date</th>
+                      <th className="py-2 px-3 font-semibold text-slate-600">Type</th>
+                      <th className="py-2 px-3 font-semibold text-slate-600">Delta</th>
+                      <th className="py-2 px-3 font-semibold text-slate-600">Details</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(ledger?.transactions ?? []).map((entry, index) => (
+                      <tr key={`${entry.entry_type}-${entry.event_date ?? 'na'}-${index}`} className="border-t border-slate-100 hover:bg-slate-50">
+                        <td className="py-2 px-3 text-slate-600 whitespace-nowrap">{formatDate(entry.event_date)}</td>
+                        <td className="py-2 px-3 font-medium text-slate-800">{entryLabel(entry)}</td>
+                        <td className={`py-2 px-3 font-mono font-medium ${asNumber(entry.delta) < 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                          {asNumber(entry.delta) >= 0 ? '+' : ''}
+                          {asNumber(entry.delta).toFixed(1)}
+                        </td>
+                        <td className="py-2 px-3 text-slate-600">
+                          {entry.reason || (entry.from_date && entry.to_date ? `${formatDate(entry.from_date)} to ${formatDate(entry.to_date)}` : '—')}
+                        </td>
+                      </tr>
+                    ))}
+                    {(!ledger || ledger.transactions.length === 0) && (
+                      <tr>
+                        <td colSpan={4} className="py-4 text-center text-slate-400 italic">
+                          No ledger entries found.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </td>
+        </tr>
       )}
-    </div>
+    </>
   );
 }
 
@@ -206,18 +184,41 @@ export function MyLeaveAccountPage() {
   const [balances, setBalances] = useState<BalanceRow[]>([]);
   const [ledgerMap, setLedgerMap] = useState<Record<string, LedgerResponse>>({});
   const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({});
-  const [projection, setProjection] = useState<Record<string, unknown> | null>(null);
   const [message, setMessage] = useState('');
   const [selectedBalanceId, setSelectedBalanceId] = useState('');
   const [adjustField, setAdjustField] = useState('credited');
   const [adjustAmount, setAdjustAmount] = useState('0');
   const [adjustReason, setAdjustReason] = useState('');
+  const [selectedYear, setSelectedYear] = useState<number | null>(null);
 
   const targetEmployeeId = selectedEmployee?.id ?? user?.employee_id ?? '';
   const selectedBalance = useMemo(
     () => balances.find((item) => item.id === selectedBalanceId) ?? null,
     [balances, selectedBalanceId]
   );
+
+  const uniqueYears = useMemo(() => {
+    const years = Array.from(new Set(balances.map(b => b.leave_year))).sort((a, b) => b - a);
+    return years;
+  }, [balances]);
+
+  useEffect(() => {
+    if (uniqueYears.length > 0 && (!selectedYear || !uniqueYears.includes(selectedYear))) {
+      setSelectedYear(uniqueYears[0]);
+    }
+  }, [uniqueYears, selectedYear]);
+
+  const filteredBalances = useMemo(() => {
+    if (!selectedYear) return [];
+    return balances.filter(b => b.leave_year === selectedYear);
+  }, [balances, selectedYear]);
+
+  useEffect(() => {
+    if (targetEmployeeId) {
+      void loadBalances(targetEmployeeId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetEmployeeId]);
 
   const loadBalances = async (employeeId = targetEmployeeId) => {
     if (!employeeId) {
@@ -228,7 +229,6 @@ export function MyLeaveAccountPage() {
     setBalances(data.balances || []);
     setLedgerMap({});
     setExpandedIds({});
-    setProjection(null);
     setSelectedBalanceId((data.balances || [])[0]?.id ?? '');
     setMessage('');
   };
@@ -249,23 +249,6 @@ export function MyLeaveAccountPage() {
       const { data } = await balApi.ledger(targetEmployeeId, balance.leave_type_id);
       setLedgerMap((current) => ({ ...current, [balance.leave_type_id]: data }));
     }
-  };
-
-  const runProjection = async () => {
-    const fromDate = (document.getElementById('proj-from') as HTMLInputElement).value;
-    const toDate = (document.getElementById('proj-to') as HTMLInputElement).value;
-    const leaveType = (document.getElementById('proj-lt') as HTMLInputElement).value;
-    if (!targetEmployeeId || !fromDate || !toDate || !leaveType) {
-      setMessage('Projection needs employee, leave type, from date, and to date.');
-      return;
-    }
-    const { data } = await balApi.project(targetEmployeeId, {
-      from_date: fromDate,
-      to_date: toDate,
-      leave_type_code: leaveType,
-    });
-    setProjection(data);
-    setMessage('');
   };
 
   const runManualAdjust = async () => {
@@ -331,26 +314,54 @@ export function MyLeaveAccountPage() {
               <div className="mt-1 text-sm text-slate-700">{user?.emp_code ?? user?.username}</div>
             </div>
           )}
-          <button onClick={() => void loadBalances()} className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
-            Load Account
-          </button>
         </div>
       </div>
 
       {balances.length > 0 && (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {balances.map((balance) => (
-            <BalanceCard
-              key={balance.id}
-              balance={balance}
-              expanded={!!expandedIds[balance.leave_type_id]}
-              onToggle={() => void toggleLedger(balance)}
-              ledger={ledgerMap[balance.leave_type_id]}
-              canAdjust={canAdminView}
-              selectedForAdjust={selectedBalanceId === balance.id}
-              onSelectAdjust={() => setSelectedBalanceId(balance.id)}
-            />
-          ))}
+        <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
+          <div className="px-4 py-3 border-b border-slate-200 flex justify-between items-center bg-slate-50">
+            <h3 className="text-sm font-semibold text-slate-700">Leave Balances</h3>
+            <div className="flex items-center gap-2">
+              <label htmlFor="year-select" className="text-sm font-medium text-slate-600">Leave Year:</label>
+              <select
+                id="year-select"
+                value={selectedYear || ''}
+                onChange={(e) => setSelectedYear(Number(e.target.value))}
+                className="rounded-md border border-slate-300 px-3 py-1.5 text-sm bg-white font-medium text-slate-700 shadow-sm"
+              >
+                {uniqueYears.map(year => (
+                  <option key={year} value={year}>{year}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <table className="w-full text-left">
+            <thead className="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th className="py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-500">Leave Type</th>
+                <th className="py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-500">Opening</th>
+                <th className="py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-500">Credited</th>
+                <th className="py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-500">Used</th>
+                <th className="py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-900">Available</th>
+                <th className="py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-500">Max</th>
+                <th className="py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-500">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredBalances.map((balance) => (
+                <BalanceTableRow
+                  key={balance.id}
+                  balance={balance}
+                  expanded={!!expandedIds[balance.leave_type_id]}
+                  onToggle={() => void toggleLedger(balance)}
+                  ledger={ledgerMap[balance.leave_type_id]}
+                  canAdjust={canAdminView}
+                  selectedForAdjust={selectedBalanceId === balance.id}
+                  onSelectAdjust={() => setSelectedBalanceId(balance.id)}
+                />
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -385,29 +396,6 @@ export function MyLeaveAccountPage() {
         </div>
       )}
 
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="mb-3 text-lg font-semibold text-slate-900">Balance Projection</div>
-        <div className="flex flex-wrap gap-2">
-          <input id="proj-lt" placeholder="Leave type code" defaultValue="EL" className="rounded-md border border-slate-300 px-3 py-2 text-sm" />
-          <input id="proj-from" type="date" className="rounded-md border border-slate-300 px-3 py-2 text-sm" />
-          <input id="proj-to" type="date" className="rounded-md border border-slate-300 px-3 py-2 text-sm" />
-          <button onClick={() => void runProjection()} className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">
-            Project
-          </button>
-        </div>
-        {projection && (
-          <div className="mt-4 rounded-lg bg-slate-50 p-4 text-sm text-slate-700">
-            <div className="flex flex-wrap items-center gap-4">
-              <span>Current: <strong>{String(projection.current_balance)}</strong></span>
-              <span>Requested: <strong>{String(projection.requested_days)}</strong></span>
-              <span>Projected: <strong>{String(projection.projected_balance)}</strong></span>
-              <span className="text-xs text-slate-500">
-                {projection.cached ? 'Cached result' : 'Fresh result'} · TTL {String(projection.cache_ttl_seconds)}s
-              </span>
-            </div>
-          </div>
-        )}
-      </div>
     </div>
   );
 }

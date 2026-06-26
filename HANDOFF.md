@@ -1,0 +1,106 @@
+# Project Handoff Status
+
+## Current State
+The AIIMS HRMS project has successfully completed Phase 8 and two additional post-phase feature sessions.
+
+---
+
+## Session Summary (2026-06-26)
+
+### 1. Notification Body Fix
+- **Bug:** Notification bell was displaying raw HTML tags as text (`<p>Dear...`) and garbled em-dashes (`â€"`) in subjects.
+- **Fix (frontend):** Added `stripHtml()` helper in `Phase678Pages.tsx` to strip HTML to clean plain text for the bell dropdown.
+- **Fix (backend):** Corrected mojibake encoding in `seeds/versions/005_email_templates.py` (UTF-8 em-dashes now stored correctly). Seed now **updates** existing rows on re-run.
+
+### 2. Nodal Routing System (New Feature)
+**Architecture:** Replaced the flat `ESTABLISHMENT_OFFICER → REGISTRAR` chain with a configurable, department-aware `HOD → NODAL_OFFICER` routing system.
+
+| Component | File | Change |
+|---|---|---|
+| Migration `0003` | `alembic/versions/0003_nodal_routing.py` | New `dept_nodal_assignments` table |
+| Model | `app/models/employee.py` | `DeptNodalAssignment` ORM model |
+| Auth scope | `app/auth/dependencies.py` | `NODAL_OFFICER` role gets dept-scoped employee view |
+| Leave approvals | `app/api/v1/leave_approvals.py` | `_resolve_approver_user` now department-aware for `NODAL_OFFICER`; inbox query uses nodal assignment JOIN; action auth validates dept mapping |
+| Seed `008` | `seeds/versions/008_nodal_routing_test_data.py` | Full 10×10 test dataset (see below) |
+
+**Leave workflow for nodal routing:**
+```
+Staff → HOD (dept, step 1) → NODAL_OFFICER (dept-specific, step 2, FINAL)
+```
+
+**Test accounts (all password: `password`):**
+| Username | Role |
+|---|---|
+| `admin` | ADMIN (central, no employee) |
+| `testStaff1`..`testStaff10` | STAFF |
+| `testHod1`..`testHod10` | HOD (one per dept) |
+| `testNodal1`..`testNodal10` | NODAL_OFFICER (one per dept, final) |
+
+Also seeded: `testDept1-10`, `testDesig1-10`, `testLeaveType1-10`, 100 leave balance records (15 days each).
+
+### 3. Staff Profile Page (New Feature)
+- **Route:** `/profile` — accessible to all logged-in users
+- **Nav link:** "My Profile" visible in the top nav for all roles
+- **File:** `frontend/src/pages/StaffProfilePage.tsx`
+
+**Features:**
+- Gradient hero card with initials avatar, role badge, dept/designation, total days available/availed
+- Employee details grid (emp code, gender, DOJ, DOB, email)
+- Quick action links: Apply Leave, My Applications, Full Leave Account
+- **Leave Balances tab:** card grid with progress bars showing available vs total per leave type (color-coded: red ≤3, amber ≤7, green >7)
+- **Recent Applications tab:** history table with status badges
+
+### 4. General Navigation & UI/UX Updates
+- **Top Navigation Bar (`App.tsx`):**
+  - Grouped Quick Actions (`Apply for Leave`, `My Applications`, `Leave Account`) into a premium, styled FAB/pill layout alongside the `My Profile` button.
+  - Hidden `Inbox` and `Year-End` from `STAFF` role to reduce clutter. Added corresponding RoleRoute guards.
+- **Leave Account View (`Phase5Pages.tsx`):**
+  - Removed bulky balance cards in favor of a clean, dense data table.
+  - Extracted the Financial Year into a global "Leave Year" dropdown filter (which necessitated updating the backend `get_balances` endpoint to return all years).
+  - Implemented auto-loading of balances on mount (removing the need for a manual "Load Account" click).
+  - Fully removed the overly complex "Balance Projection" feature to simplify the UX.
+
+---
+
+## Full Role Hierarchy
+
+| Role | Data Scope | Key Capability |
+|---|---|---|
+| `ADMIN` | All | System config, user mgmt, audit |
+| `DIRECTOR` | All | Read-only institutional view |
+| `REGISTRAR` | CCS staff | Approver in old chain; reports/payroll |
+| `ESTABLISHMENT_OFFICER` | CCS staff | Masters, employee CRUD, balances, reports |
+| `DEAN_ACADEMIC` | Residents | Final approver for resident leave |
+| `HOD` | Own department | First-stage approver |
+| `NODAL_OFFICER` | Assigned depts | Final approver in nodal chain |
+| `STAFF` | Own record | Apply leave, view balances |
+
+---
+
+## Available Features
+- JWT Authentication with mandatory first-login password change, account lockout, token blacklist
+- Core Entities: Departments, Designations, Employees, bulk CSV import
+- Dynamic Multi-stage Leave Workflows (configurable; supports HOD → Nodal and HOD → Estab → Registrar)
+- **Configurable dept→nodal officer mapping** (`dept_nodal_assignments` table)
+- Robust Leave Balance arithmetic with concurrent protections
+- Automated in-app + email notifications (HTML templates, encoding fixed)
+- Security: rate-limiting (SlowAPI), strict RBAC, employee data scoping
+- Sanction PDF generation & payroll CSV exports
+- Reports: leave register, abstract, balance summary, leave calendar
+- **Staff Profile Page** at `/profile`
+- Admin dashboard with audit log, health metrics, force-logout
+
+---
+
+## Running Locally
+
+| Service | Command | URL |
+|---|---|---|
+| Backend | `cd backend && .venv\Scripts\python.exe -m uvicorn main:app --reload` | http://127.0.0.1:8000 |
+| Frontend | `cd frontend && npm run dev` | http://localhost:5173 |
+| Seed data | `cd backend && .venv\Scripts\python.exe seeds\run.py` | — |
+| Migrations | `cd backend && .venv\Scripts\python.exe -m alembic upgrade head` | — |
+
+## Next Steps
+The project is functionally complete with the nodal routing and profile page additions.
+Reference `docs/GO_LIVE_RUNBOOK.md` for production deployment instructions.

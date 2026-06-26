@@ -52,6 +52,18 @@ async def expect_forbidden(client: httpx.AsyncClient, path: str, headers: dict[s
 async def main() -> None:
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
+    from app.core.config import settings
+    from app.auth.jwt import hash_password
+    from sqlalchemy import create_engine, text
+
+    engine = create_engine(settings.DATABASE_URL_SYNC)
+    with engine.connect() as conn:
+        conn.execute(
+            text("UPDATE users SET password_hash = :ph, failed_login_attempts = 0, locked_until = NULL, must_change_password = false WHERE username = 'admin'"),
+            {"ph": hash_password("password")},
+        )
+        conn.commit()
+
     from main import app
 
     transport = httpx.ASGITransport(app=app)

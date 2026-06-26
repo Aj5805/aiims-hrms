@@ -9,7 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.jwt import hash_password
-from app.auth.dependencies import get_current_user, require_role
+from app.auth.dependencies import get_current_user, require_role, employee_scope
 from app.core.database import get_db
 from app.core.upload_validation import validate_import_upload
 from sqlalchemy.exc import IntegrityError
@@ -24,7 +24,7 @@ from app.schemas import (
 router = APIRouter(prefix="/employees", tags=["employees"])
 
 _VIEWER_ROLES = ("ADMIN", "ESTABLISHMENT_OFFICER", "REGISTRAR", "DIRECTOR", "HOD", "DEAN_ACADEMIC")
-_EDITOR_ROLES = ("ADMIN", "ESTABLISHMENT_OFFICER")
+_EDITOR_ROLES = ("ADMIN", "ESTABLISHMENT_OFFICER", "REGISTRAR")
 
 
 async def _fetch_employee(db: AsyncSession, employee_id: str) -> EmployeeResponse:
@@ -67,6 +67,7 @@ async def list_employees(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     _: dict = Depends(require_role(*_VIEWER_ROLES)),
+    scope: dict = Depends(employee_scope),
     db: AsyncSession = Depends(get_db),
 ):
     query = """
@@ -83,6 +84,13 @@ async def list_employees(
         WHERE 1=1
     """
     params: dict = {}
+
+    if scope["scope"] != "all":
+        if not scope["employee_ids"]:
+            return []
+        query += " AND e.id = ANY(:allowed_ids)"
+        params["allowed_ids"] = scope["employee_ids"]
+
     if search:
         query += " AND (e.name ILIKE :search OR e.emp_code ILIKE :search)"
         params["search"] = f"%{search}%"
@@ -118,9 +126,19 @@ async def list_employees(
 @router.get("/{employee_id}", response_model=EmployeeResponse)
 async def get_employee(
     employee_id: str,
-    _: dict = Depends(require_role(*_VIEWER_ROLES)),
+    current_user: dict = Depends(get_current_user),
+    scope: dict = Depends(employee_scope),
     db: AsyncSession = Depends(get_db),
 ):
+    user_res = await db.execute(
+        text("SELECT employee_id FROM users WHERE id = :uid"),
+        {"uid": current_user["user_id"]}
+    )
+    user_row = user_res.fetchone()
+    own_emp_id = str(user_row[0]) if user_row and user_row[0] else None
+
+    if scope["scope"] != "all" and employee_id != own_emp_id and employee_id not in (scope["employee_ids"] or []):
+        raise HTTPException(status_code=403, detail="Not authorized to view this employee")
     return await _fetch_employee(db, employee_id)
 
 

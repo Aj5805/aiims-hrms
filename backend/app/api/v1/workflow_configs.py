@@ -13,9 +13,12 @@ from app.core.database import get_db
 router = APIRouter(prefix="/workflow-configs", tags=["workflow-configs"])
 
 
+_MASTER_VIEWER_ROLES = ("ADMIN", "ESTABLISHMENT_OFFICER", "REGISTRAR", "DIRECTOR", "HOD", "DEAN_ACADEMIC")
+
+
 @router.get("")
 async def list_configs(
-    _: dict = Depends(require_role("ADMIN", "ESTABLISHMENT_OFFICER", "REGISTRAR", "DIRECTOR")),
+    _: dict = Depends(require_role(*_MASTER_VIEWER_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(text("SELECT * FROM workflow_configs ORDER BY config_name"))
@@ -133,7 +136,7 @@ async def delete_step(
 @router.post("/simulate")
 async def simulate_workflow(
     body: dict,
-    _: dict = Depends(require_role("ADMIN", "ESTABLISHMENT_OFFICER", "REGISTRAR", "DIRECTOR")),
+    _: dict = Depends(require_role(*_MASTER_VIEWER_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
     """Given category_code, leave_type_code, and days, return the matching workflow chain."""

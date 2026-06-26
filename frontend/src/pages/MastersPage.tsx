@@ -7,24 +7,34 @@ interface Desg { id: string; name: string; grade_pay_level?: string; category_co
 export default function MastersPage() {
   const [tab, setTab] = useState<'dept' | 'desg'>('dept');
   return (
-    <div>
-      <div className="flex gap-2 mb-4">
-        <button
-          id="tab-departments"
-          onClick={() => setTab('dept')}
-          className={`px-4 py-2 rounded text-sm font-medium ${tab === 'dept' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}
-        >
-          Departments
-        </button>
-        <button
-          id="tab-designations"
-          onClick={() => setTab('desg')}
-          className={`px-4 py-2 rounded text-sm font-medium ${tab === 'desg' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}
-        >
-          Designations
-        </button>
+    <div className="max-w-7xl mx-auto space-y-6">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="border-b border-gray-200 px-6 py-4 flex flex-wrap gap-4 justify-between items-center bg-gray-50">
+          <div>
+            <h2 className="text-xl font-bold text-gray-800">Masters Configuration</h2>
+            <p className="text-sm text-gray-500 mt-1">Manage system departments and designations.</p>
+          </div>
+          <div className="flex gap-2 bg-gray-200/50 p-1 rounded-lg">
+            <button
+              id="tab-departments"
+              onClick={() => setTab('dept')}
+              className={`px-4 py-2 text-sm font-medium rounded-md transition ${tab === 'dept' ? 'bg-white shadow-sm text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}
+            >
+              Departments
+            </button>
+            <button
+              id="tab-designations"
+              onClick={() => setTab('desg')}
+              className={`px-4 py-2 text-sm font-medium rounded-md transition ${tab === 'desg' ? 'bg-white shadow-sm text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}
+            >
+              Designations
+            </button>
+          </div>
+        </div>
+        <div className="p-6">
+          {tab === 'dept' ? <DepartmentTab /> : <DesignationTab />}
+        </div>
       </div>
-      {tab === 'dept' ? <DepartmentTab /> : <DesignationTab />}
     </div>
   );
 }
@@ -50,20 +60,46 @@ function DepartmentTab() {
   };
 
   return (
-    <div>
-      <form onSubmit={create} className="flex gap-2 mb-4">
-        <input id="dept-code" placeholder="Code" value={code} onChange={(e) => setCode(e.target.value)} className="border rounded px-3 py-2 w-24" required />
-        <input id="dept-name" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} className="border rounded px-3 py-2 flex-1" required />
-        <input id="dept-office" placeholder="Office" value={office} onChange={(e) => setOffice(e.target.value)} className="border rounded px-3 py-2 w-40" />
-        <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm">Add</button>
-      </form>
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50"><tr><th className="px-4 py-2 text-left">Code</th><th className="px-4 py-2 text-left">Name</th><th className="px-4 py-2 text-left">Office</th></tr></thead>
-          <tbody>
+    <div className="space-y-6">
+      <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+        <h3 className="text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wider">Add New Department</h3>
+        <form onSubmit={create} className="flex flex-wrap gap-3 items-end">
+          <div className="flex-1 min-w-[120px]">
+            <label className="block text-xs font-medium text-gray-600 mb-1">Code *</label>
+            <input id="dept-code" placeholder="e.g. CS" value={code} onChange={(e) => setCode(e.target.value)} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" required />
+          </div>
+          <div className="flex-[2] min-w-[200px]">
+            <label className="block text-xs font-medium text-gray-600 mb-1">Name *</label>
+            <input id="dept-name" placeholder="Computer Science" value={name} onChange={(e) => setName(e.target.value)} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" required />
+          </div>
+          <div className="flex-1 min-w-[150px]">
+            <label className="block text-xs font-medium text-gray-600 mb-1">Managing Office</label>
+            <input id="dept-office" placeholder="Dean's Office" value={office} onChange={(e) => setOffice(e.target.value)} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+          <button type="submit" className="bg-blue-600 text-white px-5 py-2 rounded-md hover:bg-blue-700 text-sm font-medium transition shadow-sm h-[38px]">Add</button>
+        </form>
+      </div>
+
+      <div className="border border-gray-200 rounded-lg overflow-hidden">
+        <table className="min-w-full text-sm">
+          <thead className="bg-gray-50 border-b border-gray-200 text-gray-500 uppercase tracking-wider text-xs">
+            <tr>
+              <th className="px-6 py-3 text-left font-medium">Code</th>
+              <th className="px-6 py-3 text-left font-medium">Name</th>
+              <th className="px-6 py-3 text-left font-medium">Managing Office</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
             {depts.map((d) => (
-              <tr key={d.id} className="border-t"><td className="px-4 py-2">{d.code}</td><td className="px-4 py-2">{d.name}</td><td className="px-4 py-2 text-gray-500">{d.managing_office || '-'}</td></tr>
+              <tr key={d.id} className="hover:bg-gray-50 transition">
+                <td className="px-6 py-4 font-mono text-xs text-gray-600">{d.code}</td>
+                <td className="px-6 py-4 font-medium text-gray-900">{d.name}</td>
+                <td className="px-6 py-4 text-gray-500">{d.managing_office || '-'}</td>
+              </tr>
             ))}
+            {depts.length === 0 && (
+              <tr><td colSpan={3} className="px-6 py-12 text-center text-gray-400 bg-gray-50/50">No departments configured.</td></tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -92,20 +128,52 @@ function DesignationTab() {
   };
 
   return (
-    <div>
-      <form onSubmit={create} className="flex gap-2 mb-4">
-        <input id="desg-name" placeholder="Designation Name" value={name} onChange={(e) => setName(e.target.value)} className="border rounded px-3 py-2 flex-1" required />
-        <input id="desg-pay" placeholder="Pay Level" value={payLevel} onChange={(e) => setPayLevel(e.target.value)} className="border rounded px-3 py-2 w-32" />
-        <input id="desg-cat" placeholder="Category Code" value={catCode} onChange={(e) => setCatCode(e.target.value)} className="border rounded px-3 py-2 w-32" />
-        <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm">Add</button>
-      </form>
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50"><tr><th className="px-4 py-2 text-left">Name</th><th className="px-4 py-2 text-left">Pay Level</th><th className="px-4 py-2 text-left">Category</th></tr></thead>
-          <tbody>
+    <div className="space-y-6">
+      <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+        <h3 className="text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wider">Add New Designation</h3>
+        <form onSubmit={create} className="flex flex-wrap gap-3 items-end">
+          <div className="flex-[2] min-w-[200px]">
+            <label className="block text-xs font-medium text-gray-600 mb-1">Designation Name *</label>
+            <input id="desg-name" placeholder="Assistant Professor" value={name} onChange={(e) => setName(e.target.value)} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" required />
+          </div>
+          <div className="flex-1 min-w-[120px]">
+            <label className="block text-xs font-medium text-gray-600 mb-1">Pay Level</label>
+            <input id="desg-pay" placeholder="Level 10" value={payLevel} onChange={(e) => setPayLevel(e.target.value)} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+          <div className="flex-1 min-w-[120px]">
+            <label className="block text-xs font-medium text-gray-600 mb-1">Category Code</label>
+            <input id="desg-cat" placeholder="FACULTY" value={catCode} onChange={(e) => setCatCode(e.target.value)} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+          <button type="submit" className="bg-blue-600 text-white px-5 py-2 rounded-md hover:bg-blue-700 text-sm font-medium transition shadow-sm h-[38px]">Add</button>
+        </form>
+      </div>
+
+      <div className="border border-gray-200 rounded-lg overflow-hidden">
+        <table className="min-w-full text-sm">
+          <thead className="bg-gray-50 border-b border-gray-200 text-gray-500 uppercase tracking-wider text-xs">
+            <tr>
+              <th className="px-6 py-3 text-left font-medium">Designation Name</th>
+              <th className="px-6 py-3 text-left font-medium">Pay Level</th>
+              <th className="px-6 py-3 text-left font-medium">Category Code</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
             {desgs.map((d) => (
-              <tr key={d.id} className="border-t"><td className="px-4 py-2">{d.name}</td><td className="px-4 py-2 text-gray-500">{d.grade_pay_level || '-'}</td><td className="px-4 py-2 text-gray-500">{d.category_code || '-'}</td></tr>
+              <tr key={d.id} className="hover:bg-gray-50 transition">
+                <td className="px-6 py-4 font-medium text-gray-900">{d.name}</td>
+                <td className="px-6 py-4 text-gray-500">{d.grade_pay_level || '-'}</td>
+                <td className="px-6 py-4 text-gray-500">
+                  {d.category_code ? (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800">
+                      {d.category_code}
+                    </span>
+                  ) : '-'}
+                </td>
+              </tr>
             ))}
+            {desgs.length === 0 && (
+              <tr><td colSpan={3} className="px-6 py-12 text-center text-gray-400 bg-gray-50/50">No designations configured.</td></tr>
+            )}
           </tbody>
         </table>
       </div>

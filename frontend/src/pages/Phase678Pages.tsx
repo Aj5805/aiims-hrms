@@ -125,6 +125,13 @@ function formatDateTime(value?: string | null): string {
   return parsed.toLocaleString();
 }
 
+/** Strip HTML tags and decode entities for plain-text notification previews. */
+function stripHtml(html: string): string {
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  return (tmp.textContent ?? tmp.innerText ?? '').trim();
+}
+
 function saveBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
@@ -329,7 +336,7 @@ export function NotificationBell() {
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="text-sm font-medium text-slate-900">{item.subject || 'HRMS notification'}</div>
-                      <div className="mt-1 text-xs text-slate-600">{item.body || 'No message body provided.'}</div>
+                      <div className="mt-1 text-xs text-slate-600">{item.body ? stripHtml(item.body) : 'No message body provided.'}</div>
                       {item.app_number && <div className="mt-1 text-xs text-slate-500">Application: {item.app_number}</div>}
                       <div className="mt-1 text-[11px] text-slate-400">{formatDateTime(item.created_at)}</div>
                     </div>

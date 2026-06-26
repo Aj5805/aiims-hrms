@@ -2,7 +2,7 @@
 
 from app.models.base import Base
 from app.models.identity import User, TokenBlacklist
-from app.models.employee import EmployeeCategory, Department, Designation, Employee
+from app.models.employee import EmployeeCategory, Department, DeptNodalAssignment, Designation, Employee
 from app.models.leave_config import LeaveType, LeaveEntitlementRule, HolidayMaster
 from app.models.leave_transaction import LeaveBalance, LeaveApplication, LeaveDocument
 from app.models.workflow import WorkflowConfig, WorkflowStep, LeaveApproval
@@ -20,6 +20,7 @@ __all__ = [
     "Department",
     "Designation",
     "Employee",
+    "DeptNodalAssignment",
     # Leave Config
     "LeaveType",
     "LeaveEntitlementRule",

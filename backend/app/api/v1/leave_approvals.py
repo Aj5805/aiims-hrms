@@ -25,7 +25,12 @@ def _format_date(value: str | None):
     return value.isoformat() if value else None
 
 
-async def _resolve_approver_user(db: AsyncSession, config_id: str, step_order: int):
+async def _resolve_approver_user(db: AsyncSession, config_id: str, step_order: int, employee_id: str | None = None):
+    """Resolve which user should act on the given workflow step.
+
+    For NODAL_OFFICER steps, looks up dept_nodal_assignments using the
+    applicant's department — enabling per-department routing.
+    """
     step_result = await db.execute(
         text("SELECT id, approver_role, specific_approver_id FROM workflow_steps WHERE config_id = :cid AND step_order = :so LIMIT 1"),
         {"cid": config_id, "so": step_order},
@@ -34,11 +39,33 @@ async def _resolve_approver_user(db: AsyncSession, config_id: str, step_order: i
     if not step_row:
         return None
     step_dict = dict(step_row._mapping)
+
     if step_dict.get("specific_approver_id"):
         return str(step_dict["specific_approver_id"])
+
+    approver_role = step_dict["approver_role"]
+
+    # Department-aware routing for NODAL_OFFICER
+    if approver_role == "NODAL_OFFICER" and employee_id:
+        nodal_result = await db.execute(
+            text("""
+                SELECT dna.nodal_user_id
+                FROM dept_nodal_assignments dna
+                JOIN employees e ON e.department_id = dna.department_id
+                WHERE e.id = :eid AND dna.is_active = true
+                ORDER BY dna.assigned_at DESC
+                LIMIT 1
+            """),
+            {"eid": employee_id},
+        )
+        nodal_row = nodal_result.fetchone()
+        if nodal_row and nodal_row[0]:
+            return str(nodal_row[0])
+        return None
+
     user_result = await db.execute(
         text("SELECT id FROM users WHERE role = :role AND is_active = true ORDER BY created_at LIMIT 1"),
-        {"role": step_dict["approver_role"]},
+        {"role": approver_role},
     )
     user_row = user_result.fetchone()
     return str(user_row[0]) if user_row and user_row[0] else None
@@ -76,7 +103,19 @@ async def approval_inbox(current_user: dict = Depends(get_current_user), db: Asy
         JOIN leave_types lt ON a.leave_type_id = lt.id
         JOIN workflow_steps ws ON ws.config_id = a.config_id AND ws.step_order = a.current_step_order
         WHERE a.status IN ('SUBMITTED', 'UNDER_REVIEW')
-          AND (ws.approver_role = :role OR (ws.approver_role = 'SPECIFIC_USER' AND ws.specific_approver_id = :uid))
+          AND (
+            (ws.approver_role = :role AND ws.approver_role != 'NODAL_OFFICER')
+            OR (ws.approver_role = 'SPECIFIC_USER' AND ws.specific_approver_id = :uid)
+            OR (
+                ws.approver_role = 'NODAL_OFFICER'
+                AND EXISTS (
+                    SELECT 1 FROM dept_nodal_assignments dna
+                    WHERE dna.nodal_user_id = :uid
+                      AND dna.is_active = true
+                      AND dna.department_id = e.department_id
+                )
+            )
+          )
           AND NOT EXISTS (
               SELECT 1 FROM leave_approvals la
               WHERE la.application_id = a.id AND la.step_id = ws.id AND la.approver_id = :uid
@@ -134,6 +173,19 @@ async def approve_action(application_id: str, body: dict, current_user: dict = D
     if step_dict["approver_role"] == "SPECIFIC_USER":
         if str(step_dict.get("specific_approver_id")) != str(current_user["user_id"]):
             raise HTTPException(status_code=403, detail="Not authorized to approve this step (Specific User mismatch)")
+    elif step_dict["approver_role"] == "NODAL_OFFICER":
+        # Check that this user is the nodal officer for the applicant's department
+        nodal_check = await db.execute(
+            text("""
+                SELECT 1 FROM dept_nodal_assignments dna
+                JOIN employees e ON e.department_id = dna.department_id
+                WHERE e.id = :eid AND dna.nodal_user_id = :uid AND dna.is_active = true
+                LIMIT 1
+            """),
+            {"eid": str(app_row.employee_id), "uid": user_id},
+        )
+        if not nodal_check.fetchone():
+            raise HTTPException(status_code=403, detail="Not authorized — you are not the nodal officer for this department")
     elif step_dict["approver_role"] != current_user["role"]:
         raise HTTPException(status_code=403, detail="Not authorized to approve this step")
 
@@ -185,7 +237,7 @@ async def approve_action(application_id: str, body: dict, current_user: dict = D
             applicant_user_id = await _resolve_applicant_user(db, str(app_row.employee_id))
             next_approver_id = None
             if not is_final:
-                next_approver_id = await _resolve_approver_user(db, str(app_row.config_id), app_row.current_step_order + 1)
+                next_approver_id = await _resolve_approver_user(db, str(app_row.config_id), app_row.current_step_order + 1, str(app_row.employee_id))
             notify_context = _build_notification_context(app_row, "UNDER_REVIEW" if not is_final else "APPROVED", remarks)
             notify_context.update({
                 "recipient_id": applicant_user_id,
@@ -224,7 +276,7 @@ async def approve_action(application_id: str, body: dict, current_user: dict = D
         base_notify_context.update({"status": "APPROVED", "recipient_id": applicant_user_id})
         await notify_event(db, "APP_APPROVED", application_id, base_notify_context)
     elif action == "APPROVED" and not step_dict.get("is_final_authority", False):
-        next_approver_id = await _resolve_approver_user(db, str(app_row.config_id), app_row.current_step_order + 1)
+        next_approver_id = await _resolve_approver_user(db, str(app_row.config_id), app_row.current_step_order + 1, str(app_row.employee_id))
         base_notify_context.update({"status": "UNDER_REVIEW", "approver_id": next_approver_id})
         await notify_event(db, "APPROVAL_REQUEST", application_id, base_notify_context)
 

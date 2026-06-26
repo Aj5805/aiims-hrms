@@ -37,6 +37,15 @@ def set_deterministic_admin_password() -> None:
 
     engine = create_engine(settings.DATABASE_URL_SYNC)
     with engine.connect() as conn:
+        # Clean up stale data from previous Phase 5 test runs to ensure repeatability
+        conn.execute(sa_text("DELETE FROM leave_approvals WHERE application_id IN (SELECT id FROM leave_applications WHERE employee_id IN (SELECT id FROM employees WHERE emp_code LIKE 'HRMS40%'))"))
+        conn.execute(sa_text("DELETE FROM leave_applications WHERE employee_id IN (SELECT id FROM employees WHERE emp_code LIKE 'HRMS40%')"))
+        conn.execute(sa_text("DELETE FROM leave_balances WHERE employee_id IN (SELECT id FROM employees WHERE emp_code LIKE 'HRMS40%') OR leave_year IN (2027, 2028)"))
+        conn.execute(sa_text("DELETE FROM users WHERE employee_id IN (SELECT id FROM employees WHERE emp_code LIKE 'HRMS40%')"))
+        conn.execute(sa_text("DELETE FROM employees WHERE emp_code LIKE 'HRMS40%'"))
+        conn.execute(sa_text("DELETE FROM holiday_master WHERE holiday_name = 'Projection Test Holiday'"))
+        conn.execute(sa_text("UPDATE users SET failed_login_attempts = 0, locked_until = NULL, is_active = true"))
+
         result = conn.execute(
             sa_text(
                 "UPDATE users SET password_hash = :ph, must_change_password = false "

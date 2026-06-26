@@ -78,6 +78,12 @@ class EmployeeUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class SelfEmployeeUpdate(BaseModel):
+    email: Optional[str] = None
+    personal_email: Optional[str] = None
+    model_config = ConfigDict(extra="forbid")
+
+
 class EmployeeResponse(BaseModel):
     id: str
     emp_code: str

@@ -44,6 +44,22 @@ def reset_staff_account() -> None:
     )
 
 
+def reset_admin_account() -> None:
+    sync_execute(
+        """
+        UPDATE users
+        SET password_hash = :password_hash,
+            failed_login_attempts = 0,
+            locked_until = NULL,
+            must_change_password = false,
+            is_active = true
+        WHERE username = 'admin'
+        """,
+        {"password_hash": hash_password("password")},
+    )
+
+
+
 def get_staff_lock_state() -> tuple[int, object]:
     row = sync_execute(
         "SELECT failed_login_attempts, locked_until FROM users WHERE username = 'staff'"
@@ -72,10 +88,15 @@ async def main() -> None:
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
     print("\n=== Phase 8 Security Proof ===")
+    
+    # Explicitly enable rate limiting for the security proof checks
+    from app.core.rate_limit import limiter
+    limiter.enabled = True
 
     from main import app
 
     print("\n--- Lockout check ---")
+    reset_admin_account()
     reset_staff_account()
     for index in range(5):
         response = await login_with_ip("staff", "wrong-pass", f"10.0.1.{index + 1}")

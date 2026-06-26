@@ -93,26 +93,24 @@ async def employee_scope(
     row = result.fetchone()
     emp_id = str(row[0]) if row and row[0] else None
 
+    res = {"scope": "none", "employee_ids": []}
+
     if role == "STAFF":
-        return {"scope": "own", "employee_ids": [emp_id] if emp_id else []}
-
-    if role == "HOD":
-        if not emp_id:
-            return {"scope": "none", "employee_ids": []}
-        dept_result = await db.execute(
-            text("SELECT department_id FROM employees WHERE id = :eid"),
-            {"eid": emp_id},
-        )
-        dept_row = dept_result.fetchone()
-        if not dept_row:
-            return {"scope": "none", "employee_ids": []}
-        sub_result = await db.execute(
-            text("SELECT id FROM employees WHERE department_id = :did"),
-            {"did": str(dept_row[0])},
-        )
-        return {"scope": "department", "employee_ids": [str(r[0]) for r in sub_result.fetchall()]}
-
-    if role == "DEAN_ACADEMIC":
+        res = {"scope": "own", "employee_ids": [emp_id] if emp_id else []}
+    elif role == "HOD":
+        if emp_id:
+            dept_result = await db.execute(
+                text("SELECT department_id FROM employees WHERE id = :eid"),
+                {"eid": emp_id},
+            )
+            dept_row = dept_result.fetchone()
+            if dept_row:
+                sub_result = await db.execute(
+                    text("SELECT id FROM employees WHERE department_id = :did"),
+                    {"did": str(dept_row[0])},
+                )
+                res = {"scope": "department", "employee_ids": [str(r[0]) for r in sub_result.fetchall()]}
+    elif role == "DEAN_ACADEMIC":
         res_result = await db.execute(
             text("""
                 SELECT e.id FROM employees e
@@ -120,9 +118,8 @@ async def employee_scope(
                 WHERE c.leave_scheme = 'RESIDENCY'
             """),
         )
-        return {"scope": "residents", "employee_ids": [str(r[0]) for r in res_result.fetchall()]}
-
-    if role in ("ESTABLISHMENT_OFFICER", "REGISTRAR"):
+        res = {"scope": "residents", "employee_ids": [str(r[0]) for r in res_result.fetchall()]}
+    elif role == "ESTABLISHMENT_OFFICER":
         reg_result = await db.execute(
             text("""
                 SELECT e.id FROM employees e
@@ -130,9 +127,31 @@ async def employee_scope(
                 WHERE c.leave_scheme = 'CCS'
             """),
         )
-        return {"scope": "regular", "employee_ids": [str(r[0]) for r in reg_result.fetchall()]}
+        res = {"scope": "regular", "employee_ids": [str(r[0]) for r in reg_result.fetchall()]}
+    elif role == "REGISTRAR":
+        reg_result = await db.execute(
+            text("""
+                SELECT e.id FROM employees e
+                JOIN employee_categories c ON e.category_id = c.id
+                WHERE c.leave_scheme = 'RESIDENCY'
+            """),
+        )
+        res = {"scope": "residents", "employee_ids": [str(r[0]) for r in reg_result.fetchall()]}
+    elif role == "NODAL_OFFICER":
+        nodal_result = await db.execute(
+            text("""
+                SELECT DISTINCT e.id FROM employees e
+                JOIN dept_nodal_assignments dna ON dna.department_id = e.department_id
+                WHERE dna.nodal_user_id = :uid AND dna.is_active = true
+            """),
+            {"uid": user_id},
+        )
+        res = {"scope": "nodal_departments", "employee_ids": [str(r[0]) for r in nodal_result.fetchall()]}
 
-    return {"scope": "none", "employee_ids": []}
+    if res["employee_ids"] is not None and emp_id and emp_id not in res["employee_ids"]:
+        res["employee_ids"].append(emp_id)
+
+    return res
 
 
 def require_role(*roles: str):
