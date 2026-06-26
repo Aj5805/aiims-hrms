@@ -1,24 +1,24 @@
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../stores';
+import { PageHeader } from '../components/PageHeader';
 
 export default function HomeDashboardPage() {
   const user = useAuthStore((s) => s.user);
 
   return (
-    <div className="max-w-6xl mx-auto space-y-8 py-6">
-      {/* Welcome Banner */}
-      <div className="rounded-xl bg-gradient-to-r from-blue-700 to-blue-900 p-6 text-white shadow-md flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold mb-1">Welcome, {user?.username}</h1>
-          <p className="text-blue-100 text-sm">Centralized Human Resources Management System</p>
-        </div>
-        <div className="hidden sm:block text-right">
-          <div className="text-xs text-blue-200 uppercase tracking-wider font-semibold mb-1">Current Role</div>
-          <div className="inline-block bg-white/20 backdrop-blur-sm px-3 py-1 rounded-lg text-sm font-bold">
-            {(user?.role ?? '').replace('_', ' ')}
+    <div className="max-w-6xl mx-auto space-y-6 py-6">
+      <PageHeader
+        title={`Welcome, ${user?.username}`}
+        description="Centralized Human Resources Management System"
+        rightContent={
+          <div className="hidden sm:block text-right">
+            <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">Current Role</div>
+            <div className="inline-block bg-blue-50 text-blue-700 px-3 py-1 rounded-lg text-sm font-bold border border-blue-100">
+              {(user?.role ?? '').replace('_', ' ')}
+            </div>
           </div>
-        </div>
-      </div>
+        }
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <DashboardCard 

@@ -12,6 +12,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../api/client';
 import { useAuthStore } from '../stores';
+import { PageHeader } from '../components/PageHeader';
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
 
@@ -223,44 +224,42 @@ export default function LeaveDashboardPage() {
     <div className="space-y-6">
 
       {/* ── Hero Card ─────────────────────────────────────────── */}
-      <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-slate-800 via-slate-700 to-blue-900 p-5 text-white shadow-md">
-        {/* decorative circles */}
-        <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-white/5" />
-        <div className="pointer-events-none absolute -bottom-12 -left-12 h-32 w-32 rounded-full bg-blue-500/10" />
-
-        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center">
-          {/* Avatar initials */}
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-white/10 text-xl font-bold backdrop-blur-sm ring-1 ring-white/20">
-            {emp.name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()}
+      <PageHeader
+        breadcrumbs={[
+          { label: 'Home', to: '/' },
+          { label: 'Leave & Attendance' }
+        ]}
+        icon={emp.name.charAt(0).toUpperCase()}
+        title={
+          <div className="flex items-center gap-2">
+            {emp.name}
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white ${roleColor}`}>
+              {(user?.role ?? '').replace('_', ' ')}
+            </span>
+            {!emp.is_active && (
+              <span className="rounded-full bg-red-100 text-red-700 px-2 py-0.5 text-[10px] font-semibold">Inactive</span>
+            )}
           </div>
-
-          <div className="flex-1 min-w-0">
-            <div className="flex flex-wrap items-center gap-2 mb-0.5">
-              <h1 className="text-xl font-bold tracking-tight">{emp.name}</h1>
-              <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${roleColor}`}>
-                {(user?.role ?? '').replace('_', ' ')}
-              </span>
-              {!emp.is_active && (
-                <span className="rounded-full bg-red-500/80 px-2 py-0.5 text-[10px] font-semibold">Inactive</span>
-              )}
-            </div>
-            <p className="text-blue-200 text-xs mb-0.5">{emp.designation_name}</p>
-            <p className="text-slate-300 text-xs">{emp.department_name} · {emp.category_name}</p>
-          </div>
-
-          {/* Quick stats */}
-          <div className="flex gap-4 sm:flex-col sm:text-right shrink-0">
+        }
+        description={
+          <>
+            <div className="text-slate-600 mb-0.5">{emp.designation_name}</div>
+            <div className="text-slate-400">{emp.department_name} · {emp.category_name}</div>
+          </>
+        }
+        rightContent={
+          <div className="flex gap-6 text-center sm:text-right">
             <div>
-              <div className="text-2xl font-bold text-emerald-300">{totalAvailable.toFixed(0)}</div>
-              <div className="text-xs text-slate-400">Days Available</div>
+              <div className="text-2xl font-bold text-emerald-600">{totalAvailable.toFixed(0)}</div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Available</div>
             </div>
             <div>
-              <div className="text-2xl font-bold text-amber-300">{totalAvailed.toFixed(0)}</div>
-              <div className="text-xs text-slate-400">Days Availed</div>
+              <div className="text-2xl font-bold text-amber-500">{totalAvailed.toFixed(0)}</div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Availed</div>
             </div>
           </div>
-        </div>
-      </div>
+        }
+      />
 
       {/* ── Quick Actions ──────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-3">

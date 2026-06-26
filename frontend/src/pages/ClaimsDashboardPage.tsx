@@ -1,17 +1,22 @@
 import { Link } from 'react-router-dom';
+import { PageHeader } from '../components/PageHeader';
 
 export default function ClaimsDashboardPage() {
   return (
-    <div className="max-w-6xl mx-auto space-y-8 py-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Claims & Advances</h1>
-          <p className="text-sm text-slate-500">Manage your financial claims, reimbursements, and allowances.</p>
-        </div>
-        <div className="bg-amber-50 text-amber-700 px-4 py-2 rounded-xl border border-amber-200 text-sm font-semibold">
-          0 Pending
-        </div>
-      </div>
+    <div className="max-w-6xl mx-auto space-y-6 py-6">
+      <PageHeader
+        breadcrumbs={[
+          { label: 'Home', to: '/' },
+          { label: 'Claims & Advances' }
+        ]}
+        title="Claims & Advances"
+        description="Manage your financial claims, reimbursements, and allowances."
+        rightContent={
+          <div className="bg-amber-50 text-amber-700 px-4 py-2 rounded-xl border border-amber-200 text-sm font-semibold">
+            0 Pending
+          </div>
+        }
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <DashboardCard 

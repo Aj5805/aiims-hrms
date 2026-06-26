@@ -1,14 +1,17 @@
 import { Link } from 'react-router-dom';
+import { PageHeader } from '../components/PageHeader';
 
 export default function PerformanceDashboardPage() {
   return (
-    <div className="max-w-6xl mx-auto space-y-8 py-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Performance & Appraisals</h1>
-          <p className="text-sm text-slate-500">Manage your APAR and mandatory training logs.</p>
-        </div>
-      </div>
+    <div className="max-w-6xl mx-auto space-y-6 py-6">
+      <PageHeader
+        breadcrumbs={[
+          { label: 'Home', to: '/' },
+          { label: 'Performance & Appraisals' }
+        ]}
+        title="Performance & Appraisals"
+        description="Manage your APAR and mandatory training logs."
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <DashboardCard 

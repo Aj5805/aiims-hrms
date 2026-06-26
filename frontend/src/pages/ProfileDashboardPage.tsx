@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../stores';
 import api from '../api/client';
+import { PageHeader } from '../components/PageHeader';
 
 export default function ProfileDashboardPage() {
   const user = useAuthStore((s) => s.user);
@@ -21,15 +22,15 @@ export default function ProfileDashboardPage() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 py-6">
-      <div className="rounded-xl bg-white border border-slate-200 shadow-sm p-6 flex items-center gap-4">
-        <div className="h-12 w-12 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xl font-bold">
-          {empName.charAt(0).toUpperCase()}
-        </div>
-        <div>
-          <h1 className="text-xl font-bold text-slate-800">{empName}</h1>
-          <p className="text-sm text-slate-500">{empDept}</p>
-        </div>
-      </div>
+      <PageHeader
+        breadcrumbs={[
+          { label: 'Home', to: '/' },
+          { label: 'Profile' }
+        ]}
+        title={empName}
+        description={empDept}
+        icon={empName.charAt(0).toUpperCase()}
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <DashboardCard 
