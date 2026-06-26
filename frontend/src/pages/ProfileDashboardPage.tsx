@@ -1,12 +1,33 @@
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { useAuthStore } from '../stores';
+import api from '../api/client';
 
 export default function ProfileDashboardPage() {
+  const user = useAuthStore((s) => s.user);
+  const [empName, setEmpName] = useState(user?.username || 'Employee');
+  const [empDept, setEmpDept] = useState('Loading details...');
+
+  useEffect(() => {
+    if (user?.employee_id) {
+      api.get(`/employees/${user.employee_id}`).then(res => {
+        setEmpName(res.data.name);
+        setEmpDept(`${res.data.designation_name} · ${res.data.department_name}`);
+      }).catch(() => setEmpDept('Details unavailable'));
+    } else {
+      setEmpDept('No employee record linked');
+    }
+  }, [user]);
+
   return (
-    <div className="max-w-6xl mx-auto space-y-8 py-6">
-      <div className="flex items-center justify-between">
+    <div className="max-w-6xl mx-auto space-y-6 py-6">
+      <div className="rounded-xl bg-white border border-slate-200 shadow-sm p-6 flex items-center gap-4">
+        <div className="h-12 w-12 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xl font-bold">
+          {empName.charAt(0).toUpperCase()}
+        </div>
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">My Profile</h1>
-          <p className="text-sm text-slate-500">Manage your official service records and dependents.</p>
+          <h1 className="text-xl font-bold text-slate-800">{empName}</h1>
+          <p className="text-sm text-slate-500">{empDept}</p>
         </div>
       </div>
 
@@ -30,14 +51,16 @@ export default function ProfileDashboardPage() {
 
 function DashboardCard({ title, desc, icon, to }: { title: string, desc: string, icon: string, to: string }) {
   return (
-    <Link to={to} className="block group rounded-2xl bg-white border border-slate-200 shadow-sm hover:shadow-md hover:border-blue-300 transition-all p-6">
-      <div className="h-12 w-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <Link to={to} className="flex items-start gap-4 group rounded-xl bg-white border border-slate-200 shadow-sm hover:shadow-md hover:border-blue-300 transition-all p-4">
+      <div className="shrink-0 h-10 w-10 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center group-hover:bg-blue-100 transition-colors">
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={icon} />
         </svg>
       </div>
-      <h3 className="text-lg font-bold text-slate-800 mb-1 group-hover:text-blue-700">{title}</h3>
-      <p className="text-sm text-slate-500">{desc}</p>
+      <div>
+        <h3 className="text-sm font-bold text-slate-800 mb-0.5 group-hover:text-blue-700 transition-colors">{title}</h3>
+        <p className="text-xs text-slate-500 leading-relaxed">{desc}</p>
+      </div>
     </Link>
   );
 }

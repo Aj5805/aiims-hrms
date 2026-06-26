@@ -51,14 +51,16 @@ export default function ClaimsDashboardPage() {
 
 function DashboardCard({ title, desc, icon, to }: { title: string, desc: string, icon: string, to: string }) {
   return (
-    <Link to={to} className="block group rounded-2xl bg-white border border-slate-200 shadow-sm hover:shadow-md hover:border-blue-300 transition-all p-6">
-      <div className="h-12 w-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <Link to={to} className="flex items-start gap-4 group rounded-xl bg-white border border-slate-200 shadow-sm hover:shadow-md hover:border-blue-300 transition-all p-4">
+      <div className="shrink-0 h-10 w-10 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center group-hover:bg-blue-100 transition-colors">
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={icon} />
         </svg>
       </div>
-      <h3 className="text-lg font-bold text-slate-800 mb-1 group-hover:text-blue-700">{title}</h3>
-      <p className="text-sm text-slate-500">{desc}</p>
+      <div>
+        <h3 className="text-sm font-bold text-slate-800 mb-0.5 group-hover:text-blue-700 transition-colors">{title}</h3>
+        <p className="text-xs text-slate-500 leading-relaxed">{desc}</p>
+      </div>
     </Link>
   );
 }

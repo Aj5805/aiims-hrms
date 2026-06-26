@@ -42,8 +42,9 @@ Also seeded: `testDept1-10`, `testDesig1-10`, `testLeaveType1-10`, 100 leave bal
 - **Architecture:** Transitioned from a simple top-navbar to a "Hub & Spoke" dashboard model, mimicking enterprise ERPs (e.g. Workday, SAP).
 - **Navigation (`App.tsx`):** Added Hover Dropdowns for all major modules. The headers themselves are now clickable links pointing to central landing dashboards.
 - **Dashboards:**
-  - **My Profile (`/profile-dashboard`):** Landing page for e-Service Book and Dependents.
-  - **Leave & Attendance (`/leave-dashboard`):** Dedicated space for leave applications, history, and balances (re-purposed from old Staff Profile). Employee details removed.
+  - **Home (`/`):** A centralized landing page with a welcome banner and quick-links to all hubs.
+  - **My Profile (`/profile-dashboard`):** Landing page for e-Service Book and Dependents, featuring a sleek user summary banner.
+  - **Leave & Attendance (`/leave-dashboard`):** Dedicated space for leave applications, history, and balances (re-purposed from old Staff Profile). Employee details removed and UI shrunk for higher data density.
   - **Claims & Advances (`/claims`):** Hub for LTC, CEA, EHS, TA, Telephone claims.
   - **Payroll & Finance (`/payroll`):** Hub for Salary Slips, Annual Summary, Form 16.
   - **Performance (`/performance`):** Hub for APAR and Training logs.

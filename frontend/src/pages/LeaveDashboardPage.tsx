@@ -223,29 +223,29 @@ export default function LeaveDashboardPage() {
     <div className="space-y-6">
 
       {/* ── Hero Card ─────────────────────────────────────────── */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-800 via-slate-700 to-blue-900 p-8 text-white shadow-xl">
+      <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-slate-800 via-slate-700 to-blue-900 p-5 text-white shadow-md">
         {/* decorative circles */}
-        <div className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-white/5" />
-        <div className="pointer-events-none absolute -bottom-12 -left-12 h-48 w-48 rounded-full bg-blue-500/10" />
+        <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-white/5" />
+        <div className="pointer-events-none absolute -bottom-12 -left-12 h-32 w-32 rounded-full bg-blue-500/10" />
 
-        <div className="relative flex flex-col gap-6 sm:flex-row sm:items-start">
+        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center">
           {/* Avatar initials */}
-          <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-white/10 text-3xl font-bold backdrop-blur-sm ring-1 ring-white/20">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-white/10 text-xl font-bold backdrop-blur-sm ring-1 ring-white/20">
             {emp.name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()}
           </div>
 
           <div className="flex-1 min-w-0">
-            <div className="flex flex-wrap items-center gap-3 mb-1">
-              <h1 className="text-2xl font-bold tracking-tight">{emp.name}</h1>
-              <span className={`rounded-full px-3 py-0.5 text-xs font-bold uppercase tracking-wider ${roleColor}`}>
+            <div className="flex flex-wrap items-center gap-2 mb-0.5">
+              <h1 className="text-xl font-bold tracking-tight">{emp.name}</h1>
+              <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${roleColor}`}>
                 {(user?.role ?? '').replace('_', ' ')}
               </span>
               {!emp.is_active && (
-                <span className="rounded-full bg-red-500/80 px-2.5 py-0.5 text-xs font-semibold">Inactive</span>
+                <span className="rounded-full bg-red-500/80 px-2 py-0.5 text-[10px] font-semibold">Inactive</span>
               )}
             </div>
-            <p className="text-blue-200 text-sm">{emp.designation_name}</p>
-            <p className="text-slate-300 text-sm">{emp.department_name} · {emp.category_name}</p>
+            <p className="text-blue-200 text-xs mb-0.5">{emp.designation_name}</p>
+            <p className="text-slate-300 text-xs">{emp.department_name} · {emp.category_name}</p>
           </div>
 
           {/* Quick stats */}
@@ -263,13 +263,13 @@ export default function LeaveDashboardPage() {
       </div>
 
       {/* ── Quick Actions ──────────────────────────────── */}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="flex flex-wrap items-center gap-3">
         <Link
           to="/apply"
           id="profile-apply-leave-btn"
-          className="flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-4 text-sm font-semibold text-white shadow hover:bg-blue-700 transition-colors"
+          className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 transition-colors"
         >
-          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
           </svg>
           Apply for Leave
@@ -277,9 +277,9 @@ export default function LeaveDashboardPage() {
         <Link
           to="/my-apps"
           id="profile-my-apps-btn"
-          className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition-colors"
+          className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition-colors"
         >
-          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
           </svg>
           My Applications
@@ -287,9 +287,9 @@ export default function LeaveDashboardPage() {
         <Link
           to="/leave-account"
           id="profile-account-btn"
-          className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition-colors"
+          className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition-colors"
         >
-          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M3 14h18M3 6h18M3 18h18" />
           </svg>
           Full Leave Account

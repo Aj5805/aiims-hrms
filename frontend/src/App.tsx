@@ -16,6 +16,7 @@ import LeaveDashboardPage from './pages/LeaveDashboardPage';
 import ClaimsDashboardPage from './pages/ClaimsDashboardPage';
 import PayrollDashboardPage from './pages/PayrollDashboardPage';
 import PerformanceDashboardPage from './pages/PerformanceDashboardPage';
+import HomeDashboardPage from './pages/HomeDashboardPage';
 import { authApi } from './api/endpoints';
 
 const REPORT_ROLES = ['ESTABLISHMENT_OFFICER', 'REGISTRAR', 'DIRECTOR'] as const;
@@ -120,9 +121,9 @@ function Layout({ children }: { children: ReactNode }) {
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-6">
-            <h1 className="text-lg font-semibold text-blue-800">
+            <Link to="/" className="text-lg font-semibold text-blue-800 hover:text-blue-900 transition-colors">
               {isAdminRoute ? 'AIIMS HRMS (Admin Console)' : 'AIIMS HRMS'}
-            </h1>
+            </Link>
             {user && (
               <nav className="flex gap-3 text-sm flex-wrap items-center">
                 {isAdminRoute ? (
@@ -165,7 +166,7 @@ function Layout({ children }: { children: ReactNode }) {
                     {/* Admin & Config Grouping */}
                     {hasRole(role, EMPLOYEE_MASTER_ROLES) && (
                       <NavDropdown title="Admin/Estab" items={[
-                        { label: 'Employees Directory', path: '/' },
+                        { label: 'Employees Directory', path: '/employees' },
                         { label: 'Master Settings', path: '/masters' },
                         { label: 'Reports', path: '/reports' },
                         ...(hasRole(role, CONFIG_ROLES) ? [{ label: 'Year-End Processing', path: '/year-end' }] : []),
@@ -219,7 +220,8 @@ export default function App() {
         token ? (
           <Layout>
             <Routes>
-            <Route path="/" element={hasRole(role, EMPLOYEE_MASTER_ROLES) ? <EmployeeListPage /> : <Navigate to="/leave-account" replace />} />
+            <Route path="/" element={<HomeDashboardPage />} />
+            <Route path="/employees" element={<RoleRoute allowedRoles={EMPLOYEE_MASTER_ROLES} fallback="Access restricted."><EmployeeListPage /></RoleRoute>} />
             <Route path="/masters" element={<RoleRoute allowedRoles={EMPLOYEE_MASTER_ROLES} fallback="Masters access is restricted."><MastersPage /></RoleRoute>} />
             <Route path="/apply" element={<ApplyLeavePage />} />
             <Route path="/my-apps" element={<MyApplicationsPage />} />
