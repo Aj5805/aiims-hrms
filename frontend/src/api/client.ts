@@ -22,6 +22,7 @@ api.interceptors.response.use(
   (err) => {
     if (err.response?.status === 401) {
       localStorage.removeItem('access_token');
+      localStorage.removeItem('auth-storage');
       window.location.href = '/login';
     } else if (err.response?.status === 403 && err.response?.data?.detail === 'PASSWORD_CHANGE_REQUIRED') {
       window.location.href = '/change-password';

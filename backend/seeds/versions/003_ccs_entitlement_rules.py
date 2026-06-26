@@ -9,30 +9,7 @@ def _get_id(session, table, code):
     ).fetchone()[0]
 
 
-CCS_RULES = [
-    # (cat, lt, year_ref, dpy, prorata, yr1, yr2+, max_stretch, max_tenure, carry_fwd, special)
-    ("FACULTY", "EL",       "FINANCIAL", 30,  None, 15, 30,  None, None, True,  None),
-    ("NURSING", "EL",       "FINANCIAL", 30,  None, 15, 30,  None, None, True,  None),
-    ("ADMIN",   "EL",       "FINANCIAL", 30,  None, 15, 30,  None, None, True,  None),
-    ("FACULTY", "HPL",      "FINANCIAL", 20,  None, 10, 20,  None, None, False, None),
-    ("NURSING", "HPL",      "FINANCIAL", 20,  None, 10, 20,  None, None, False, None),
-    ("ADMIN",   "HPL",      "FINANCIAL", 20,  None, 10, 20,  None, None, False, None),
-    ("FACULTY", "CL",       "CALENDAR",  8,   None, 8,  8,   5,    None, False, None),
-    ("NURSING", "CL",       "CALENDAR",  8,   None, 8,  8,   5,    None, False, None),
-    ("ADMIN",   "CL",       "CALENDAR",  8,   None, 8,  8,   5,    None, False, None),
-    ("FACULTY", "ML",       "CALENDAR",  180, None, 180,180, None, None, False, None),
-    ("NURSING", "ML",       "CALENDAR",  180, None, 180,180, None, None, False, None),
-    ("ADMIN",   "ML",       "CALENDAR",  180, None, 180,180, None, None, False, None),
-    ("FACULTY", "PL",       "CALENDAR",  15,  None, 15, 15,  None, None, False, None),
-    ("NURSING", "PL",       "CALENDAR",  15,  None, 15, 15,  None, None, False, None),
-    ("ADMIN",   "PL",       "CALENDAR",  15,  None, 15, 15,  None, None, False, None),
-    ("FACULTY", "CCL",      "CALENDAR",  730, None, 730,730, None, None, False, None),
-    ("NURSING", "CCL",      "CALENDAR",  730, None, 730,730, None, None, False, None),
-    ("ADMIN",   "CCL",      "CALENDAR",  730, None, 730,730, None, None, False, None),
-    ("FACULTY", "COMMUTED", "FINANCIAL", None,None, None,None,None, None, False, None),
-    ("NURSING", "COMMUTED", "FINANCIAL", None,None, None,None,None, None, False, None),
-    ("ADMIN",   "COMMUTED", "FINANCIAL", None,None, None,None,None, None, False, None),
-]
+CCS_RULES = []
 
 
 def run(session):

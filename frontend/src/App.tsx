@@ -11,6 +11,11 @@ import { MyLeaveAccountPage, YearEndProcessingPage } from './pages/Phase5Pages';
 import { AdminDashboardPage, NotificationBell, ReportsPage } from './pages/Phase678Pages';
 import ChangePasswordPage from './pages/ChangePasswordPage';
 import StaffProfilePage from './pages/StaffProfilePage';
+import ProfileDashboardPage from './pages/ProfileDashboardPage';
+import LeaveDashboardPage from './pages/LeaveDashboardPage';
+import ClaimsDashboardPage from './pages/ClaimsDashboardPage';
+import PayrollDashboardPage from './pages/PayrollDashboardPage';
+import PerformanceDashboardPage from './pages/PerformanceDashboardPage';
 import { authApi } from './api/endpoints';
 
 const REPORT_ROLES = ['ESTABLISHMENT_OFFICER', 'REGISTRAR', 'DIRECTOR'] as const;
@@ -22,6 +27,42 @@ const APPROVER_ROLES = ['ADMIN', 'ESTABLISHMENT_OFFICER', 'REGISTRAR', 'DIRECTOR
 function hasRole(role: string | undefined, allowed: readonly string[]) {
   return !!role && allowed.includes(role);
 }
+
+function UnderConstructionPage({ title }: { title: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-20 text-center bg-white rounded-xl shadow-sm border border-slate-200">
+      <svg className="w-16 h-16 text-amber-500 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+      </svg>
+      <h2 className="text-2xl font-bold text-slate-800 mb-2">{title}</h2>
+      <p className="text-slate-500 max-w-md">This module is currently under development as per CCS / AIIMS HMIS scope. Check back in a future update!</p>
+    </div>
+  );
+}
+
+function NavDropdown({ title, landingPath, items }: { title: string, landingPath?: string, items: { label: string, path: string }[] }) {
+  const trigger = (
+    <span className="text-sm font-semibold text-slate-700 cursor-pointer hover:text-blue-600 px-2 py-1 flex items-center gap-1">
+      {title} <span className="text-[10px] opacity-60">▼</span>
+    </span>
+  );
+  
+  return (
+    <div className="group relative">
+      {landingPath ? <Link to={landingPath}>{trigger}</Link> : trigger}
+      <div className="absolute hidden group-hover:block pt-1 z-50">
+        <div className="bg-white border border-slate-200 shadow-xl rounded-lg py-2 w-48 overflow-hidden">
+          {items.map(item => (
+            <Link key={item.path} to={item.path} className="block px-4 py-2 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors">
+              {item.label}
+            </Link>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 function RouteDenied({ message }: { message: string }) {
   return (
@@ -90,37 +131,56 @@ function Layout({ children }: { children: ReactNode }) {
                   </Link>
                 ) : (
                   <>
-                    {hasRole(role, EMPLOYEE_MASTER_ROLES) && <Link to="/" className="text-gray-600 hover:text-blue-600 font-medium">Employees</Link>}
-                    {hasRole(role, EMPLOYEE_MASTER_ROLES) && <Link to="/masters" className="text-gray-600 hover:text-blue-600 font-medium">Masters</Link>}
-                    {hasRole(role, CONFIG_ROLES) && <Link to="/year-end" className="text-gray-600 hover:text-blue-600 font-medium">Year-End</Link>}
-                    {hasRole(role, REPORT_ROLES) && <Link to="/reports" className="text-gray-600 hover:text-blue-600 font-medium">Reports</Link>}
-                    {hasRole(role, ADMIN_ROLES) && <Link to="/admin" className="text-gray-600 hover:text-blue-600 font-medium">Admin</Link>}
-                    
-                    {hasRole(role, CONFIG_ROLES) && (
-                      <div className="group relative">
-                        <span className="text-gray-600 font-medium cursor-pointer hover:text-blue-600">Config &darr;</span>
-                        <div className="absolute hidden group-hover:block bg-white border shadow-lg mt-1 rounded py-2 w-32 z-50">
-                          <Link to="/leave-types" className="block px-4 py-1 text-gray-600 hover:bg-gray-50">Types</Link>
-                          <Link to="/entitlements" className="block px-4 py-1 text-gray-600 hover:bg-gray-50">Rules</Link>
-                          <Link to="/holidays" className="block px-4 py-1 text-gray-600 hover:bg-gray-50">Holidays</Link>
-                          <Link to="/workflows" className="block px-4 py-1 text-gray-600 hover:bg-gray-50">Workflows</Link>
-                          <Link to="/balances" className="block px-4 py-1 text-gray-600 hover:bg-gray-50">Opening Bal</Link>
-                        </div>
-                      </div>
-                    )}
+                    <NavDropdown title="My Profile" landingPath="/profile-dashboard" items={[
+                      { label: 'e-Service Book', path: '/profile' },
+                      { label: 'Family & Dependents', path: '/dependents' }
+                    ]} />
+                    <NavDropdown title="Leave & Attendance" landingPath="/leave-dashboard" items={[
+                      { label: 'Apply for Leave', path: '/apply' },
+                      { label: 'My Applications', path: '/my-apps' },
+                      { label: 'Leave Ledger', path: '/leave-account' },
+                      { label: 'Holiday Calendar', path: '/holidays-calendar' },
+                      { label: 'My Attendance', path: '/attendance' },
+                      { label: 'Punch History', path: '/punches' }
+                    ]} />
+                    <NavDropdown title="Claims & Advances" landingPath="/claims" items={[
+                      { label: 'LTC Claim', path: '/claims/ltc' },
+                      { label: 'CEA (Education)', path: '/claims/cea' },
+                      { label: 'EHS Reimbursement', path: '/claims/ehs' },
+                      { label: 'TA/DA', path: '/claims/ta' },
+                      { label: 'Telephone & Internet', path: '/claims/telephone' }
+                    ]} />
+                    <NavDropdown title="Payroll & Finance" landingPath="/payroll" items={[
+                      { label: 'Salary Slips', path: '/payroll/slips' },
+                      { label: 'Annual Summary', path: '/payroll/summary' },
+                      { label: 'Form 16 & Tax', path: '/payroll/form16' }
+                    ]} />
+                    <NavDropdown title="Performance" landingPath="/performance" items={[
+                      { label: 'My APAR', path: '/performance/apar' },
+                      { label: 'Training Logs', path: '/performance/training' }
+                    ]} />
 
                     {role !== 'STAFF' && <Link to="/inbox" className="text-orange-600 hover:text-orange-800 font-bold ml-2">Inbox</Link>}
 
-                    <div className="ml-auto flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
-                      <Link to="/apply" className="px-3 py-1.5 text-sm font-semibold rounded-lg text-slate-700 hover:bg-white hover:text-blue-700 hover:shadow-sm transition-all">Apply for Leave</Link>
-                      <Link to="/my-apps" className="px-3 py-1.5 text-sm font-semibold rounded-lg text-slate-700 hover:bg-white hover:text-blue-700 hover:shadow-sm transition-all">My Applications</Link>
-                      <Link to="/leave-account" className="px-3 py-1.5 text-sm font-semibold rounded-lg text-slate-700 hover:bg-white hover:text-blue-700 hover:shadow-sm transition-all">Leave Account</Link>
-                      <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                      <Link to="/profile" className="px-4 py-1.5 text-sm font-bold rounded-lg bg-blue-600 text-white shadow-sm hover:bg-blue-700 transition-all flex items-center gap-1">
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-                        Profile
-                      </Link>
-                    </div>
+                    {/* Admin & Config Grouping */}
+                    {hasRole(role, EMPLOYEE_MASTER_ROLES) && (
+                      <NavDropdown title="Admin/Estab" items={[
+                        { label: 'Employees Directory', path: '/' },
+                        { label: 'Master Settings', path: '/masters' },
+                        { label: 'Reports', path: '/reports' },
+                        ...(hasRole(role, CONFIG_ROLES) ? [{ label: 'Year-End Processing', path: '/year-end' }] : []),
+                        ...(hasRole(role, ADMIN_ROLES) ? [{ label: 'System Admin Console', path: '/admin' }] : []),
+                      ]} />
+                    )}
+                    {hasRole(role, CONFIG_ROLES) && (
+                      <NavDropdown title="System Config" items={[
+                        { label: 'Leave Types', path: '/leave-types' },
+                        { label: 'Entitlement Rules', path: '/entitlements' },
+                        { label: 'Holidays setup', path: '/holidays' },
+                        { label: 'Workflows', path: '/workflows' },
+                        { label: 'Opening Balances', path: '/balances' },
+                      ]} />
+                    )}
                   </>
                 )}
               </nav>
@@ -141,12 +201,24 @@ function Layout({ children }: { children: ReactNode }) {
 
 export default function App() {
   const role = useAuthStore((s) => s.user?.role);
+  const token = useAuthStore((s) => s.token);
+  const clearAuth = useAuthStore((s) => s.clearAuth);
+  
+  useEffect(() => {
+    if (token) {
+      authApi.me().catch(() => {
+        clearAuth();
+      });
+    }
+  }, [token, clearAuth]);
+
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/*" element={
-        <Layout>
-          <Routes>
+        token ? (
+          <Layout>
+            <Routes>
             <Route path="/" element={hasRole(role, EMPLOYEE_MASTER_ROLES) ? <EmployeeListPage /> : <Navigate to="/leave-account" replace />} />
             <Route path="/masters" element={<RoleRoute allowedRoles={EMPLOYEE_MASTER_ROLES} fallback="Masters access is restricted."><MastersPage /></RoleRoute>} />
             <Route path="/apply" element={<ApplyLeavePage />} />
@@ -162,9 +234,27 @@ export default function App() {
             <Route path="/workflows" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Configuration pages are limited to ADMIN and ESTABLISHMENT_OFFICER."><WorkflowPage /></RoleRoute>} />
             <Route path="/balances" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Configuration pages are limited to ADMIN and ESTABLISHMENT_OFFICER."><OpeningBalancePage /></RoleRoute>} />
             <Route path="/change-password" element={<ChangePasswordPage />} />
+            <Route path="/profile-dashboard" element={<ProfileDashboardPage />} />
             <Route path="/profile" element={<StaffProfilePage />} />
+            <Route path="/leave-dashboard" element={<LeaveDashboardPage />} />
+            
+            {/* Future HMIS Modules Placeholders */}
+            <Route path="/claims" element={<ClaimsDashboardPage />} />
+            <Route path="/payroll" element={<PayrollDashboardPage />} />
+            <Route path="/performance" element={<PerformanceDashboardPage />} />
+            
+            <Route path="/dependents" element={<UnderConstructionPage title="Family & Dependents" />} />
+            <Route path="/holidays-calendar" element={<UnderConstructionPage title="Holiday Calendar" />} />
+            <Route path="/attendance" element={<UnderConstructionPage title="My Attendance" />} />
+            <Route path="/punches" element={<UnderConstructionPage title="Punch History" />} />
+            <Route path="/claims/*" element={<UnderConstructionPage title="Claims & Advances Portal" />} />
+            <Route path="/payroll/*" element={<UnderConstructionPage title="Payroll & Finance" />} />
+            <Route path="/performance/*" element={<UnderConstructionPage title="Performance & APAR" />} />
           </Routes>
-        </Layout>
+          </Layout>
+        ) : (
+          <Navigate to="/login" replace />
+        )
       } />
     </Routes>
   );

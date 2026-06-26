@@ -10,31 +10,7 @@ def _get_id(session, table, code):
 
 
 # (cat, lt, year_ref, dpy, prorata, yr1, yr2+, max_stretch, max_tenure, special)
-RESIDENT_RULES = [
-    # ANNUAL_RES
-    ("JR_ACAD","ANNUAL_RES","JOINING_DATE",None,None, 30, 36, None, None,
-     '{"exam_extension": true}'),
-    ("SR_ACAD","ANNUAL_RES","JOINING_DATE",None,None, 24, 30, None, None,
-     '{"exam_extension": true}'),
-    ("JR_NA",  "ANNUAL_RES","JOINING_DATE",None,2.5, None,None,None, None,
-     '{"contract_term_bound": true, "max_tenure_months": 6}'),
-    # NOTE: SR_NA â€” VERIFY locally before go-live (pull AIIMS Bibinagar establishment circular)
-    ("SR_NA",  "ANNUAL_RES","JOINING_DATE",None,2.5, None,None,None, None,
-     '{"contract_term_bound": true, "max_tenure_months": 6, "VERIFY_LOCALLY": true}'),
-    # EOL
-    ("JR_ACAD","EOL","TENURE",None,None,None,None,None,30,'{"tenure_extension": true}'),
-    ("SR_ACAD","EOL","TENURE",None,None,None,None,None,30,'{"tenure_extension": true}'),
-    # ML
-    ("JR_ACAD","ML","TENURE",None,None,None,None,None,180,'{"tenure_extension": true}'),
-    ("SR_ACAD","ML","TENURE",None,None,None,None,None,180,'{"tenure_extension": true}'),
-    ("JR_NA",  "ML","TENURE",None,None,None,None,None,180,'{"tenure_extension": true}'),
-    ("SR_NA",  "ML","TENURE",None,None,None,None,None,180,'{"tenure_extension": true}'),
-    # PL
-    ("JR_ACAD","PL","TENURE",None,None,None,None,None,15,None),
-    ("SR_ACAD","PL","TENURE",None,None,None,None,None,15,None),
-    ("JR_NA",  "PL","TENURE",None,None,None,None,None,15,None),
-    ("SR_NA",  "PL","TENURE",None,None,None,None,None,15,None),
-]
+RESIDENT_RULES = []
 
 
 def run(session):

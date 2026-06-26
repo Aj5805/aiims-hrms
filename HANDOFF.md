@@ -38,29 +38,30 @@ Staff → HOD (dept, step 1) → NODAL_OFFICER (dept-specific, step 2, FINAL)
 
 Also seeded: `testDept1-10`, `testDesig1-10`, `testLeaveType1-10`, 100 leave balance records (15 days each).
 
-### 3. Staff Profile Page (New Feature)
-- **Route:** `/profile` — accessible to all logged-in users
-- **Nav link:** "My Profile" visible in the top nav for all roles
-- **File:** `frontend/src/pages/StaffProfilePage.tsx`
+### 3. Category Landing Pages & e-Service Book (Hub & Spoke UI)
+- **Architecture:** Transitioned from a simple top-navbar to a "Hub & Spoke" dashboard model, mimicking enterprise ERPs (e.g. Workday, SAP).
+- **Navigation (`App.tsx`):** Added Hover Dropdowns for all major modules. The headers themselves are now clickable links pointing to central landing dashboards.
+- **Dashboards:**
+  - **My Profile (`/profile-dashboard`):** Landing page for e-Service Book and Dependents.
+  - **Leave & Attendance (`/leave-dashboard`):** Dedicated space for leave applications, history, and balances (re-purposed from old Staff Profile). Employee details removed.
+  - **Claims & Advances (`/claims`):** Hub for LTC, CEA, EHS, TA, Telephone claims.
+  - **Payroll & Finance (`/payroll`):** Hub for Salary Slips, Annual Summary, Form 16.
+  - **Performance (`/performance`):** Hub for APAR and Training logs.
+- **Under Construction Pages:** Created a standardized placeholder component for pending CCS modules.
 
-**Features:**
-- Gradient hero card with initials avatar, role badge, dept/designation, total days available/availed
-- Employee details grid (emp code, gender, DOJ, DOB, email)
-- Quick action links: Apply Leave, My Applications, Full Leave Account
-- **Leave Balances tab:** card grid with progress bars showing available vs total per leave type (color-coded: red ≤3, amber ≤7, green >7)
-- **Recent Applications tab:** history table with status badges
+### 4. Database Seed Cleansing (Leave Types)
+- **Action:** Executed a SQL truncate on `leave_types` and its dependents (`leave_entitlement_rules`, `leave_balances`, `leave_applications`).
+- **Fix:** Removed hardcoded CCS and Resident rules from `002_leave_types.py`, `003_ccs_entitlement_rules.py`, and `004_resident_entitlement_rules.py` to allow the Admin panel to cleanly seed them as needed.
 
-### 4. General Navigation & UI/UX Updates
-- **Top Navigation Bar (`App.tsx`):**
-  - Grouped Quick Actions (`Apply for Leave`, `My Applications`, `Leave Account`) into a premium, styled FAB/pill layout alongside the `My Profile` button.
-  - Hidden `Inbox` and `Year-End` from `STAFF` role to reduce clutter. Added corresponding RoleRoute guards.
+### 5. General Navigation & UI/UX Updates
+- Fixed CSS hover dead-zones in `App.tsx` dropdowns (switched `mt-1` to `pt-1` invisible wrapper).
 - **Leave Account View (`Phase5Pages.tsx`):**
   - Removed bulky balance cards in favor of a clean, dense data table.
-  - Extracted the Financial Year into a global "Leave Year" dropdown filter (which necessitated updating the backend `get_balances` endpoint to return all years).
-  - Implemented auto-loading of balances on mount (removing the need for a manual "Load Account" click).
+  - Extracted the Financial Year into a global "Leave Year" dropdown filter.
+  - Implemented auto-loading of balances on mount.
   - Fully removed the overly complex "Balance Projection" feature to simplify the UX.
 
-### 5. Ledger Approval Chain Fix
+### 6. Ledger Approval Chain Fix
 - **Bug:** Ledger view was displaying all global and departmental approval chains instead of just the one applicable to the selected leave type.
 - **Fix (backend):** Updated the `get_ledger` endpoint in `leave_balances.py` to order chains by specificity (`category_id` and `leave_type_id`) and limit to `1`, mirroring the logic used in leave applications.
 
