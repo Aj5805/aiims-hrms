@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { employeesApi } from '../api/endpoints';
 import { useAuthStore } from '../stores';
 import AddStaffForm from '../components/AddStaffForm';
+import { PageHeader } from '../components/PageHeader';
 
 interface Employee {
   id: string;
@@ -59,27 +60,28 @@ export default function EmployeeListPage() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="border-b border-gray-200 px-6 py-4 flex flex-wrap gap-4 justify-between items-center bg-gray-50">
-          <div>
-            <h2 className="text-xl font-bold text-gray-800">Staff Management Console</h2>
-            <p className="text-sm text-gray-500 mt-1">Manage personnel, onboarding, and directory.</p>
-          </div>
-          <div className="flex gap-2 bg-gray-200/50 p-1 rounded-lg">
+      <PageHeader 
+        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Admin/Estab', to: '/admin' }, { label: 'Employees Directory' }]}
+        title="Staff Management Console"
+        description="Manage personnel, onboarding, and directory."
+        rightContent={
+          <div className="flex gap-2 bg-slate-100 p-1 rounded-lg border border-slate-200">
             <button
               onClick={() => setActiveTab('directory')}
-              className={`px-4 py-2 text-sm font-medium rounded-md transition ${activeTab === 'directory' ? 'bg-white shadow-sm text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}
+              className={`px-4 py-1.5 text-sm font-bold rounded-md transition ${activeTab === 'directory' ? 'bg-white shadow-sm text-blue-700' : 'text-slate-500 hover:text-slate-800'}`}
             >
               Staff Directory
             </button>
             <button
               onClick={() => setActiveTab('onboard')}
-              className={`px-4 py-2 text-sm font-medium rounded-md transition ${activeTab === 'onboard' ? 'bg-white shadow-sm text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}
+              className={`px-4 py-1.5 text-sm font-bold rounded-md transition ${activeTab === 'onboard' ? 'bg-white shadow-sm text-blue-700' : 'text-slate-500 hover:text-slate-800'}`}
             >
               Onboard Staff
             </button>
           </div>
-        </div>
+        }
+      />
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
 
         <div className="p-6">
           {activeTab === 'directory' && (

@@ -7,6 +7,7 @@ import {
   workflowApi,
   balancesApi,
 } from '../api/phase3_endpoints';
+import { PageHeader } from '../components/PageHeader';
 
 // ── Leave Types ────────────────────────────────────────────────────────────
 
@@ -19,24 +20,30 @@ export function LeaveTypesPage() {
   useEffect(() => { load(); }, []);
 
   return (
-    <div>
-      <h2 className="text-xl font-bold text-gray-800 mb-4">Leave Types</h2>
-      <div className="bg-white rounded-lg shadow overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-3 py-2 text-left">Code</th>
-              <th className="px-3 py-2 text-left">Name</th>
-              <th className="px-3 py-2 text-left">Scheme</th>
-              <th className="px-3 py-2 text-center">Half-Day</th>
-              <th className="px-3 py-2 text-center">MC Req.</th>
-              <th className="px-3 py-2 text-center">Carry Fwd</th>
-              <th className="px-3 py-2 text-center">Encashable</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((lt) => (
-              <tr key={lt.id as string} className="border-t hover:bg-gray-50">
+  return (
+    <div className="space-y-6">
+      <PageHeader 
+        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'System Config', to: '/admin' }, { label: 'Leave Types' }]}
+        title="Leave Types Master"
+        description="Core definitions for all available leave types across the institution."
+      />
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left">
+            <thead className="bg-slate-50 border-b border-slate-200 text-slate-500">
+              <tr>
+                <th className="px-4 py-3 font-semibold">Code</th>
+                <th className="px-4 py-3 font-semibold">Name</th>
+                <th className="px-4 py-3 font-semibold">Scheme</th>
+                <th className="px-4 py-3 font-semibold text-center">Half-Day</th>
+                <th className="px-4 py-3 font-semibold text-center">MC Req.</th>
+                <th className="px-4 py-3 font-semibold text-center">Carry Fwd</th>
+                <th className="px-4 py-3 font-semibold text-center">Encashable</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {items.map((lt) => (
+                <tr key={lt.id as string} className="hover:bg-slate-50 transition-colors">
                 <td className="px-3 py-2 font-mono font-medium">{lt.code as string}</td>
                 <td className="px-3 py-2">{lt.name as string}</td>
                 <td className="px-3 py-2">
@@ -66,27 +73,30 @@ export function EntitlementRulesPage() {
   useEffect(() => { load(); }, []);
 
   return (
-    <div>
-      <h2 className="text-xl font-bold text-gray-800 mb-4">Entitlement Rules</h2>
-      <div className="bg-white rounded-lg shadow overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-3 py-2 text-left">Category</th>
-              <th className="px-3 py-2 text-left">Leave Type</th>
-              <th className="px-3 py-2 text-left">Year Ref</th>
-              <th className="px-3 py-2 text-right">Days/Yr</th>
-              <th className="px-3 py-2 text-right">Yr 1</th>
-              <th className="px-3 py-2 text-right">Yr 2+</th>
-              <th className="px-3 py-2 text-right">Max Tenure</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((r) => (
-              <tr key={r.id as string} className="border-t hover:bg-gray-50">
+    <div className="space-y-6">
+      <PageHeader 
+        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'System Config', to: '/admin' }, { label: 'Entitlement Rules' }]}
+        title="Entitlement Rules Master"
+        description="Defines annual credit and limits for each category and leave type."
+      />
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left">
+            <thead className="bg-slate-50 border-b border-slate-200 text-slate-500">
+              <tr>
+                <th className="px-4 py-3 font-semibold">Category</th>
+                <th className="px-4 py-3 font-semibold">Leave Type</th>
+                <th className="px-4 py-3 font-semibold text-center">Days/Yr</th>
+                <th className="px-4 py-3 font-semibold text-center">Yr 1 Days</th>
+                <th className="px-4 py-3 font-semibold text-center">Max/Stretch</th>
+                <th className="px-4 py-3 font-semibold text-center">Max/Tenure</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {items.map((r) => (
+                <tr key={r.id as string} className="hover:bg-slate-50 transition-colors">
                 <td className="px-3 py-2 font-mono text-xs">{r.category_code as string}</td>
                 <td className="px-3 py-2 font-mono text-xs">{r.leave_type_code as string}</td>
-                <td className="px-3 py-2 text-gray-600">{r.year_ref as string}</td>
                 <td className="px-3 py-2 text-right">{r.days_per_year != null ? String(r.days_per_year) : '—'}</td>
                 <td className="px-3 py-2 text-right">{r.year1_days != null ? String(r.year1_days) : '—'}</td>
                 <td className="px-3 py-2 text-right">{r.year2_plus_days != null ? String(r.year2_plus_days) : '—'}</td>
@@ -130,17 +140,20 @@ export function HolidayPage() {
 
   return (
     <div>
-      <div className="flex items-center gap-4 mb-4">
-        <h2 className="text-xl font-bold text-gray-800">Holiday Master</h2>
-        <select
-          value={year}
-          onChange={(e) => setYear(+e.target.value)}
-          className="border rounded px-2 py-1 text-sm"
-        >
-          {[2025, 2026, 2027, 2028].map((y) => <option key={y}>{y}</option>)}
-        </select>
-      </div>
-      <form onSubmit={add} className="flex gap-2 mb-4">
+      <PageHeader 
+        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'System Config', to: '/admin' }, { label: 'Holiday Master' }]}
+        title="Holiday Master"
+        rightContent={
+          <select
+            value={year}
+            onChange={(e) => setYear(+e.target.value)}
+            className="border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white shadow-sm"
+          >
+            {[2025, 2026, 2027, 2028].map((y) => <option key={y}>{y}</option>)}
+          </select>
+        }
+      />
+      <form onSubmit={add} className="flex gap-2 mb-4 bg-white p-4 rounded-lg border border-slate-200">
         <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="border rounded px-3 py-2" required />
         <input placeholder="Holiday name" value={name} onChange={(e) => setName(e.target.value)} className="border rounded px-3 py-2 flex-1" required />
         <select value={type} onChange={(e) => setType(e.target.value)} className="border rounded px-3 py-2">
@@ -148,27 +161,27 @@ export function HolidayPage() {
         </select>
         <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded text-sm">Add</button>
       </form>
-      <div className="bg-white rounded-lg shadow">
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-gray-50">
+          <thead className="bg-slate-50 border-b border-slate-200 text-slate-500">
             <tr>
-              <th className="px-3 py-2 text-left">Date</th>
-              <th className="px-3 py-2 text-left">Name</th>
-              <th className="px-3 py-2 text-left">Type</th>
-              <th className="px-3 py-2 text-left">For</th>
-              <th></th>
+              <th className="px-4 py-3 font-semibold">Date</th>
+              <th className="px-4 py-3 font-semibold">Name</th>
+              <th className="px-4 py-3 font-semibold">Type</th>
+              <th className="px-4 py-3 font-semibold">Scope</th>
+              <th className="px-4 py-3 font-semibold"></th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-slate-100">
             {items.map((h) => (
-              <tr key={h.id as string} className="border-t hover:bg-gray-50">
+              <tr key={h.id as string} className="hover:bg-slate-50 transition-colors">
                 <td className="px-3 py-2 font-mono text-sm">{h.holiday_date as string}</td>
                 <td className="px-3 py-2">{h.holiday_name as string}</td>
                 <td className="px-3 py-2">
                   <span className="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-700">{h.holiday_type as string}</span>
                 </td>
                 <td className="px-3 py-2 text-gray-500 text-xs">{h.applicable_to as string}</td>
-                <td className="px-3 py-2">
+                <td className="px-3 py-2 text-right">
                   <button onClick={() => del(h.id as string)} className="text-red-500 text-xs hover:text-red-700 hover:underline">Delete</button>
                 </td>
               </tr>
@@ -212,9 +225,13 @@ export function WorkflowPage() {
   };
 
   return (
-    <div>
-      <h2 className="text-xl font-bold text-gray-800 mb-4">Workflow Configurator</h2>
-      <div className="flex gap-2 mb-4">
+    <div className="space-y-6">
+      <PageHeader 
+        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'System Config', to: '/admin' }, { label: 'Workflow Configurator' }]}
+        title="Workflow Configurator"
+        description="Define approval hierarchies and escalation logic."
+      />
+      <div className="flex gap-2 mb-4 bg-white p-4 rounded-lg border border-slate-200">
         <input
           id="wf-new-name"
           placeholder="New workflow config name"
@@ -224,50 +241,52 @@ export function WorkflowPage() {
         />
         <button onClick={createCfg} className="bg-blue-600 text-white px-4 py-2 rounded text-sm">Create</button>
       </div>
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="bg-white rounded-lg shadow p-4">
-          <h3 className="font-semibold mb-3 text-gray-700">Workflow Chains</h3>
+      <div className="grid gap-6 md:grid-cols-2">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+          <h3 className="font-semibold mb-4 text-slate-800">Existing Workflow Chains</h3>
           {configs.map((c) => (
-            <details key={c.id as string} className="mb-2 border rounded">
-              <summary className="px-3 py-2 cursor-pointer font-medium text-sm flex justify-between">
+            <details key={c.id as string} className="mb-2 border border-slate-200 rounded-lg group">
+              <summary className="px-4 py-3 cursor-pointer font-medium text-sm flex justify-between group-open:border-b">
                 <span>{c.config_name as string}</span>
-                <span className="text-gray-400 text-xs">{(c.steps as unknown[])?.length || 0} steps</span>
+                <span className="text-slate-400">{(c.steps as unknown[])?.length || 0} steps</span>
               </summary>
-              <div className="px-3 pb-3 text-xs space-y-1 border-t pt-2">
+              <div className="px-4 py-3 text-xs space-y-2">
                 {((c.steps as Record<string, unknown>[]) || []).map((s) => (
-                  <div key={s.id as string} className="flex gap-3 text-gray-600 items-center">
-                    <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-mono text-xs">{s.step_order as number}</span>
-                    <span className="font-medium">{s.approver_role as string}</span>
-                    <span className="text-gray-400">SLA: {s.sla_hours as number}h</span>
-                    {Boolean(s.is_final_authority) && <span className="text-green-600 font-bold text-xs">FINAL</span>}
+                  <div key={s.id as string} className="flex gap-3 text-slate-600 items-center">
+                    <span className="w-5 h-5 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-mono text-[10px]">{s.step_order as number}</span>
+                    <span className="font-medium flex-1">{s.approver_role as string}</span>
+                    <span className="text-slate-400">{s.sla_hours as number}h</span>
+                    {Boolean(s.is_final_authority) && <span className="text-emerald-600 font-bold uppercase tracking-wider text-[9px]">Final</span>}
                   </div>
                 ))}
               </div>
             </details>
           ))}
-          {configs.length === 0 && <p className="text-gray-400 text-sm">No workflows configured.</p>}
+          {configs.length === 0 && <p className="text-slate-400 text-sm">No workflows configured.</p>}
         </div>
-        <div className="bg-white rounded-lg shadow p-4">
-          <h3 className="font-semibold mb-3 text-gray-700">Simulate Routing</h3>
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+          <h3 className="font-semibold mb-4 text-slate-800">Simulate Routing</h3>
           <div className="grid grid-cols-3 gap-2 mb-3">
-            <input id="sim-cat" placeholder="Category" className="border rounded px-2 py-1 text-sm col-span-1" />
-            <input id="sim-lt" placeholder="Leave Type" className="border rounded px-2 py-1 text-sm col-span-1" />
-            <input id="sim-days" type="number" defaultValue={3} min={1} className="border rounded px-2 py-1 text-sm col-span-1" />
+            <input id="sim-cat" placeholder="Category" className="border rounded px-3 py-2 text-sm" />
+            <input id="sim-lt" placeholder="Leave Type" className="border rounded px-3 py-2 text-sm" />
+            <input id="sim-days" type="number" defaultValue={3} min={1} className="border rounded px-3 py-2 text-sm" />
           </div>
-          <button id="simulate-btn" onClick={simulate} className="w-full bg-blue-600 text-white px-3 py-2 rounded text-sm mb-3">Simulate</button>
+          <button id="simulate-btn" onClick={simulate} className="w-full bg-slate-800 text-white px-3 py-2 rounded text-sm hover:bg-slate-900 transition-colors">Run Simulation</button>
           {simResult && (
-            <div className="text-sm border rounded p-3">
+            <div className="mt-4 text-sm border-t pt-4">
               {simResult.matched ? (
                 <div>
-                  <p className="text-green-700 font-medium mb-2">
+                  <p className="text-emerald-700 font-medium mb-3">
                     Matched: {(simResult.config as Record<string, unknown>).config_name as string}
                   </p>
+                  <div className="space-y-2">
                   {((simResult.config as Record<string, unknown>).steps as Record<string, unknown>[])?.map((s) => (
-                    <div key={s.id as string} className="ml-2 text-gray-600 flex gap-2">
-                      <span>Step {s.step_order as number}:</span>
+                    <div key={s.id as string} className="flex gap-3 text-slate-600">
+                      <span className="font-mono text-slate-400">Step {s.step_order as number}</span>
                       <span className="font-medium">{s.approver_role as string}</span>
                     </div>
                   ))}
+                  </div>
                 </div>
               ) : (
                 <p className="text-red-600">No workflow matched for the given inputs.</p>
@@ -290,7 +309,8 @@ export function OpeningBalancePage() {
   {"emp_code": "EMP001", "leave_type_code": "HPL", "opening_balance": 20}
 ]`;
 
-  const submit = async () => {
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
     try {
       const payload = JSON.parse(jsonText);
       const { data } = await balancesApi.opening(payload);
@@ -308,12 +328,16 @@ export function OpeningBalancePage() {
   };
 
   return (
-    <div>
-      <h2 className="text-xl font-bold text-gray-800 mb-4">Opening Balances</h2>
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="bg-white rounded-lg shadow p-4">
-          <h3 className="font-semibold mb-2 text-gray-700">JSON Entry</h3>
-          <p className="text-xs text-gray-500 mb-2">Fields: emp_code, leave_type_code, opening_balance</p>
+    <div className="space-y-6">
+      <PageHeader 
+        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'System Config', to: '/admin' }, { label: 'Opening Balances' }]}
+        title="Opening Balances"
+        description="Manual management of leave balances."
+      />
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden p-6">
+        <form onSubmit={submit} className="flex flex-col gap-2 max-w-2xl">
+          <h3 className="font-semibold text-slate-800">JSON Entry</h3>
+          <p className="text-xs text-slate-500">Fields: emp_code, leave_type_code, opening_balance</p>
           <textarea
             value={jsonText}
             onChange={(e) => setJsonText(e.target.value)}

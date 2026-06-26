@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import api from '../api/client';
 import { useAuthStore } from '../stores';
+import { PageHeader } from '../components/PageHeader';
 
 type EmployeeOption = {
   id: string;
@@ -291,6 +292,10 @@ export function MyLeaveAccountPage() {
 
   return (
     <div className="space-y-6">
+      <PageHeader 
+        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Leave & Attendance', to: '/leave-dashboard' }, { label: 'Leave Ledger' }]}
+        title="Full Leave Account"
+      />
       {message && <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">{message}</div>}
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -494,7 +499,10 @@ export function YearEndProcessingPage() {
 
   return (
     <div className="max-w-5xl space-y-6">
-      <h2 className="text-2xl font-bold text-slate-900">Year-End / Account Processing</h2>
+      <PageHeader 
+        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Admin', to: '/admin' }, { label: 'Year-End Processing' }]}
+        title="Year-End / Account Processing"
+      />
       {message && <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">{message}</div>}
 
       <div className="grid gap-4 lg:grid-cols-2">

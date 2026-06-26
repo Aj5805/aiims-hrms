@@ -4,6 +4,7 @@ import type { AxiosResponse } from 'axios';
 import { Link } from 'react-router-dom';
 import { adminApi, departmentsApi, notificationsApi, reportsApi, usersApi } from '../api/endpoints';
 import { entitlementRulesApi, leaveTypesApi } from '../api/phase3_endpoints';
+import { PageHeader } from '../components/PageHeader';
 
 type DepartmentOption = {
   id: string;
@@ -395,12 +396,11 @@ export function ReportsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-slate-900">Reports & Payroll Export</h2>
-        <p className="mt-1 text-sm text-slate-600">
-          Phase 7 report downloads now stream the locked file formats from the backend.
-        </p>
-      </div>
+      <PageHeader 
+        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Admin', to: '/admin' }, { label: 'Reports' }]}
+        title="Reports & Payroll Export"
+        description="Phase 7 report downloads now stream the locked file formats from the backend."
+      />
 
       {message && <PageNotice>{message}</PageNotice>}
 
@@ -833,27 +833,19 @@ export function AdminDashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-[linear-gradient(135deg,#f8fafc_0%,#eef6ff_55%,#fff7ed_100%)] shadow-sm">
-        <div className="border-b border-white/70 px-6 py-6">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="max-w-3xl">
-              <div className="inline-flex rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-slate-600">
-                Admin Workspace
-              </div>
-              <h2 className="mt-4 text-3xl font-bold tracking-tight text-slate-900">Control center for policy, workflow, and governance</h2>
-              <p className="mt-2 text-sm leading-6 text-slate-600">
-                The admin area is now structured around stable work modules. Use the horizontal strip to move between policy, people,
-                workflow, balances, and audit operations without losing context.
-              </p>
-            </div>
-            <div className="grid min-w-[260px] gap-3 sm:grid-cols-2">
-              <MetricCard label="Active Users" value={String(adminSummary.activeUsers)} helper="currently enabled accounts" />
-              <MetricCard label="Notification Queue" value={String(adminSummary.queueDepth)} helper="pending items from health API" tone={adminSummary.queueDepth > 0 ? 'amber' : 'green'} />
-            </div>
+      <PageHeader
+        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Admin Workspace' }]}
+        title="Control center for policy, workflow, and governance"
+        description="The admin area is now structured around stable work modules. Use the horizontal strip to move between operations without losing context."
+        rightContent={
+          <div className="flex items-center gap-3">
+            <MetricCard label="Active Users" value={String(adminSummary.activeUsers)} />
+            <MetricCard label="Notifications" value={String(adminSummary.queueDepth)} tone={adminSummary.queueDepth > 0 ? 'amber' : 'green'} />
           </div>
-        </div>
-
-        <div className="overflow-x-auto px-3 py-3">
+        }
+      />
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-x-auto px-3 py-3 border-b border-slate-100 bg-slate-50/50">
           <div className="flex min-w-max gap-2">
             {ADMIN_MODULES.map((module) => {
               const active = module.id === activeModule;

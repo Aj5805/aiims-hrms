@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../api/client';
 import { useAuthStore } from '../stores';
+import { PageHeader } from '../components/PageHeader';
 
 type EmployeeDetail = {
   id: string;
@@ -39,15 +40,16 @@ export default function StaffProfilePage() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      <div className="flex items-center justify-between border-b border-slate-200 pb-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">My e-Service Book</h1>
-          <p className="text-sm text-slate-500">Official Profile & Service Records (Part I & II)</p>
-        </div>
-        <div className="h-16 w-16 bg-blue-100 text-blue-700 flex items-center justify-center rounded-full text-2xl font-bold border-2 border-white shadow-sm ring-1 ring-slate-200">
-          {emp.name.charAt(0)}
-        </div>
-      </div>
+      <PageHeader
+        breadcrumbs={[
+          { label: 'Home', to: '/' },
+          { label: 'Profile', to: '/profile-dashboard' },
+          { label: 'e-Service Book' }
+        ]}
+        title="My e-Service Book"
+        description="Official Profile & Service Records (Part I & II)"
+        icon={emp.name.charAt(0)}
+      />
 
       <div className="grid gap-6 md:grid-cols-2">
         {/* Professional Details */}

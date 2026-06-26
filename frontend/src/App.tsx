@@ -17,7 +17,9 @@ import ClaimsDashboardPage from './pages/ClaimsDashboardPage';
 import PayrollDashboardPage from './pages/PayrollDashboardPage';
 import PerformanceDashboardPage from './pages/PerformanceDashboardPage';
 import HomeDashboardPage from './pages/HomeDashboardPage';
+import ApproverDashboardPage from './pages/ApproverDashboardPage';
 import { authApi } from './api/endpoints';
+import { PageHeader } from './components/PageHeader';
 
 const REPORT_ROLES = ['ESTABLISHMENT_OFFICER', 'REGISTRAR', 'DIRECTOR'] as const;
 const ADMIN_ROLES = ['ADMIN'] as const;
@@ -29,14 +31,20 @@ function hasRole(role: string | undefined, allowed: readonly string[]) {
   return !!role && allowed.includes(role);
 }
 
-function UnderConstructionPage({ title }: { title: string }) {
+function UnderConstructionPage({ title, breadcrumbs }: { title: string, breadcrumbs: { label: string, to?: string }[] }) {
   return (
-    <div className="flex flex-col items-center justify-center py-20 text-center bg-white rounded-xl shadow-sm border border-slate-200">
-      <svg className="w-16 h-16 text-amber-500 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-      </svg>
-      <h2 className="text-2xl font-bold text-slate-800 mb-2">{title}</h2>
-      <p className="text-slate-500 max-w-md">This module is currently under development as per CCS / AIIMS HMIS scope. Check back in a future update!</p>
+    <div className="space-y-6">
+      <PageHeader 
+        breadcrumbs={breadcrumbs}
+        title={title}
+      />
+      <div className="flex flex-col items-center justify-center py-20 text-center bg-white rounded-xl shadow-sm border border-slate-200">
+        <svg className="w-16 h-16 text-amber-500 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+        <h2 className="text-2xl font-bold text-slate-800 mb-2">{title}</h2>
+        <p className="text-slate-500 max-w-md">This module is currently under development as per CCS / AIIMS HMIS scope. Check back in a future update!</p>
+      </div>
     </div>
   );
 }
@@ -50,8 +58,10 @@ function NavDropdown({ title, landingPath, items }: { title: string, landingPath
   
   return (
     <div className="group relative">
-      {landingPath ? <Link to={landingPath}>{trigger}</Link> : trigger}
-      <div className="absolute hidden group-hover:block pt-1 z-50">
+      <div className="pb-2">
+        {landingPath ? <Link to={landingPath}>{trigger}</Link> : trigger}
+      </div>
+      <div className="absolute hidden group-hover:block top-[100%] left-0 -mt-2 pt-2 z-50">
         <div className="bg-white border border-slate-200 shadow-xl rounded-lg py-2 w-48 overflow-hidden">
           {items.map(item => (
             <Link key={item.path} to={item.path} className="block px-4 py-2 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors">
@@ -161,7 +171,7 @@ function Layout({ children }: { children: ReactNode }) {
                       { label: 'Training Logs', path: '/performance/training' }
                     ]} />
 
-                    {role !== 'STAFF' && <Link to="/inbox" className="text-orange-600 hover:text-orange-800 font-bold ml-2">Inbox</Link>}
+                    {role !== 'STAFF' && <Link to="/approver-dashboard" className="text-orange-600 hover:text-orange-800 font-bold ml-2">Approvals</Link>}
 
                     {/* Admin & Config Grouping */}
                     {hasRole(role, EMPLOYEE_MASTER_ROLES) && (
@@ -225,7 +235,8 @@ export default function App() {
             <Route path="/masters" element={<RoleRoute allowedRoles={EMPLOYEE_MASTER_ROLES} fallback="Masters access is restricted."><MastersPage /></RoleRoute>} />
             <Route path="/apply" element={<ApplyLeavePage />} />
             <Route path="/my-apps" element={<MyApplicationsPage />} />
-            <Route path="/inbox" element={<RoleRoute allowedRoles={APPROVER_ROLES} fallback="Only approvers have an Inbox."><ApprovalInboxPage /></RoleRoute>} />
+            <Route path="/approver-dashboard" element={<RoleRoute allowedRoles={APPROVER_ROLES} fallback="Only approvers have an Approver Dashboard."><ApproverDashboardPage /></RoleRoute>} />
+            <Route path="/approvals" element={<RoleRoute allowedRoles={APPROVER_ROLES} fallback="Only approvers have an Inbox."><ApprovalInboxPage /></RoleRoute>} />
             <Route path="/leave-account" element={<MyLeaveAccountPage />} />
             <Route path="/year-end" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Year-End processing is limited to ADMIN and ESTABLISHMENT_OFFICER."><YearEndProcessingPage /></RoleRoute>} />
             <Route path="/reports" element={<RoleRoute allowedRoles={REPORT_ROLES} fallback="Reports are limited to ESTABLISHMENT_OFFICER, REGISTRAR, and DIRECTOR."><ReportsPage /></RoleRoute>} />
@@ -245,13 +256,29 @@ export default function App() {
             <Route path="/payroll" element={<PayrollDashboardPage />} />
             <Route path="/performance" element={<PerformanceDashboardPage />} />
             
-            <Route path="/dependents" element={<UnderConstructionPage title="Family & Dependents" />} />
-            <Route path="/holidays-calendar" element={<UnderConstructionPage title="Holiday Calendar" />} />
-            <Route path="/attendance" element={<UnderConstructionPage title="My Attendance" />} />
-            <Route path="/punches" element={<UnderConstructionPage title="Punch History" />} />
-            <Route path="/claims/*" element={<UnderConstructionPage title="Claims & Advances Portal" />} />
-            <Route path="/payroll/*" element={<UnderConstructionPage title="Payroll & Finance" />} />
-            <Route path="/performance/*" element={<UnderConstructionPage title="Performance & APAR" />} />
+            <Route path="/dependents" element={<UnderConstructionPage title="Family & Dependents" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Profile', to: '/profile-dashboard' }, { label: 'Family & Dependents' }]} />} />
+            <Route path="/holidays-calendar" element={<UnderConstructionPage title="Holiday Calendar" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Leave & Attendance', to: '/leave-dashboard' }, { label: 'Holiday Calendar' }]} />} />
+            <Route path="/attendance" element={<UnderConstructionPage title="My Attendance" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Leave & Attendance', to: '/leave-dashboard' }, { label: 'My Attendance' }]} />} />
+            <Route path="/punches" element={<UnderConstructionPage title="Punch History" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Leave & Attendance', to: '/leave-dashboard' }, { label: 'Punch History' }]} />} />
+            
+            {/* Claims & Advances */}
+            <Route path="/claims/ltc" element={<UnderConstructionPage title="LTC Claim" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Claims & Advances', to: '/claims' }, { label: 'LTC Claim' }]} />} />
+            <Route path="/claims/cea" element={<UnderConstructionPage title="CEA (Education)" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Claims & Advances', to: '/claims' }, { label: 'CEA (Education)' }]} />} />
+            <Route path="/claims/ehs" element={<UnderConstructionPage title="EHS Reimbursement" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Claims & Advances', to: '/claims' }, { label: 'EHS Reimbursement' }]} />} />
+            <Route path="/claims/ta" element={<UnderConstructionPage title="TA/DA" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Claims & Advances', to: '/claims' }, { label: 'TA/DA' }]} />} />
+            <Route path="/claims/telephone" element={<UnderConstructionPage title="Telephone & Internet" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Claims & Advances', to: '/claims' }, { label: 'Telephone & Internet' }]} />} />
+
+            {/* Payroll & Finance */}
+            <Route path="/payroll/slips" element={<UnderConstructionPage title="Salary Slips" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Payroll & Finance', to: '/payroll' }, { label: 'Salary Slips' }]} />} />
+            <Route path="/payroll/summary" element={<UnderConstructionPage title="Annual Summary" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Payroll & Finance', to: '/payroll' }, { label: 'Annual Summary' }]} />} />
+            <Route path="/payroll/form16" element={<UnderConstructionPage title="Form 16 & Tax" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Payroll & Finance', to: '/payroll' }, { label: 'Form 16 & Tax' }]} />} />
+
+            {/* Performance */}
+            <Route path="/performance/apar" element={<UnderConstructionPage title="My APAR" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Performance', to: '/performance' }, { label: 'My APAR' }]} />} />
+            <Route path="/performance/training" element={<UnderConstructionPage title="Training Logs" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Performance', to: '/performance' }, { label: 'Training Logs' }]} />} />
+            
+            <Route path="/team-calendar" element={<UnderConstructionPage title="Team Calendar" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Approvals', to: '/approver-dashboard' }, { label: 'Team Calendar' }]} />} />
+            <Route path="/delegation" element={<UnderConstructionPage title="Delegation" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Approvals', to: '/approver-dashboard' }, { label: 'Delegation' }]} />} />
           </Routes>
           </Layout>
         ) : (

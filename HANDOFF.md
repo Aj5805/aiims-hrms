@@ -66,6 +66,11 @@ Also seeded: `testDept1-10`, `testDesig1-10`, `testLeaveType1-10`, 100 leave bal
 - **Bug:** Ledger view was displaying all global and departmental approval chains instead of just the one applicable to the selected leave type.
 - **Fix (backend):** Updated the `get_ledger` endpoint in `leave_balances.py` to order chains by specificity (`category_id` and `leave_type_id`) and limit to `1`, mirroring the logic used in leave applications.
 
+### 7. Approver & Admin UI Redesign
+- **Approver Workspace (`ApproverDashboardPage.tsx`):** Created a dedicated, hub-style dashboard for HOD and Nodal Officers displaying dynamic "Acting As" roles, an Approval Inbox, and Team Calendar links.
+- **Approval Inbox Polish:** Refined `ApprovalInboxPage` to use wide sleek cards, color-coded SLA and Pending hours indicators, and inline Approve/Forward/Reject buttons.
+- **System Config Matrices (`Phase3Pages.tsx`):** Standardized all tables (Leave Types, Entitlement Rules, Holidays, Workflows, Opening Balances) to match the sleek UI, using padded data grids and unified `PageHeader` components.
+
 ---
 
 ## Full Role Hierarchy
@@ -108,5 +113,6 @@ Also seeded: `testDept1-10`, `testDesig1-10`, `testLeaveType1-10`, 100 leave bal
 | Migrations | `cd backend && .venv\Scripts\python.exe -m alembic upgrade head` | — |
 
 ## Next Steps
-The project is functionally complete with the nodal routing and profile page additions.
-Reference `docs/GO_LIVE_RUNBOOK.md` for production deployment instructions.
+- **Agent Task:** Work on HOD login screen next (and HOD-specific functionalities if any are missing or requested).
+- The project is otherwise functionally complete with the recent UI standardizations (Hub & Spoke, Approver Dashboard, Admin Dashboard matrices).
+- Reference `docs/GO_LIVE_RUNBOOK.md` for production deployment instructions.
