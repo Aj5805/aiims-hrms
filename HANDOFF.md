@@ -103,14 +103,24 @@ Also seeded: `testDept1-10`, `testDesig1-10`, `testLeaveType1-10`, 100 leave bal
 
 ---
 
-## Running Locally
+## Running Locally & Windows 11 Portability
+The entire database schema and test data are stored as code (Alembic migrations + Python seed scripts), making the project 100% portable to a new machine (like Windows 11) without needing manual SQL dumps.
+
+**To set up on a new Windows 11 machine:**
+1. Install PostgreSQL and create a database named `aiims_hrms`.
+2. Ensure your `.env` (copied from `.env.example`) points to your local Postgres instance.
+3. Run migrations and seeds:
+   ```cmd
+   cd backend
+   .venv\Scripts\python.exe -m alembic upgrade head
+   .venv\Scripts\python.exe seeds\run.py
+   ```
+   *(This will create all tables, insert test employees, leave types, workflows, and test user credentials).*
 
 | Service | Command | URL |
 |---|---|---|
 | Backend | `cd backend && .venv\Scripts\python.exe -m uvicorn main:app --reload` | http://127.0.0.1:8000 |
 | Frontend | `cd frontend && npm run dev` | http://localhost:5173 |
-| Seed data | `cd backend && .venv\Scripts\python.exe seeds\run.py` | — |
-| Migrations | `cd backend && .venv\Scripts\python.exe -m alembic upgrade head` | — |
 
 ## Next Steps
 - **Agent Task:** Work on HOD login screen next (and HOD-specific functionalities if any are missing or requested).
