@@ -60,6 +60,10 @@ Also seeded: `testDept1-10`, `testDesig1-10`, `testLeaveType1-10`, 100 leave bal
   - Implemented auto-loading of balances on mount (removing the need for a manual "Load Account" click).
   - Fully removed the overly complex "Balance Projection" feature to simplify the UX.
 
+### 5. Ledger Approval Chain Fix
+- **Bug:** Ledger view was displaying all global and departmental approval chains instead of just the one applicable to the selected leave type.
+- **Fix (backend):** Updated the `get_ledger` endpoint in `leave_balances.py` to order chains by specificity (`category_id` and `leave_type_id`) and limit to `1`, mirroring the logic used in leave applications.
+
 ---
 
 ## Full Role Hierarchy

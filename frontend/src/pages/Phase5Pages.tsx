@@ -41,6 +41,7 @@ type LedgerResponse = {
   leave_type_id: string;
   balances: BalanceRow[];
   transactions: LedgerEntry[];
+  approval_chains?: { config_name: string; min_days: number; max_days: number | null; steps: string[] }[];
 };
 
 const balApi = {
@@ -132,6 +133,28 @@ function BalanceTableRow({
         <tr>
           <td colSpan={8} className="p-0 border-b border-slate-200">
             <div className="bg-slate-50/80 p-4 shadow-inner">
+              {ledger?.approval_chains && ledger.approval_chains.length > 0 && (
+                <div className="mb-4">
+                  <div className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500">Approval Chain</div>
+                  <div className="flex flex-col gap-2">
+                    {ledger.approval_chains.map((chain, idx) => (
+                      <div key={idx} className="flex items-center gap-2 text-sm">
+                        <span className="font-medium text-slate-700 bg-white px-2 py-1 rounded border border-slate-200 shadow-sm">{chain.config_name}</span>
+                        <span className="text-xs text-slate-500">({chain.max_days ? `${chain.min_days}-${chain.max_days} days` : `> ${chain.min_days} days`})</span>
+                        <span className="text-slate-400">→</span>
+                        <div className="flex items-center gap-1">
+                          {chain.steps.map((step, sIdx) => (
+                            <div key={sIdx} className="flex items-center gap-1">
+                              <span className="px-2 py-1 bg-blue-50 text-blue-700 rounded text-xs font-medium border border-blue-100">{step}</span>
+                              {sIdx < chain.steps.length - 1 && <span className="text-slate-400">→</span>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500">Ledger Details</div>
               <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
                 <table className="w-full text-left text-sm">

@@ -280,11 +280,46 @@ async def get_ledger(
                 }
             )
 
+    # Fetch workflow configs and steps for this leave type
+    emp_res = await db.execute(text("SELECT category_id FROM employees WHERE id = :eid"), {"eid": employee_id})
+    emp_row = emp_res.fetchone()
+    cat_id = emp_row.category_id if emp_row else None
+
+    wc_res = await db.execute(
+        text("""
+            SELECT id, config_name, min_days, max_days 
+            FROM workflow_configs 
+            WHERE (leave_type_id = :lid OR leave_type_id IS NULL)
+              AND is_active = true
+              AND (category_id = :cat OR category_id IS NULL)
+            ORDER BY 
+                 (CASE WHEN category_id IS NOT NULL THEN 1 ELSE 0 END) DESC,
+                 (CASE WHEN leave_type_id IS NOT NULL THEN 1 ELSE 0 END) DESC
+            LIMIT 1
+        """),
+        {"lid": leave_type_id, "cat": cat_id}
+    )
+    approval_chains = []
+    for r in wc_res.fetchall():
+        cfg = dict(r._mapping)
+        steps_res = await db.execute(
+            text("SELECT step_order, approver_role FROM workflow_steps WHERE config_id = :cid ORDER BY step_order"),
+            {"cid": cfg["id"]}
+        )
+        cfg["steps"] = [s.approver_role for s in steps_res.fetchall()]
+        approval_chains.append(cfg)
+
     transactions = sorted(
         [*yearly_events, *manual_adjustments, *application_events],
         key=lambda item: (str(item.get("event_date") or ""), item["entry_type"]),
     )
-    return {"employee_id": employee_id, "leave_type_id": leave_type_id, "balances": balances, "transactions": transactions}
+    return {
+        "employee_id": employee_id,
+        "leave_type_id": leave_type_id,
+        "balances": balances,
+        "transactions": transactions,
+        "approval_chains": approval_chains,
+    }
 
 
 @router.get("/{employee_id}/project")
