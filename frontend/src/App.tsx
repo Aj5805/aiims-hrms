@@ -1,5 +1,5 @@
 import { Routes, Route, Link, useNavigate, useLocation, Navigate } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useAuthStore } from './stores';
 import LoginPage from './pages/LoginPage';
@@ -17,6 +17,7 @@ import ClaimsDashboardPage from './pages/ClaimsDashboardPage';
 import PayrollDashboardPage from './pages/PayrollDashboardPage';
 import PerformanceDashboardPage from './pages/PerformanceDashboardPage';
 import HomeDashboardPage from './pages/HomeDashboardPage';
+import HodDashboardPage from './pages/HodDashboardPage';
 import ApproverDashboardPage from './pages/ApproverDashboardPage';
 import { authApi } from './api/endpoints';
 import { PageHeader } from './components/PageHeader';
@@ -50,28 +51,68 @@ function UnderConstructionPage({ title, breadcrumbs }: { title: string, breadcru
 }
 
 function NavDropdown({ title, landingPath, items }: { title: string, landingPath?: string, items: { label: string, path: string }[] }) {
-  const triggerClasses = "text-sm font-semibold text-slate-700 cursor-pointer hover:text-blue-600 px-2 py-1 flex items-center gap-1 whitespace-nowrap";
-  const triggerContent = <>{title} <span className="text-[10px] opacity-60">▼</span></>;
-  
-  const trigger = landingPath 
-    ? <Link to={landingPath} className={triggerClasses}>{triggerContent}</Link>
-    : <span className={triggerClasses}>{triggerContent}</span>;
-  
+  const [isOpen, setIsOpen] = useState(false);
+  const [top, setTop] = useState(0);
+
+  const handleMouseEnter = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (window.innerWidth >= 768) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      setTop(rect.top);
+      setIsOpen(true);
+    }
+  };
+
   return (
-    <div className="group relative">
-      <div className="py-2">
-        {trigger}
+    <>
+      {/* Desktop Flyout */}
+      <div 
+        className="hidden md:block group"
+        onMouseEnter={handleMouseEnter} 
+        onMouseLeave={() => setIsOpen(false)}
+      >
+        <div className="flex items-center justify-between px-2 py-1.5 text-xs font-medium text-slate-300 cursor-pointer hover:bg-slate-800/80 hover:text-white rounded-md transition-all duration-300 hover:shadow-sm hover:-translate-y-0.5">
+          {landingPath ? (
+             <Link to={landingPath} className="flex-1">{title}</Link>
+          ) : (
+             <span className="flex-1">{title}</span>
+          )}
+          <span className="text-[10px] opacity-60">▶</span>
+        </div>
+        
+        {isOpen && (
+          <div className="fixed left-56 z-50 -mt-2 pb-4" style={{ top: top }}>
+            <div className="bg-slate-900/95 backdrop-blur-xl border border-slate-700/50 shadow-2xl rounded-xl py-2 w-48 relative animate-in fade-in zoom-in-95 duration-200">
+              {/* Large invisible bridge spanning across the nav padding gap */}
+              <div className="absolute inset-y-0 right-full w-16 bg-transparent" />
+              {items.map(item => (
+                <Link key={item.path} to={item.path} className="block px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800/80 hover:text-white transition-colors" onClick={() => setIsOpen(false)}>
+                  {item.label}
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
-      <div className="absolute hidden group-hover:block top-[100%] left-0 -mt-2 pt-2 z-50">
-        <div className="bg-white border border-slate-200 shadow-xl rounded-lg py-2 w-48 overflow-hidden">
+
+      {/* Mobile Accordion */}
+      <details className="md:hidden group [&_summary::-webkit-details-marker]:hidden">
+        <summary className="flex items-center justify-between px-2 py-1.5 text-xs font-medium text-slate-300 cursor-pointer hover:bg-slate-800/80 hover:text-white rounded-md transition-colors list-none">
+          {landingPath ? (
+             <Link to={landingPath} className="flex-1" onClick={(e) => e.stopPropagation()}>{title}</Link>
+          ) : (
+             <span className="flex-1">{title}</span>
+          )}
+          <span className="text-[10px] transition-transform group-open:rotate-90 opacity-60">▶</span>
+        </summary>
+        <div className="pl-6 pr-3 py-1 space-y-1">
           {items.map(item => (
-            <Link key={item.path} to={item.path} className="block px-4 py-2 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors">
+            <Link key={item.path} to={item.path} className="block px-2 py-1 text-xs text-slate-400 hover:text-white hover:bg-slate-800/80 rounded transition-colors">
               {item.label}
             </Link>
           ))}
         </div>
-      </div>
-    </div>
+      </details>
+    </>
   );
 }
 
@@ -105,6 +146,7 @@ function Layout({ children }: { children: ReactNode }) {
   const clearAuth = useAuthStore((s) => s.clearAuth);
   const navigate = useNavigate();
   const location = useLocation();
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const role = user?.role;
   const showNotificationBell = !!user && !user.must_change_password && location.pathname !== '/change-password';
 
@@ -113,6 +155,11 @@ function Layout({ children }: { children: ReactNode }) {
       navigate('/change-password', { replace: true });
     }
   }, [user, location.pathname, navigate]);
+
+  // Close sidebar on navigation on mobile
+  useEffect(() => {
+    setIsSidebarOpen(false);
+  }, [location.pathname]);
 
   const logout = async () => {
     try {
@@ -128,91 +175,153 @@ function Layout({ children }: { children: ReactNode }) {
   const isAdminRoute = location.pathname.startsWith('/admin');
 
   return (
-    <div className="min-h-screen bg-[#F0F4F8]">
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link to="/" className="text-lg font-semibold text-blue-800 hover:text-blue-900 transition-colors whitespace-nowrap">
-              {isAdminRoute ? 'AIIMS HRMS (Admin Console)' : 'AIIMS HRMS'}
+    <div className="flex h-screen bg-[#F0F4F8] overflow-hidden">
+      {/* Mobile Backdrop */}
+      {isSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-slate-900/50 z-20 md:hidden" 
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
+      {/* Sidebar */}
+      <aside className={`fixed inset-y-0 left-0 z-30 w-56 bg-slate-900/95 backdrop-blur-xl border-r border-slate-700/50 flex flex-col transition-transform duration-300 ease-in-out md:static md:translate-x-0 shadow-2xl ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        {/* Logo Area */}
+        <div className="h-12 flex items-center px-4 border-b border-slate-700 shrink-0">
+           <Link to="/" className="text-base font-bold text-white tracking-tight">
+             {isAdminRoute ? 'AIIMS (Admin)' : 'AIIMS HRMS'}
+           </Link>
+        </div>
+
+        {/* Navigation */}
+        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
+           {isAdminRoute ? (
+             <Link to="/" className="flex items-center px-3 py-1.5 text-sm font-medium text-slate-300 hover:bg-slate-700 hover:text-white rounded transition-colors">
+                &larr; Exit Admin
+             </Link>
+           ) : user && (
+             <>
+               <NavDropdown title="My Profile" landingPath="/profile-dashboard" items={[
+                 { label: 'e-Service Book', path: '/profile' },
+                 { label: 'Family & Dependents', path: '/dependents' }
+               ]} />
+               <NavDropdown title="Leave & Attendance" landingPath="/leave-dashboard" items={[
+                 { label: 'Apply for Leave', path: '/apply' },
+                 { label: 'My Applications', path: '/my-apps' },
+                 { label: 'Leave Ledger', path: '/leave-account' },
+                 { label: 'Holiday Calendar', path: '/holidays-calendar' },
+                 { label: 'My Attendance', path: '/attendance' },
+                 { label: 'Punch History', path: '/punches' }
+               ]} />
+               <NavDropdown title="Claims & Advances" landingPath="/claims" items={[
+                 { label: 'LTC Claim', path: '/claims/ltc' },
+                 { label: 'CEA (Education)', path: '/claims/cea' },
+                 { label: 'EHS Reimbursement', path: '/claims/ehs' },
+                 { label: 'TA/DA', path: '/claims/ta' },
+                 { label: 'Telephone', path: '/claims/telephone' }
+               ]} />
+               <NavDropdown title="Payroll & Finance" landingPath="/payroll" items={[
+                 { label: 'Salary Slips', path: '/payroll/slips' },
+                 { label: 'Annual Summary', path: '/payroll/summary' },
+                 { label: 'Form 16 & Tax', path: '/payroll/form16' }
+               ]} />
+               <NavDropdown title="Performance" landingPath="/performance" items={[
+                 { label: 'My APAR', path: '/performance/apar' },
+                 { label: 'Training Logs', path: '/performance/training' }
+               ]} />
+
+               {role !== 'STAFF' && (
+                 <NavDropdown title="Nodal Desk" landingPath="/hod" items={[
+                   { label: 'HOD Dashboard', path: '/hod' },
+                   { label: 'Approval Inbox', path: '/approvals' },
+                   { label: 'Team Calendar', path: '/team-calendar' },
+                   { label: 'Delegation', path: '/delegation' }
+                 ]} />
+               )}
+
+               {/* Admin & Config Grouping */}
+               {hasRole(role, EMPLOYEE_MASTER_ROLES) && (
+                 <NavDropdown title="HR Operations" items={[
+                   { label: 'Employees', path: '/employees' },
+                   { label: 'Master Settings', path: '/masters' },
+                 ]} />
+               )}
+               {hasRole(role, EMPLOYEE_MASTER_ROLES) && (
+                 <NavDropdown title="Reports & Data" items={[
+                   { label: 'Reports', path: '/reports' },
+                   ...(hasRole(role, CONFIG_ROLES) ? [{ label: 'Year-End', path: '/year-end' }] : []),
+                 ]} />
+               )}
+               {hasRole(role, CONFIG_ROLES) && (
+                 <NavDropdown title="System Config" items={[
+                   { label: 'Leave Types', path: '/leave-types' },
+                   { label: 'Entitlements', path: '/entitlements' },
+                   { label: 'Holidays', path: '/holidays' },
+                   { label: 'Workflows', path: '/workflows' },
+                   { label: 'Opening Balances', path: '/balances' },
+                 ]} />
+               )}
+             </>
+           )}
+        </nav>
+
+        {/* Bottom Actions */}
+        <div className="p-4 shrink-0 flex flex-col gap-3 border-t border-slate-700">
+          {hasRole(role, ADMIN_ROLES) && (
+            <Link to="/admin" className="flex items-center justify-center gap-2 w-full rounded-full bg-blue-600/20 border border-blue-500/50 hover:bg-blue-600 hover:text-white hover:border-blue-500 hover:shadow-lg px-4 py-2 text-sm font-bold text-blue-400 transition-all">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+              Admin Console
             </Link>
+          )}
+          {user && (
+            <button onClick={logout} className="flex items-center justify-center gap-2 w-full rounded-full bg-slate-700/50 border border-slate-600 hover:bg-rose-600 hover:border-rose-500 hover:shadow-lg px-4 py-2 text-sm font-medium text-slate-300 hover:text-white transition-all" title="Logout">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+              Logout
+            </button>
+          )}
+        </div>
+      </aside>
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top Header */}
+        <header className="h-12 bg-white/80 backdrop-blur-md border-b border-slate-200 flex items-center justify-between px-4 shrink-0 z-10 text-slate-700 sticky top-0 shadow-sm">
+          <div className="flex items-center gap-3">
+            {/* Hamburger only visible on mobile */}
+            <button onClick={() => setIsSidebarOpen(true)} className="text-slate-500 hover:text-slate-800 md:hidden transition-colors">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+            </button>
+            <span className="font-bold text-slate-800 text-sm md:hidden">{isAdminRoute ? 'Admin Console' : 'AIIMS HRMS'}</span>
+          </div>
+          
+          {/* User Profile / Controls on the right */}
+          <div className="flex items-center gap-3">
+            {showNotificationBell && <NotificationBell />}
+            
             {user && (
-              <nav className="flex gap-2 text-sm flex-nowrap items-center">
-                {isAdminRoute ? (
-                  <Link to="/" className="text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 whitespace-nowrap">
-                    &larr; Exit Admin Console (Main Portal)
-                  </Link>
-                ) : (
-                  <>
-                    <NavDropdown title="My Profile" landingPath="/profile-dashboard" items={[
-                      { label: 'e-Service Book', path: '/profile' },
-                      { label: 'Family & Dependents', path: '/dependents' }
-                    ]} />
-                    <NavDropdown title="Leave & Attendance" landingPath="/leave-dashboard" items={[
-                      { label: 'Apply for Leave', path: '/apply' },
-                      { label: 'My Applications', path: '/my-apps' },
-                      { label: 'Leave Ledger', path: '/leave-account' },
-                      { label: 'Holiday Calendar', path: '/holidays-calendar' },
-                      { label: 'My Attendance', path: '/attendance' },
-                      { label: 'Punch History', path: '/punches' }
-                    ]} />
-                    <NavDropdown title="Claims & Advances" landingPath="/claims" items={[
-                      { label: 'LTC Claim', path: '/claims/ltc' },
-                      { label: 'CEA (Education)', path: '/claims/cea' },
-                      { label: 'EHS Reimbursement', path: '/claims/ehs' },
-                      { label: 'TA/DA', path: '/claims/ta' },
-                      { label: 'Telephone & Internet', path: '/claims/telephone' }
-                    ]} />
-                    <NavDropdown title="Payroll & Finance" landingPath="/payroll" items={[
-                      { label: 'Salary Slips', path: '/payroll/slips' },
-                      { label: 'Annual Summary', path: '/payroll/summary' },
-                      { label: 'Form 16 & Tax', path: '/payroll/form16' }
-                    ]} />
-                    <NavDropdown title="Performance" landingPath="/performance" items={[
-                      { label: 'My APAR', path: '/performance/apar' },
-                      { label: 'Training Logs', path: '/performance/training' }
-                    ]} />
-
-                    {role !== 'STAFF' && (
-                      <NavDropdown title="Approvals" landingPath="/approver-dashboard" items={[
-                        { label: 'Approval Inbox', path: '/approvals' },
-                        { label: 'Team Calendar', path: '/team-calendar' },
-                        { label: 'Delegation', path: '/delegation' }
-                      ]} />
-                    )}
-
-                    {/* Admin & Config Grouping */}
-                    {hasRole(role, EMPLOYEE_MASTER_ROLES) && (
-                      <NavDropdown title="Admin/Estab" items={[
-                        { label: 'Employees Directory', path: '/employees' },
-                        { label: 'Master Settings', path: '/masters' },
-                        { label: 'Reports', path: '/reports' },
-                        ...(hasRole(role, CONFIG_ROLES) ? [{ label: 'Year-End Processing', path: '/year-end' }] : []),
-                        ...(hasRole(role, ADMIN_ROLES) ? [{ label: 'System Admin Console', path: '/admin' }] : []),
-                      ]} />
-                    )}
-                    {hasRole(role, CONFIG_ROLES) && (
-                      <NavDropdown title="System Config" items={[
-                        { label: 'Leave Types', path: '/leave-types' },
-                        { label: 'Entitlement Rules', path: '/entitlements' },
-                        { label: 'Holidays setup', path: '/holidays' },
-                        { label: 'Workflows', path: '/workflows' },
-                        { label: 'Opening Balances', path: '/balances' },
-                      ]} />
-                    )}
-                  </>
-                )}
-              </nav>
+              <div className="flex items-center gap-3 border-l border-slate-600 pl-3">
+                <div className="hidden sm:block text-right">
+                  <p className="text-sm font-medium text-white leading-none">{(user as any).username}</p>
+                  <p className="text-[10px] text-slate-400 font-medium mt-1 uppercase tracking-wider">{(user as any).role?.replace('_', ' ')}</p>
+                </div>
+                <div className="h-7 w-7 rounded-full bg-slate-700 border border-slate-600 flex items-center justify-center text-white font-bold text-xs shadow-sm">
+                  {((user as any).username || 'U')[0].toUpperCase()}
+                </div>
+                <button onClick={logout} className="text-slate-400 hover:text-red-400 transition-colors ml-1" title="Logout">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                </button>
+              </div>
             )}
           </div>
-          <div className="flex items-center gap-3 flex-nowrap shrink-0">
-            {showNotificationBell && <NotificationBell />}
-            {user && <span className="text-sm text-gray-500 whitespace-nowrap">{(user as any).username} ({(user as any).role?.replace('_', ' ')})</span>}
-            <span className="text-sm text-gray-400 whitespace-nowrap">v0.5.0</span>
-            {user && <button onClick={logout} className="text-sm text-red-600 whitespace-nowrap">Logout</button>}
+        </header>
+
+        {/* Page Content */}
+        <main className="flex-1 overflow-y-auto">
+          <div className="max-w-7xl mx-auto px-4 py-6 md:px-8">
+            {children}
           </div>
-        </div>
-      </header>
-      <main className="max-w-7xl mx-auto px-4 py-6">{children}</main>
+        </main>
+      </div>
     </div>
   );
 }
@@ -242,6 +351,7 @@ export default function App() {
             <Route path="/apply" element={<ApplyLeavePage />} />
             <Route path="/my-apps" element={<MyApplicationsPage />} />
             <Route path="/approver-dashboard" element={<RoleRoute allowedRoles={APPROVER_ROLES} fallback="Only approvers have an Approver Dashboard."><ApproverDashboardPage /></RoleRoute>} />
+            <Route path="/hod" element={<RoleRoute allowedRoles={APPROVER_ROLES} fallback="Only approvers have a Nodal Dashboard."><HodDashboardPage /></RoleRoute>} />
             <Route path="/approvals" element={<RoleRoute allowedRoles={APPROVER_ROLES} fallback="Only approvers have an Inbox."><ApprovalInboxPage /></RoleRoute>} />
             <Route path="/leave-account" element={<MyLeaveAccountPage />} />
             <Route path="/year-end" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Year-End processing is limited to ADMIN and ESTABLISHMENT_OFFICER."><YearEndProcessingPage /></RoleRoute>} />

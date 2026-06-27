@@ -338,7 +338,7 @@ export default function LeaveDashboardPage() {
                   </thead>
                   <tbody className="divide-y divide-slate-50">
                     {apps.map((a) => (
-                      <tr key={a.id} className="hover:bg-slate-50 transition-colors">
+                      <tr key={a.id} className="hover:bg-slate-50 transition-colors defer-render">
                         <td className="py-3 pr-4 font-mono text-xs text-slate-600">{a.app_number}</td>
                         <td className="py-3 pr-4 font-medium text-slate-800">{a.leave_type_code ?? '—'}</td>
                         <td className="py-3 pr-4 text-slate-600">{fmt(a.from_date)}</td>

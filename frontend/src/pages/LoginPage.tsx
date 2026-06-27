@@ -35,23 +35,27 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-      <div className="w-full max-w-md">
-        <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-white/40 ring-1 ring-black/5">
-          <div className="bg-blue-800 p-6 text-center">
-            <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-3 shadow-inner">
-              <span className="text-blue-800 text-2xl font-bold font-serif">A</span>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-4 relative overflow-hidden">
+      {/* Decorative background blurs */}
+      <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-blue-500/20 rounded-full blur-[100px]" />
+      <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-teal-500/20 rounded-full blur-[100px]" />
+      
+      <div className="w-full max-w-md relative z-10">
+        <div className="bg-white/10 backdrop-blur-2xl rounded-3xl shadow-2xl overflow-hidden border border-white/20 ring-1 ring-white/10">
+          <div className="bg-slate-900/40 p-8 text-center border-b border-white/10">
+            <div className="w-16 h-16 bg-white/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-white/20 shadow-inner">
+              <span className="text-white text-2xl font-bold font-serif tracking-widest">A</span>
             </div>
             <h1 className="text-2xl font-bold text-white tracking-wide">AIIMS HRMS</h1>
-            <p className="text-blue-200 text-sm mt-1 font-medium tracking-wider uppercase">Bibinagar</p>
+            <p className="text-slate-400 text-xs mt-2 font-medium tracking-[0.2em] uppercase">Bibinagar</p>
           </div>
           
-          <div className="p-8">
-            <h2 className="text-xl font-semibold text-gray-800 mb-6 text-center">Sign In to Your Account</h2>
+          <div className="p-8 bg-slate-900/60">
+            <h2 className="text-lg font-medium text-white mb-6 text-center tracking-wide">Sign In to Your Account</h2>
             
             {error && (
-              <div className="bg-red-50 border-l-4 border-red-500 text-red-700 p-4 rounded-r mb-6 text-sm flex items-start shadow-sm">
-                <svg className="w-5 h-5 mr-2 text-red-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <div className="bg-rose-500/10 border border-rose-500/50 text-rose-200 p-4 rounded-xl mb-6 text-sm flex items-start shadow-sm backdrop-blur-md">
+                <svg className="w-5 h-5 mr-2 text-rose-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                 </svg>
                 <span>{error}</span>
@@ -60,13 +64,13 @@ export default function LoginPage() {
             
             <form onSubmit={handleSubmit} className="space-y-5">
               <div>
-                <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-1.5">Username</label>
+                <label htmlFor="username" className="block text-xs font-semibold text-slate-300 mb-1.5 uppercase tracking-wider">Username</label>
                 <input
                   id="username"
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all shadow-sm bg-gray-50 focus:bg-white"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 outline-none transition-all shadow-inner text-white placeholder-slate-500"
                   required
                   autoFocus
                   placeholder="Enter your username"
@@ -74,28 +78,28 @@ export default function LoginPage() {
               </div>
               
               <div>
-                <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1.5">Password</label>
+                <label htmlFor="password" className="block text-xs font-semibold text-slate-300 mb-1.5 uppercase tracking-wider">Password</label>
                 <input
                   id="password"
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all shadow-sm bg-gray-50 focus:bg-white"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 outline-none transition-all shadow-inner text-white placeholder-slate-500"
                   required
                   placeholder="••••••••"
                 />
               </div>
               
-              <div className="pt-2">
+              <div className="pt-4">
                 <button
                   id="login-submit"
                   type="submit"
                   disabled={loading}
-                  className="w-full bg-blue-700 text-white py-2.5 rounded-lg font-medium hover:bg-blue-800 transition-colors shadow-md hover:shadow-lg disabled:opacity-70 flex justify-center items-center"
+                  className="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl font-medium transition-all duration-300 shadow-lg hover:shadow-blue-500/25 hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0 flex justify-center items-center"
                 >
                   {loading ? (
                     <>
-                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                       </svg>
@@ -107,8 +111,8 @@ export default function LoginPage() {
             </form>
           </div>
           
-          <div className="bg-gray-50 py-4 text-center border-t border-gray-100">
-            <p className="text-xs text-gray-500">Secure internal portal • Authorized access only</p>
+          <div className="bg-slate-900/80 py-4 text-center border-t border-white/10">
+            <p className="text-[10px] text-slate-500 uppercase tracking-widest">Secure internal portal • Authorized access only</p>
           </div>
         </div>
       </div>

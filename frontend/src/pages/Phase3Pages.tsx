@@ -18,6 +18,7 @@ export function LeaveTypesPage() {
     setItems(data);
   };
   useEffect(() => { load(); }, []);
+
   return (
     <div className="space-y-6">
       <PageHeader 

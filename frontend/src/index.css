@@ -9,3 +9,10 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+@layer utilities {
+  .defer-render {
+    content-visibility: auto;
+    contain-intrinsic-size: auto none auto 72px;
+  }
+}

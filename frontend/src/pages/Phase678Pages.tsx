@@ -1045,7 +1045,7 @@ export function AdminDashboardPage() {
                 </thead>
                 <tbody>
                   {policyRows.map((row) => (
-                    <tr key={row.id} className="border-b border-slate-100 align-top">
+                    <tr key={row.id} className="border-b border-slate-100 align-top defer-render">
                       <td className="py-3 pr-3">
                         <div className="font-medium text-slate-900">{row.code}</div>
                         <div className="text-xs text-slate-500">{row.name}</div>
@@ -1248,7 +1248,7 @@ export function AdminDashboardPage() {
                 </thead>
                 <tbody>
                   {users.slice(0, 10).map((user) => (
-                    <tr key={user.id} className="border-b border-slate-100">
+                    <tr key={user.id} className="border-b border-slate-100 defer-render">
                       <td className="py-3 pr-3">
                         <div className="font-medium text-slate-900">{user.username}</div>
                         <div className="text-xs text-slate-500">{user.employee_id ? 'Employee linked' : 'No employee link'}</div>
@@ -1395,7 +1395,7 @@ export function AdminDashboardPage() {
                 </thead>
                 <tbody>
                   {auditRows.map((row) => (
-                    <tr key={row.id} className="border-b border-slate-100">
+                    <tr key={row.id} className="border-b border-slate-100 defer-render">
                       <td className="py-2 pr-3 text-slate-600">{formatDateTime(row.created_at)}</td>
                       <td className="py-2 pr-3 font-medium text-slate-800">{row.entity_type || '-'}</td>
                       <td className="py-2 pr-3 text-slate-700">{row.action || '-'}</td>

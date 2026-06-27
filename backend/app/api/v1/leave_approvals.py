@@ -131,6 +131,43 @@ async def approval_inbox(current_user: dict = Depends(get_current_user), db: Asy
     return [dict(r._mapping) for r in result.fetchall()]
 
 
+@router.get("/team-availability")
+async def team_availability(current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    role = current_user["role"]
+    user_id = current_user["user_id"]
+    
+    emp = await db.execute(text("SELECT e.department_id FROM employees e JOIN users u ON u.employee_id = e.id WHERE u.id = :uid"), {"uid": user_id})
+    emp_row = emp.fetchone()
+    my_dept_id = str(emp_row[0]) if emp_row and emp_row[0] else None
+
+    query = """
+        SELECT a.id, a.from_date, a.to_date, a.applied_days, e.name AS employee_name, e.emp_code, lt.code AS leave_type_code
+        FROM leave_applications a
+        JOIN employees e ON a.employee_id = e.id
+        JOIN leave_types lt ON a.leave_type_id = lt.id
+        WHERE a.status = 'APPROVED'
+          AND a.to_date >= CURRENT_DATE
+    """
+    
+    if role == "NODAL_OFFICER":
+        query += """
+          AND e.department_id IN (
+              SELECT department_id FROM dept_nodal_assignments
+              WHERE nodal_user_id = :uid AND is_active = true
+          )
+        """
+    elif role == "HOD":
+        if not my_dept_id:
+            return []
+        query += " AND e.department_id = :my_dept"
+        
+    query += " ORDER BY a.from_date ASC LIMIT 50"
+    
+    params = {"uid": user_id, "my_dept": my_dept_id}
+    result = await db.execute(text(query), params)
+    return [dict(r._mapping) for r in result.fetchall()]
+
+
 @router.post("/{application_id}/action")
 async def approve_action(application_id: str, body: dict, current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     action = body["action"]

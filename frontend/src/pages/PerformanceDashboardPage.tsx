@@ -13,7 +13,7 @@ export default function PerformanceDashboardPage() {
         description="Manage your APAR and mandatory training logs."
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         <DashboardCard 
           title="My APAR" 
           desc="Annual Performance Assessment Report submissions and history." 
@@ -33,15 +33,15 @@ export default function PerformanceDashboardPage() {
 
 function DashboardCard({ title, desc, icon, to }: { title: string, desc: string, icon: string, to: string }) {
   return (
-    <Link to={to} className="flex items-start gap-4 group rounded-xl bg-white border border-slate-200 shadow-sm hover:shadow-md hover:border-purple-300 transition-all p-4">
-      <div className="shrink-0 h-10 w-10 bg-purple-50 text-purple-600 rounded-lg flex items-center justify-center group-hover:bg-purple-100 transition-colors">
-        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <Link to={to} className="flex items-start gap-3 group rounded-lg bg-white border border-slate-200 shadow-sm hover:shadow hover:border-indigo-200 hover:-translate-y-0.5 transition-all duration-200 p-3">
+      <div className="shrink-0 h-8 w-8 bg-slate-50 text-slate-500 rounded flex items-center justify-center group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors">
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={icon} />
         </svg>
       </div>
       <div>
-        <h3 className="text-sm font-bold text-slate-800 mb-0.5 group-hover:text-purple-700 transition-colors">{title}</h3>
-        <p className="text-xs text-slate-500 leading-relaxed">{desc}</p>
+        <h3 className="text-[13px] font-bold text-slate-800 mb-0.5 group-hover:text-indigo-700 transition-colors leading-none">{title}</h3>
+        <p className="text-[11px] text-slate-500 leading-snug">{desc}</p>
       </div>
     </Link>
   );

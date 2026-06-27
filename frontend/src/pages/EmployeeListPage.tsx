@@ -118,7 +118,7 @@ export default function EmployeeListPage() {
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {employees.map((emp) => (
-                        <tr key={emp.id} className="hover:bg-gray-50 transition cursor-pointer">
+                        <tr key={emp.id} className="hover:bg-gray-50 transition cursor-pointer defer-render">
                           <td className="px-6 py-4">
                             <div className="font-medium text-gray-900">{emp.name}</div>
                             <div className="font-mono text-xs text-gray-500 mt-1">{emp.emp_code}</div>
