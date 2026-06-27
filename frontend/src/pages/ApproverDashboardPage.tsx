@@ -10,11 +10,11 @@ export default function ApproverDashboardPage() {
 
   useEffect(() => {
     // Quick fetch to get pending count
-    approvalsApi.listPending().then(res => setPendingCount(res.data.length)).catch(() => {});
+    approvalsApi.inbox().then((res: any) => setPendingCount(res.data.length)).catch(() => {});
   }, []);
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-6xl mx-auto space-y-6 py-6">
       <PageHeader
         title={`Approver Workspace`}
         description="Manage your department's leave requests and team availability."
@@ -25,7 +25,7 @@ export default function ApproverDashboardPage() {
         rightContent={
           <div className="hidden sm:block text-right">
             <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">Acting As</div>
-            <div className="inline-block bg-purple-50 text-purple-700 px-3 py-1 rounded-lg text-sm font-bold border border-purple-100">
+            <div className="inline-block bg-purple-50 text-purple-700 px-3 py-1 rounded-lg text-sm font-bold border border-purple-100 whitespace-nowrap">
               {(user?.role ?? '').replace('_', ' ')}
             </div>
           </div>

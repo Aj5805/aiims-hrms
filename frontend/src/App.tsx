@@ -24,7 +24,7 @@ import { PageHeader } from './components/PageHeader';
 const REPORT_ROLES = ['ESTABLISHMENT_OFFICER', 'REGISTRAR', 'DIRECTOR'] as const;
 const ADMIN_ROLES = ['ADMIN'] as const;
 const CONFIG_ROLES = ['ADMIN', 'ESTABLISHMENT_OFFICER', 'REGISTRAR'] as const;
-const EMPLOYEE_MASTER_ROLES = ['ADMIN', 'ESTABLISHMENT_OFFICER', 'REGISTRAR', 'DIRECTOR', 'HOD', 'DEAN_ACADEMIC'] as const;
+const EMPLOYEE_MASTER_ROLES = ['ADMIN', 'ESTABLISHMENT_OFFICER', 'REGISTRAR', 'DIRECTOR'] as const;
 const APPROVER_ROLES = ['ADMIN', 'ESTABLISHMENT_OFFICER', 'REGISTRAR', 'DIRECTOR', 'HOD', 'DEAN_ACADEMIC', 'NODAL_OFFICER'] as const;
 
 function hasRole(role: string | undefined, allowed: readonly string[]) {
@@ -50,16 +50,17 @@ function UnderConstructionPage({ title, breadcrumbs }: { title: string, breadcru
 }
 
 function NavDropdown({ title, landingPath, items }: { title: string, landingPath?: string, items: { label: string, path: string }[] }) {
-  const trigger = (
-    <span className="text-sm font-semibold text-slate-700 cursor-pointer hover:text-blue-600 px-2 py-1 flex items-center gap-1">
-      {title} <span className="text-[10px] opacity-60">▼</span>
-    </span>
-  );
+  const triggerClasses = "text-sm font-semibold text-slate-700 cursor-pointer hover:text-blue-600 px-2 py-1 flex items-center gap-1 whitespace-nowrap";
+  const triggerContent = <>{title} <span className="text-[10px] opacity-60">▼</span></>;
+  
+  const trigger = landingPath 
+    ? <Link to={landingPath} className={triggerClasses}>{triggerContent}</Link>
+    : <span className={triggerClasses}>{triggerContent}</span>;
   
   return (
     <div className="group relative">
-      <div className="pb-2">
-        {landingPath ? <Link to={landingPath}>{trigger}</Link> : trigger}
+      <div className="py-2">
+        {trigger}
       </div>
       <div className="absolute hidden group-hover:block top-[100%] left-0 -mt-2 pt-2 z-50">
         <div className="bg-white border border-slate-200 shadow-xl rounded-lg py-2 w-48 overflow-hidden">
@@ -130,14 +131,14 @@ function Layout({ children }: { children: ReactNode }) {
     <div className="min-h-screen bg-[#F0F4F8]">
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <Link to="/" className="text-lg font-semibold text-blue-800 hover:text-blue-900 transition-colors">
+          <div className="flex items-center gap-4">
+            <Link to="/" className="text-lg font-semibold text-blue-800 hover:text-blue-900 transition-colors whitespace-nowrap">
               {isAdminRoute ? 'AIIMS HRMS (Admin Console)' : 'AIIMS HRMS'}
             </Link>
             {user && (
-              <nav className="flex gap-3 text-sm flex-wrap items-center">
+              <nav className="flex gap-2 text-sm flex-nowrap items-center">
                 {isAdminRoute ? (
-                  <Link to="/" className="text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1">
+                  <Link to="/" className="text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 whitespace-nowrap">
                     &larr; Exit Admin Console (Main Portal)
                   </Link>
                 ) : (
@@ -171,7 +172,13 @@ function Layout({ children }: { children: ReactNode }) {
                       { label: 'Training Logs', path: '/performance/training' }
                     ]} />
 
-                    {role !== 'STAFF' && <Link to="/approver-dashboard" className="text-orange-600 hover:text-orange-800 font-bold ml-2">Approvals</Link>}
+                    {role !== 'STAFF' && (
+                      <NavDropdown title="Approvals" landingPath="/approver-dashboard" items={[
+                        { label: 'Approval Inbox', path: '/approvals' },
+                        { label: 'Team Calendar', path: '/team-calendar' },
+                        { label: 'Delegation', path: '/delegation' }
+                      ]} />
+                    )}
 
                     {/* Admin & Config Grouping */}
                     {hasRole(role, EMPLOYEE_MASTER_ROLES) && (
@@ -197,11 +204,11 @@ function Layout({ children }: { children: ReactNode }) {
               </nav>
             )}
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 flex-nowrap shrink-0">
             {showNotificationBell && <NotificationBell />}
-            {user && <span className="text-sm text-gray-500">{(user as any).username} ({(user as any).role})</span>}
-            <span className="text-sm text-gray-400">v0.5.0</span>
-            {user && <button onClick={logout} className="text-sm text-red-600">Logout</button>}
+            {user && <span className="text-sm text-gray-500 whitespace-nowrap">{(user as any).username} ({(user as any).role?.replace('_', ' ')})</span>}
+            <span className="text-sm text-gray-400 whitespace-nowrap">v0.5.0</span>
+            {user && <button onClick={logout} className="text-sm text-red-600 whitespace-nowrap">Logout</button>}
           </div>
         </div>
       </header>
@@ -211,7 +218,6 @@ function Layout({ children }: { children: ReactNode }) {
 }
 
 export default function App() {
-  const role = useAuthStore((s) => s.user?.role);
   const token = useAuthStore((s) => s.token);
   const clearAuth = useAuthStore((s) => s.clearAuth);
   

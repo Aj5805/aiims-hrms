@@ -1,4 +1,4 @@
-﻿"""Seed 008 â€” Nodal Routing Test Data.
+"""Seed 008 â€” Nodal Routing Test Data.
 
 Creates full test dataset for the department-based nodal routing system:
   - 1  admin user  (username: admin,       password: password)
@@ -47,17 +47,6 @@ def _upsert_desig(session, name, cat_id):
     return str(row[0])
 
 
-def _upsert_leave_type(session, code, name):
-    session.execute(
-        text("""
-            INSERT INTO leave_types (id, code, name, scheme, is_accumulating, carry_forward, is_half_day_allowed)
-            VALUES (uuid_generate_v4(), :c, :n, 'CCS', false, false, false)
-            ON CONFLICT (code) DO NOTHING
-        """),
-        {"c": code, "n": name},
-    )
-    row = session.execute(text("SELECT id FROM leave_types WHERE code = :c"), {"c": code}).fetchone()
-    return str(row[0])
 
 
 def _upsert_employee(session, emp_code, name, cat_id, dept_id, desig_id, email):
@@ -203,11 +192,13 @@ def run(session):
         return
     cat_id = str(cat[0])
 
-    # â”€â”€ Leave Types 1-10 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    lt_ids = {}
-    for i in range(1, N + 1):
-        lt_ids[i] = _upsert_leave_type(session, f"TLT{i:02d}", f"testLeaveType{i}")
-    print(f"  âœ“ Upserted {N} leave types")
+    # â”€â”€ Fetch existing leave types ─────────────────────────────────────────
+    lt_res = session.execute(text("SELECT id FROM leave_types")).fetchall()
+    lt_ids = [str(r[0]) for r in lt_res]
+    if not lt_ids:
+        print("ERROR: No leave types found. Please run seed 002 first.")
+        return
+    print(f"  - Found {len(lt_ids)} existing leave types")
 
     # â”€â”€ Departments 1-10 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     dept_ids = {}
@@ -277,9 +268,9 @@ def run(session):
         _create_nodal_workflow(session, admin_user_id, dept_ids[i], f"testDept{i}")
     print(f"  âœ“ Created {N} per-dept workflow configs (HOD â†’ NODAL_OFFICER)")
 
-    # â”€â”€ Leave balances for all staff (all 10 leave types, 15 days opening) â”€â”€â”€â”€
+    # ── Leave balances for all staff (all existing leave types, 15 days opening) ────
     for i in range(1, N + 1):
-        for lt_id in lt_ids.values():
+        for lt_id in lt_ids:
             session.execute(
                 text("""
                     INSERT INTO leave_balances
@@ -289,7 +280,7 @@ def run(session):
                 """),
                 {"eid": staff_emp_ids[i], "ltid": lt_id},
             )
-    print(f"  âœ“ Seeded leave balances ({N} staff Ã— {N} leave types)")
+    print(f"  - Seeded leave balances ({N} staff × {len(lt_ids)} leave types)")
 
     print(
         f"\nSeed 008 complete. Summary:\n"

@@ -5,6 +5,19 @@ The AIIMS HRMS project has successfully completed Phase 8 and two additional pos
 
 ---
 
+## Session Summary (2026-06-27)
+
+### 1. Header & Navigation UI Fixes
+- **Bug:** The HOD login header text ("AIIMS HRMS") and navigation menu ("Approvals") were wrapping to a second row due to insufficient space and incorrect flex settings. The main menu dropdowns were also visually top-indented rather than vertically centered.
+- **Fix:**
+  - Added `whitespace-nowrap` to the main logo link and adjusted header flex container gaps (`gap-6` to `gap-4`, `gap-3` to `gap-2`).
+  - Switched the navigation menu from `flex-wrap` to `flex-nowrap`.
+  - Refactored `NavDropdown` in `App.tsx` to maintain identical DOM structure for items with and without landing pages, preventing bounding box discrepancies.
+  - Replaced the invisible hover buffer `pb-2` with `py-2` in `NavDropdown` to balance vertical padding, restoring perfect vertical centering.
+  - Added `whitespace-nowrap` to `NavDropdown` triggers and the right-side user info container to prevent word-wrapping for longer role names like `NODAL_OFFICER`, keeping the banner uniformly on a single row.
+
+---
+
 ## Session Summary (2026-06-26)
 
 ### 1. Notification Body Fix
@@ -123,6 +136,6 @@ The entire database schema and test data are stored as code (Alembic migrations 
 | Frontend | `cd frontend && npm run dev` | http://localhost:5173 |
 
 ## Next Steps
-- **Agent Task:** Work on HOD login screen next (and HOD-specific functionalities if any are missing or requested).
+- **Agent Task:** Work on Nodal Officer login screen and design next (including specific functionalities or admin configurations for nodal routing).
 - The project is otherwise functionally complete with the recent UI standardizations (Hub & Spoke, Approver Dashboard, Admin Dashboard matrices).
 - Reference `docs/GO_LIVE_RUNBOOK.md` for production deployment instructions.

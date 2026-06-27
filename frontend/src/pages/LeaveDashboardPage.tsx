@@ -91,14 +91,6 @@ const ROLE_COLOR: Record<string, string> = {
 
 /* ─── Sub-components ─────────────────────────────────────────────────────── */
 
-function InfoRow({ label, value }: { label: string; value?: string | null }) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{label}</span>
-      <span className="text-sm text-slate-800">{value || '—'}</span>
-    </div>
-  );
-}
 
 function BalancePill({ row }: { row: BalanceRow }) {
   const avail = num(row.closing_balance);

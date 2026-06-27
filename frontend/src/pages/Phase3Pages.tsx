@@ -18,8 +18,6 @@ export function LeaveTypesPage() {
     setItems(data);
   };
   useEffect(() => { load(); }, []);
-
-  return (
   return (
     <div className="space-y-6">
       <PageHeader 
@@ -58,6 +56,7 @@ export function LeaveTypesPage() {
           </tbody>
         </table>
       </div>
+    </div>
     </div>
   );
 }
@@ -106,6 +105,7 @@ export function EntitlementRulesPage() {
           </tbody>
         </table>
       </div>
+    </div>
     </div>
   );
 }
@@ -345,7 +345,7 @@ export function OpeningBalancePage() {
             className="w-full border rounded px-3 py-2 text-sm font-mono h-40 resize-none"
           />
           <button id="submit-balances-btn" onClick={submit} className="mt-2 w-full bg-blue-600 text-white px-4 py-2 rounded text-sm">Submit</button>
-        </div>
+        </form>
         <div className="bg-white rounded-lg shadow p-4">
           <h3 className="font-semibold mb-2 text-gray-700">Excel Import</h3>
           <p className="text-sm text-gray-500 mb-3">Upload an Excel file with columns:</p>
