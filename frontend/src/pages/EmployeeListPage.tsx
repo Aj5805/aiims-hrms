@@ -95,10 +95,12 @@ export default function EmployeeListPage() {
                   className="w-full md:w-96 border border-gray-300 rounded-lg px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 
-                <label className="px-4 py-2 bg-green-600 text-white rounded-lg cursor-pointer hover:bg-green-700 text-sm font-medium transition shadow-sm">
-                  Bulk Import (CSV)
-                  <input type="file" accept=".csv" onChange={handleImport} className="hidden" />
-                </label>
+                {user?.role !== 'NODAL_OFFICER' && (
+                  <label className="px-4 py-2 bg-green-600 text-white rounded-lg cursor-pointer hover:bg-green-700 text-sm font-medium transition shadow-sm">
+                    Bulk Import (CSV)
+                    <input type="file" accept=".csv" onChange={handleImport} className="hidden" />
+                  </label>
+                )}
               </div>
 
               {loading ? (

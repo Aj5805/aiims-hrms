@@ -7,7 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import require_role
+from app.auth.dependencies import require_role, get_current_user
 from app.auth.jwt import hash_password
 from app.core.database import get_db
 
@@ -102,10 +102,32 @@ async def list_users(
 async def update_user(
     user_id: str,
     body: dict,
-    _: dict = Depends(require_role("ADMIN")),
+    current_user: dict = Depends(get_current_user),
+    _: dict = Depends(require_role("ADMIN", "ESTABLISHMENT_OFFICER", "NODAL_OFFICER")),
     db: AsyncSession = Depends(get_db),
 ):
     """Update user role, active status, or force password reset flag."""
+    target_user_res = await db.execute(
+        text("SELECT u.role, u.employee_id, e.department_id FROM users u LEFT JOIN employees e ON u.employee_id = e.id WHERE u.id = :uid"),
+        {"uid": user_id}
+    )
+    target_user = target_user_res.fetchone()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    if current_user["role"] == "NODAL_OFFICER":
+        if target_user.role not in ("STAFF", "HOD"):
+            raise HTTPException(status_code=403, detail="Not authorized to modify this user's role type")
+        if "role" in body and body["role"] not in ("STAFF", "HOD"):
+            raise HTTPException(status_code=403, detail="Not authorized to assign this role")
+            
+        nodal_check = await db.execute(
+            text("SELECT 1 FROM dept_nodal_assignments WHERE nodal_user_id = :uid AND department_id = :did AND is_active = true"),
+            {"uid": current_user["user_id"], "did": target_user.department_id}
+        )
+        if not nodal_check.fetchone():
+            raise HTTPException(status_code=403, detail="Not authorized to modify users in this department")
+
     allowed = ["role", "is_active", "must_change_password"]
     updates = {k: v for k, v in body.items() if k in allowed}
     if not updates:

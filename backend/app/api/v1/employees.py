@@ -23,8 +23,8 @@ from app.schemas import (
 
 router = APIRouter(prefix="/employees", tags=["employees"])
 
-_VIEWER_ROLES = ("ADMIN", "ESTABLISHMENT_OFFICER", "REGISTRAR", "DIRECTOR", "HOD", "DEAN_ACADEMIC")
-_EDITOR_ROLES = ("ADMIN", "ESTABLISHMENT_OFFICER", "REGISTRAR")
+_VIEWER_ROLES = ("ADMIN", "ESTABLISHMENT_OFFICER", "REGISTRAR", "DIRECTOR", "HOD", "DEAN_ACADEMIC", "NODAL_OFFICER")
+_EDITOR_ROLES = ("ADMIN", "ESTABLISHMENT_OFFICER", "REGISTRAR", "NODAL_OFFICER")
 
 
 async def _fetch_employee(db: AsyncSession, employee_id: str) -> EmployeeResponse:
@@ -145,6 +145,7 @@ async def get_employee(
 @router.post("", response_model=EmployeeResponse, status_code=201)
 async def create_employee(
     body: EmployeeCreate,
+    current_user: dict = Depends(get_current_user),
     _: dict = Depends(require_role(*_EDITOR_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
@@ -157,6 +158,14 @@ async def create_employee(
     dept_row = dept.fetchone()
     if not dept_row:
         raise HTTPException(status_code=400, detail=f"Unknown department: {body.department_code}")
+    
+    if current_user["role"] == "NODAL_OFFICER":
+        nodal_check = await db.execute(
+            text("SELECT 1 FROM dept_nodal_assignments WHERE nodal_user_id = :uid AND department_id = :did AND is_active = true"),
+            {"uid": current_user["user_id"], "did": dept_row[0]}
+        )
+        if not nodal_check.fetchone():
+            raise HTTPException(status_code=403, detail="Not authorized to add employees to this department")
 
     des = await db.execute(text("SELECT id FROM designations WHERE name = :n"), {"n": body.designation_name})
     des_row = des.fetchone()
@@ -205,9 +214,13 @@ async def create_employee(
 async def update_employee(
     employee_id: str,
     body: EmployeeUpdate,
+    current_user: dict = Depends(get_current_user),
+    scope: dict = Depends(employee_scope),
     _: dict = Depends(require_role(*_EDITOR_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
+    if scope["scope"] != "all" and employee_id not in (scope["employee_ids"] or []):
+        raise HTTPException(status_code=403, detail="Not authorized to modify this employee")
     updates: dict = {}
     if body.name is not None:
         updates["name"] = body.name
@@ -216,6 +229,15 @@ async def update_employee(
         dept_row = dept.fetchone()
         if not dept_row:
             raise HTTPException(status_code=400, detail=f"Unknown department: {body.department_code}")
+        
+        if current_user["role"] == "NODAL_OFFICER":
+            nodal_check = await db.execute(
+                text("SELECT 1 FROM dept_nodal_assignments WHERE nodal_user_id = :uid AND department_id = :did AND is_active = true"),
+                {"uid": current_user["user_id"], "did": dept_row[0]}
+            )
+            if not nodal_check.fetchone():
+                raise HTTPException(status_code=403, detail="Not authorized to move employees to this department")
+                
         updates["department_id"] = str(dept_row[0])
     if body.designation_name is not None:
         des = await db.execute(text("SELECT id FROM designations WHERE name = :n"), {"n": body.designation_name})
@@ -239,9 +261,13 @@ async def update_employee(
 @router.post("/import", response_model=CsvImportResult)
 async def import_csv(
     file: UploadFile,
+    current_user: dict = Depends(get_current_user),
     _: dict = Depends(require_role(*_EDITOR_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
+    if current_user["role"] == "NODAL_OFFICER":
+        raise HTTPException(status_code=403, detail="Bulk import is not available for Nodal Officers")
+        
     """Import employees from CSV. Columns: emp_code, name, gender, doj, category, department, designation."""
     await validate_import_upload(
         file,

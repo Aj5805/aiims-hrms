@@ -26,7 +26,7 @@ from app.core.config import settings
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
-REPORT_ROLES = ("ESTABLISHMENT_OFFICER", "REGISTRAR", "DIRECTOR")
+REPORT_ROLES = ("ESTABLISHMENT_OFFICER", "REGISTRAR", "DIRECTOR", "NODAL_OFFICER")
 PAYROLL_EXPORT_ROLES = ("ESTABLISHMENT_OFFICER", "REGISTRAR", "DIRECTOR")
 
 # Placeholder until AIIMS Finance / NIC provides the actual column contract.
@@ -38,6 +38,13 @@ PAYROLL_NIC_MAPPING_PLACEHOLDER = {
     "lop_days": "LOP Days",
     "reason": "Reason",
 }
+
+
+def _apply_nodal_scope(query: str, current_user: dict | None, params: dict, employee_alias: str = "e") -> str:
+    if current_user and current_user.get("role") == "NODAL_OFFICER":
+        query += f" AND EXISTS (SELECT 1 FROM dept_nodal_assignments dna WHERE dna.department_id = {employee_alias}.department_id AND dna.nodal_user_id = :nodal_user_id)"
+        params["nodal_user_id"] = current_user.get("user_id")
+    return query
 
 
 def _json_safe(value):
@@ -121,7 +128,7 @@ def _stream_bytes(content: bytes, media_type: str, filename: str) -> StreamingRe
     )
 
 
-async def _fetch_leave_register_rows(db: AsyncSession, from_date: date, to_date: date, department_code: str | None) -> list[dict]:
+async def _fetch_leave_register_rows(db: AsyncSession, from_date: date, to_date: date, department_code: str | None, current_user: dict | None = None) -> list[dict]:
     query = """
         SELECT
             e.emp_code AS emp_code,
@@ -150,44 +157,43 @@ async def _fetch_leave_register_rows(db: AsyncSession, from_date: date, to_date:
     if department_code:
         query += " AND d.code = :department_code"
         params["department_code"] = department_code
+    query = _apply_nodal_scope(query, current_user, params)
     query += " ORDER BY e.emp_code, a.from_date"
     result = await db.execute(text(query), params)
     return _rows_from_result(result)
 
 
-async def _fetch_category_summary_rows(db: AsyncSession, from_date: date, to_date: date) -> list[dict]:
+async def _fetch_category_summary_rows(db: AsyncSession, from_date: date, to_date: date, current_user: dict | None = None) -> list[dict]:
     staff_result = await db.execute(
         text(
-            """
-            SELECT c.code AS category, COUNT(e.id) AS total_staff
-            FROM employee_categories c
-            LEFT JOIN employees e ON e.category_id = c.id AND e.is_active = true
-            GROUP BY c.code
-            ORDER BY c.code
-            """
-        )
+            "SELECT c.code AS category, COUNT(e.id) AS total_staff "
+            "FROM employee_categories c "
+            "LEFT JOIN employees e ON e.category_id = c.id AND e.is_active = true "
+            + _apply_nodal_scope("", current_user, {}, "e") + 
+            " GROUP BY c.code "
+            "ORDER BY c.code"
+        ), {"nodal_user_id": current_user.get("user_id")} if current_user and current_user.get("role") == "NODAL_OFFICER" else {}
     )
     staff_counts = {row._mapping["category"]: int(row._mapping["total_staff"] or 0) for row in staff_result.fetchall()}
 
     leave_result = await db.execute(
         text(
-            """
-            SELECT
-                c.code AS category,
-                lt.code AS leave_type,
-                COALESCE(SUM(a.applied_days), 0) AS total_leave_days
-            FROM employee_categories c
-            LEFT JOIN employees e ON e.category_id = c.id
-            LEFT JOIN leave_applications a
-              ON a.employee_id = e.id
-             AND a.status = 'APPROVED'
-             AND a.from_date BETWEEN :from_date AND :to_date
-            LEFT JOIN leave_types lt ON lt.id = a.leave_type_id
-            GROUP BY c.code, lt.code
-            ORDER BY c.code, lt.code
-            """
+            "SELECT "
+                "c.code AS category, "
+                "lt.code AS leave_type, "
+                "COALESCE(SUM(a.applied_days), 0) AS total_leave_days "
+            "FROM employee_categories c "
+            "LEFT JOIN employees e ON e.category_id = c.id "
+            "LEFT JOIN leave_applications a "
+              "ON a.employee_id = e.id "
+             "AND a.status = 'APPROVED' "
+             "AND a.from_date BETWEEN :from_date AND :to_date "
+            "LEFT JOIN leave_types lt ON lt.id = a.leave_type_id "
+            + _apply_nodal_scope("", current_user, {}, "e") + 
+            " GROUP BY c.code, lt.code "
+            "ORDER BY c.code, lt.code"
         ),
-        {"from_date": from_date, "to_date": to_date},
+        {"from_date": from_date, "to_date": to_date, **({"nodal_user_id": current_user.get("user_id")} if current_user and current_user.get("role") == "NODAL_OFFICER" else {})},
     )
 
     grouped: dict[str, dict[str, object]] = {}
@@ -547,24 +553,22 @@ async def payroll_export(
     td = date.fromisoformat(to_date)
     result = await db.execute(
         text(
-            """
-            SELECT
-                e.emp_code AS emp_code,
-                e.name AS name,
-                d.name AS department,
-                TO_CHAR(a.from_date, 'YYYY-MM') AS month,
-                SUM(a.applied_days) AS lop_days,
-                MIN(COALESCE(a.reason, '')) AS reason
-            FROM leave_applications a
-            JOIN employees e ON a.employee_id = e.id
-            JOIN departments d ON e.department_id = d.id
-            JOIN leave_types lt ON a.leave_type_id = lt.id
-            WHERE a.from_date BETWEEN :from_date AND :to_date
-              AND a.status = 'APPROVED'
-              AND lt.code = 'EOL'
-            GROUP BY e.emp_code, e.name, d.name, TO_CHAR(a.from_date, 'YYYY-MM')
-            ORDER BY e.emp_code, month
-            """
+            "SELECT "
+            "e.emp_code AS emp_code, "
+            "e.name AS name, "
+            "d.name AS department, "
+            "TO_CHAR(a.from_date, 'YYYY-MM') AS month, "
+            "SUM(a.applied_days) AS lop_days, "
+            "MIN(COALESCE(a.reason, '')) AS reason "
+            "FROM leave_applications a "
+            "JOIN employees e ON a.employee_id = e.id "
+            "JOIN departments d ON e.department_id = d.id "
+            "JOIN leave_types lt ON a.leave_type_id = lt.id "
+            "WHERE a.from_date BETWEEN :from_date AND :to_date "
+            "AND a.status = 'APPROVED' "
+            "AND lt.code = 'EOL' "
+            "GROUP BY e.emp_code, e.name, d.name, TO_CHAR(a.from_date, 'YYYY-MM') "
+            "ORDER BY e.emp_code, month"
         ),
         {"from_date": fd, "to_date": td},
     )
@@ -572,12 +576,10 @@ async def payroll_export(
 
     await db.execute(
         text(
-            """
-            INSERT INTO payroll_export_log
-                (id, export_from, export_to, export_type, exported_by, record_count, summary)
-            VALUES
-                (uuid_generate_v4(), :from_date, :to_date, :export_type, :exported_by, :record_count, CAST(:summary AS jsonb))
-            """
+            "INSERT INTO payroll_export_log "
+            "(id, export_from, export_to, export_type, exported_by, record_count, summary) "
+            "VALUES "
+            "(uuid_generate_v4(), :from_date, :to_date, :export_type, :exported_by, :record_count, CAST(:summary AS jsonb))"
         ),
         {
             "from_date": fd,

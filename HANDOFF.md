@@ -16,6 +16,16 @@ The AIIMS HRMS project has successfully completed Phase 8 and two additional pos
   - Replaced the invisible hover buffer `pb-2` with `py-2` in `NavDropdown` to balance vertical padding, restoring perfect vertical centering.
   - Added `whitespace-nowrap` to `NavDropdown` triggers and the right-side user info container to prevent word-wrapping for longer role names like `NODAL_OFFICER`, keeping the banner uniformly on a single row.
 
+### 2. Nodal Officer Account Management
+- **Feature:** Nodal Officers can now add and modify `STAFF` and `HOD` accounts, strictly restricted to the departments they are assigned to manage.
+- **Backend:** 
+  - Updated `_EDITOR_ROLES` in `employees.py` and modified `update_user` in `users.py`.
+  - Added strict department validation checks using `dept_nodal_assignments`.
+  - Disabled Bulk Import for Nodal Officers.
+- **Frontend:** 
+  - Updated `EMPLOYEE_MASTER_ROLES` in `App.tsx` to allow Nodal Officers access to the Employee Directory.
+  - Hid the Bulk Import button for Nodal Officers in `EmployeeListPage.tsx`.
+
 ---
 
 ## Session Summary (2026-06-26)
