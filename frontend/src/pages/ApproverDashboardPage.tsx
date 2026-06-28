@@ -14,7 +14,7 @@ export default function ApproverDashboardPage() {
   }, []);
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6 py-6">
+    <div className="page">
       <PageHeader
         title={`Approver Workspace`}
         description="Manage your department's leave requests and team availability."
@@ -66,11 +66,11 @@ function DashboardCard({ title, desc, icon, to, badge }: { title: string, desc: 
         </svg>
       </div>
       <div>
-        <h3 className="text-[13px] font-bold text-slate-800 mb-0.5 group-hover:text-indigo-700 transition-colors leading-none">{title}</h3>
-        <p className="text-[11px] text-slate-500 leading-snug">{desc}</p>
+      <h3 className="text-sm font-semibold text-slate-800 mb-0.5 group-hover:text-indigo-700 transition-colors">{title}</h3>
+        <p className="text-xs text-slate-500 leading-relaxed">{desc}</p>
       </div>
       {badge !== undefined && (
-        <span className="absolute top-2 right-2 bg-rose-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full shadow-sm">
+        <span className="absolute top-2 right-2 bg-rose-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full shadow-sm">
           {badge}
         </span>
       )}

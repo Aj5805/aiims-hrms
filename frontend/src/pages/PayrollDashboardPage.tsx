@@ -3,7 +3,7 @@ import { PageHeader } from '../components/PageHeader';
 
 export default function PayrollDashboardPage() {
   return (
-    <div className="max-w-6xl mx-auto space-y-6 py-6">
+    <div className="page">
       <PageHeader
         breadcrumbs={[
           { label: 'Home', to: '/' },
@@ -13,7 +13,7 @@ export default function PayrollDashboardPage() {
         description="Access your salary slips, annual summaries, and tax documents."
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <DashboardCard 
           title="Salary Slips" 
           desc="Download monthly payslips and earning statements." 

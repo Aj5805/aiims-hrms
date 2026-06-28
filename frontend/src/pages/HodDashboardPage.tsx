@@ -47,7 +47,7 @@ export default function HodDashboardPage() {
   }, []);
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
+    <div className="page">
       <PageHeader
         title={`Nodal Officer Dashboard`}
         description="Unified command center for department availability and pending operational tasks."
@@ -117,7 +117,7 @@ export default function HodDashboardPage() {
                         <div className="font-semibold text-slate-900 text-sm">{app.employee_name}</div>
                         <div className="text-xs font-mono text-slate-500 mt-0.5">{app.emp_code}</div>
                       </div>
-                      <span className="text-[10px] font-bold px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-100 rounded">
+                      <span className="text-xs font-semibold px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-100 rounded">
                         {app.leave_type_code}
                       </span>
                     </div>
@@ -181,11 +181,11 @@ export default function HodDashboardPage() {
                           <div className="text-xs font-mono text-slate-500 mt-0.5">{app.emp_code}</div>
                         </div>
                         {isToday ? (
-                          <span className="text-[10px] font-bold px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-100 rounded">
+                          <span className="text-xs font-semibold px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-100 rounded">
                             AWAY TODAY
                           </span>
                         ) : (
-                          <span className="text-[10px] font-bold px-2 py-0.5 bg-slate-100 text-slate-700 border border-slate-200 rounded">
+                          <span className="text-xs font-semibold px-2 py-0.5 bg-slate-100 text-slate-700 border border-slate-200 rounded">
                             UPCOMING
                           </span>
                         )}
@@ -212,12 +212,10 @@ export default function HodDashboardPage() {
 
 function MetricCard({ label, value, helper }: { label: string; value: string; helper?: string }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow hover:border-indigo-200 group">
+    <div className="card p-4 hover:shadow hover:border-indigo-200 hover:-translate-y-0.5 transition-all duration-200 group">
       <div className="text-2xl font-black tracking-tight text-slate-900 group-hover:text-indigo-700 transition-colors leading-none">{value}</div>
-      <div className="mt-1 text-[13px] font-bold text-slate-700">
-        {label}
-      </div>
-      {helper && <div className="mt-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">{helper}</div>}
+      <div className="mt-1 text-sm font-semibold text-slate-700">{label}</div>
+      {helper && <div className="mt-1 text-xs text-slate-400 uppercase tracking-wide font-medium">{helper}</div>}
     </div>
   );
 }

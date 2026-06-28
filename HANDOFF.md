@@ -7,7 +7,23 @@ The AIIMS HRMS project has successfully completed Phase 8 and two additional pos
 
 ## Session Summary (2026-06-28)
 
-### 1. Cross-Platform Database Snapshot Sync
+### 1. Impersonation Feature ("Login As")
+- **Feature:** Admin users can now log in as any other user without needing their password, specifically to view the system from their perspective and troubleshoot issues.
+- **Backend:** Added `POST /api/v1/auth/impersonate/{target_user_id}` in `backend/app/api/v1/auth.py`. Embeds an `impersonated_by` claim in the JWT for audit traceability.
+- **Frontend:** Updated Zustand `useAuthStore` to securely park the `adminToken` and `adminUser` state during impersonation. Added "Login As" action buttons to the Users & Roles table, and integrated a persistent amber "Impersonation Mode" banner in the main layout (`App.tsx`) to ensure visibility and allow exiting impersonation.
+
+### 2. Sysadmin UI Adaptation
+- **Bug/Issue:** The global layout treated pure `ADMIN` roles as standard employees, cluttering their sidebar with irrelevant modules (My Profile, Leave, Claims, etc.).
+- **Fix:** Restructured the `App.tsx` navigation sidebar to conditionally hide all employee-centric modules when `role === 'ADMIN'`. Pure admins now exclusively see administrative menus (`HR Operations`, `Reports & Data`, `System Config`, `Admin Console`).
+- **Routing:** Updated the root path (`/`) to automatically redirect `ADMIN` users to the `/admin` dashboard instead of loading the generic employee `HomeDashboardPage`.
+- **Dynamic Context:** Using the "Login As" impersonation feature seamlessly switches the UI back into the standard employee view for the target user.
+
+### 3. UI Fixes & Responsiveness Improvements
+- Fixed structural `div` nesting and closing tag mismatches in `App.tsx` that caused frontend build failures (`TS17008`).
+- Cleaned up duplicate state hooks and unused API calls in the global layout.
+- Verified frontend compilation via `tsc -b && vite build` and backend syntax via Python compilation.
+
+### 4. Cross-Platform Database Snapshot Sync
 - **Feature:** Automated cross-platform syncing of the PostgreSQL test database snapshot via Git (`database/db_snap.sql`).
 - **Implementation:** Created `scripts/db_sync.py` to seamlessly wrap `pg_dump` and `psql` for Windows & Mac portability, allowing the test database state to be ported exactly as it is across machines.
 - **Agent Hand-off Protocol:** Updated local startup instructions to conditionally sync the database only when explicitly requested (`with db`), preventing accidental overwriting of local test data during normal `git pull` operations.

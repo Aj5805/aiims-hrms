@@ -8,7 +8,7 @@ interface Desg { id: string; name: string; grade_pay_level?: string; category_co
 export default function MastersPage() {
   const [tab, setTab] = useState<'dept' | 'desg'>('dept');
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
+    <div className="page">
       <PageHeader 
         breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Admin/Estab', to: '/admin' }, { label: 'Master Settings' }]}
         title="Masters Configuration"
@@ -32,11 +32,9 @@ export default function MastersPage() {
           </div>
         }
       />
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="p-6">
+      <div className="card p-5">
           {tab === 'dept' ? <DepartmentTab /> : <DesignationTab />}
         </div>
-      </div>
     </div>
   );
 }

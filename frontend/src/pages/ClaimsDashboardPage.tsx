@@ -3,7 +3,7 @@ import { PageHeader } from '../components/PageHeader';
 
 export default function ClaimsDashboardPage() {
   return (
-    <div className="max-w-6xl mx-auto space-y-6 py-6">
+    <div className="page">
       <PageHeader
         breadcrumbs={[
           { label: 'Home', to: '/' },
@@ -18,7 +18,7 @@ export default function ClaimsDashboardPage() {
         }
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <DashboardCard 
           title="LTC Claim" 
           desc="Leave Travel Concession advance and final claim submissions." 

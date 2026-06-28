@@ -9,6 +9,8 @@ export const authApi = {
     api.post('/auth/change-password', { user_id: userId, new_password: newPassword }),
   changeMyPassword: (currentPassword: string, newPassword: string) =>
     api.post('/auth/change-my-password', { current_password: currentPassword, new_password: newPassword }),
+  impersonate: (userId: string) =>
+    api.post(`/auth/impersonate/${userId}`),
 };
 
 export const employeesApi = {

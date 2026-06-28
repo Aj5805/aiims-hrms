@@ -3,7 +3,7 @@ import { PageHeader } from '../components/PageHeader';
 
 export default function PerformanceDashboardPage() {
   return (
-    <div className="max-w-6xl mx-auto space-y-6 py-6">
+    <div className="page">
       <PageHeader
         breadcrumbs={[
           { label: 'Home', to: '/' },
@@ -13,7 +13,7 @@ export default function PerformanceDashboardPage() {
         description="Manage your APAR and mandatory training logs."
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <DashboardCard 
           title="My APAR" 
           desc="Annual Performance Assessment Report submissions and history." 
@@ -40,8 +40,8 @@ function DashboardCard({ title, desc, icon, to }: { title: string, desc: string,
         </svg>
       </div>
       <div>
-        <h3 className="text-[13px] font-bold text-slate-800 mb-0.5 group-hover:text-indigo-700 transition-colors leading-none">{title}</h3>
-        <p className="text-[11px] text-slate-500 leading-snug">{desc}</p>
+        <h3 className="text-sm font-semibold text-slate-800 mb-0.5 group-hover:text-indigo-700 transition-colors">{title}</h3>
+        <p className="text-xs text-slate-500 leading-relaxed">{desc}</p>
       </div>
     </Link>
   );

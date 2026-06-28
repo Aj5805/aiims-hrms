@@ -291,3 +291,67 @@ async def me(current_user: dict = Depends(get_current_user), db: AsyncSession = 
         current_user["employee_id"] = None
         current_user["emp_code"] = None
     return current_user
+
+
+@router.post("/impersonate/{target_user_id}", response_model=TokenResponse)
+async def impersonate_user(
+    target_user_id: str,
+    admin: dict = Depends(require_role("ADMIN")),
+    db: AsyncSession = Depends(get_db),
+):
+    """ADMIN-only: issue a token for any active user without requiring their password.
+
+    The resulting JWT includes ``impersonated_by`` so audit logs can trace the session.
+    The admin's own session is NOT invalidated.
+    """
+    result = await db.execute(
+        text("""
+            SELECT u.id, u.username, u.role, u.is_active,
+                   e.id AS employee_id, e.emp_code
+            FROM users u
+            LEFT JOIN employees e ON u.employee_id = e.id
+            WHERE u.id = :uid
+        """),
+        {"uid": target_user_id},
+    )
+    target = result.fetchone()
+
+    if not target:
+        raise HTTPException(status_code=404, detail="Target user not found")
+    if not target.is_active:
+        raise HTTPException(status_code=400, detail="Cannot impersonate an inactive user")
+    if target.role == "ADMIN":
+        raise HTTPException(status_code=403, detail="Cannot impersonate another ADMIN account")
+
+    uid = str(target.id)
+
+    # Build a normal access token but embed impersonated_by for audit visibility
+    now = datetime.utcnow()
+    from datetime import timedelta
+    import uuid as _uuid
+    from app.core.config import settings as _settings
+    from jose import jwt as _jwt
+
+    payload = {
+        "sub": uid,
+        "role": target.role,
+        "username": target.username,
+        "impersonated_by": admin["user_id"],
+        "jti": str(_uuid.uuid4()),
+        "iat": now,
+        "exp": now + timedelta(hours=_settings.ACCESS_TOKEN_EXPIRE_HOURS),
+    }
+    access_token = _jwt.encode(payload, _settings.JWT_SECRET, algorithm=_settings.JWT_ALGORITHM)
+
+    return TokenResponse(
+        access_token=access_token,
+        user={
+            "id": uid,
+            "username": target.username,
+            "role": target.role,
+            "must_change_password": False,
+            "employee_id": str(target.employee_id) if target.employee_id else None,
+            "emp_code": target.emp_code,
+        },
+    )
+

@@ -59,7 +59,7 @@ export default function EmployeeListPage() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
+    <div className="page">
       <PageHeader 
         breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Admin/Estab', to: '/admin' }, { label: 'Employees Directory' }]}
         title="Staff Management Console"
@@ -89,10 +89,10 @@ export default function EmployeeListPage() {
               <div className="flex flex-wrap gap-4 items-center justify-between mb-4">
                 <input
                   type="text"
-                  placeholder="Search by name or emp_code..."
+                  placeholder="Search by name or employee code…"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="w-full md:w-96 border border-gray-300 rounded-lg px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+                  className="form-input w-full md:w-80"
                 />
                 
                 {user?.role !== 'NODAL_OFFICER' && (
@@ -106,37 +106,37 @@ export default function EmployeeListPage() {
               {loading ? (
                 <div className="py-12 text-center text-gray-500">Loading directory...</div>
               ) : (
-                <div className="border border-gray-200 rounded-lg overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead className="bg-gray-50 border-b border-gray-200 text-gray-500 uppercase tracking-wider text-xs">
+              <div className="border border-slate-200 rounded-lg overflow-x-auto">
+                  <table className="data-table">
+                    <thead>
                       <tr>
-                        <th className="px-6 py-3 text-left font-medium">Employee</th>
-                        <th className="px-6 py-3 text-left font-medium">Department</th>
-                        <th className="px-6 py-3 text-left font-medium">Designation & Category</th>
-                        <th className="px-6 py-3 text-center font-medium">Status</th>
+                        <th>Employee</th>
+                        <th>Department</th>
+                        <th>Designation & Category</th>
+                        <th className="text-center">Status</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {employees.map((emp) => (
-                        <tr key={emp.id} className="hover:bg-gray-50 transition cursor-pointer defer-render">
-                          <td className="px-6 py-4">
-                            <div className="font-medium text-gray-900">{emp.name}</div>
-                            <div className="font-mono text-xs text-gray-500 mt-1">{emp.emp_code}</div>
+                    <tbody>
+                       {employees.map((emp) => (
+                        <tr key={emp.id} className="cursor-pointer defer-render">
+                          <td>
+                            <div className="font-medium text-slate-900">{emp.name}</div>
+                            <div className="font-mono text-xs text-slate-500 mt-0.5">{emp.emp_code}</div>
                           </td>
-                          <td className="px-6 py-4 text-gray-700">{emp.department_name}</td>
-                          <td className="px-6 py-4">
-                            <div className="text-gray-900">{emp.designation_name}</div>
-                            <div className="text-xs text-gray-500 mt-1">{emp.category_name}</div>
+                          <td className="text-slate-700">{emp.department_name}</td>
+                          <td>
+                            <div className="text-slate-900">{emp.designation_name}</div>
+                            <div className="text-xs text-slate-500 mt-0.5">{emp.category_name}</div>
                           </td>
-                          <td className="px-6 py-4 text-center">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${emp.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                          <td className="text-center">
+                            <span className={`badge ${emp.is_active ? 'badge-green' : 'badge-red'}`}>
                               {emp.is_active ? 'Active' : 'Inactive'}
                             </span>
                           </td>
                         </tr>
                       ))}
                       {employees.length === 0 && (
-                        <tr><td colSpan={4} className="px-6 py-12 text-center text-gray-400 bg-gray-50/50">No employees found matching your criteria.</td></tr>
+                        <tr><td colSpan={4} className="py-12 text-center text-slate-400">No employees found matching your criteria.</td></tr>
                       )}
                     </tbody>
                   </table>

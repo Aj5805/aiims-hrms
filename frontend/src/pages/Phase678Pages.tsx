@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { AxiosResponse } from 'axios';
-import { Link } from 'react-router-dom';
-import { adminApi, departmentsApi, notificationsApi, reportsApi, usersApi } from '../api/endpoints';
+import { Link, useNavigate } from 'react-router-dom';
+import { adminApi, authApi, departmentsApi, notificationsApi, reportsApi, usersApi } from '../api/endpoints';
 import { entitlementRulesApi, leaveTypesApi } from '../api/phase3_endpoints';
 import { PageHeader } from '../components/PageHeader';
+import { useAuthStore } from '../stores';
 
 type DepartmentOption = {
   id: string;
@@ -614,6 +615,9 @@ function ReportCard({
 }
 
 export function AdminDashboardPage() {
+  const navigate = useNavigate();
+  const startImpersonation = useAuthStore((s) => s.startImpersonation);
+  
   const [activeModule, setActiveModule] = useState<AdminModuleId>('dashboard');
   const [activePolicyCategory, setActivePolicyCategory] = useState<PolicyCategoryCode>('FACULTY');
   const [dashboard, setDashboard] = useState<HealthDashboard | null>(null);
@@ -681,6 +685,16 @@ export function AdminDashboardPage() {
     await adminApi.forceLogout(forceLogoutUserId);
     setMessage('Force logout request submitted.');
     await loadDashboard();
+  };
+
+  const handleImpersonate = async (userId: string) => {
+    try {
+      const { data } = await authApi.impersonate(userId);
+      startImpersonation(data.access_token, data.user);
+      navigate('/');
+    } catch (e: any) {
+      setMessage(e.response?.data?.detail || 'Failed to impersonate user');
+    }
   };
 
   const adminSummary = useMemo(() => {
@@ -1244,6 +1258,7 @@ export function AdminDashboardPage() {
                     <th className="pb-3 pr-3">Status</th>
                     <th className="pb-3 pr-3">Reset</th>
                     <th className="pb-3 pr-3">Last Login</th>
+                    <th className="pb-3 pr-3">Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1261,6 +1276,16 @@ export function AdminDashboardPage() {
                       </td>
                       <td className="py-3 pr-3">{user.must_change_password ? 'Required' : 'Clear'}</td>
                       <td className="py-3 pr-3 text-slate-500">{formatDateTime(user.last_login)}</td>
+                      <td className="py-3 pr-3">
+                        {user.is_active !== false && user.role !== 'ADMIN' && (
+                          <button
+                            onClick={() => handleImpersonate(user.id)}
+                            className="text-xs font-bold uppercase tracking-wider text-indigo-600 hover:text-indigo-800 transition-colors bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1.5 rounded"
+                          >
+                            Login As
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
