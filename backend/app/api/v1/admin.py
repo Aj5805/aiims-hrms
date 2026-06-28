@@ -94,3 +94,29 @@ async def force_logout(user_id: str, _: dict = Depends(require_role("ADMIN")), d
     )
     await db.commit()
     return {"message": "All sessions invalidated"}
+
+@router.post("/maintenance-mode")
+async def toggle_maintenance_mode(
+    enable: bool = Query(...),
+    _: dict = Depends(require_role("ADMIN")),
+    db: AsyncSession = Depends(get_db)
+):
+    value = "true" if enable else "false"
+    await db.execute(
+        text("UPDATE system_settings SET value = :val::json, updated_at = now() WHERE key = 'maintenance_mode'"),
+        {"val": f'"{value}"' if value == "true" else "false"} # proper JSON representation
+    )
+    await db.commit()
+    return {"maintenance_mode": enable}
+
+@router.get("/maintenance-mode")
+async def get_maintenance_mode(
+    _: dict = Depends(require_role("ADMIN")),
+    db: AsyncSession = Depends(get_db)
+):
+    res = await db.execute(text("SELECT value FROM system_settings WHERE key = 'maintenance_mode'"))
+    row = res.fetchone()
+    is_enabled = False
+    if row and row.value == "true":
+        is_enabled = True
+    return {"maintenance_mode": is_enabled}

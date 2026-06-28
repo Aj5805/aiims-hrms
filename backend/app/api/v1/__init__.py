@@ -16,11 +16,12 @@ from app.api.v1.leave_approvals import router as approvals_router
 from app.api.v1.notifications import router as notifications_router
 from app.api.v1.reports import router as reports_router
 from app.api.v1.admin import router as admin_router
+from app.api.v1.broadcasts import router as broadcasts_router
 
 router = APIRouter()
 for r in [auth_router, employees_router, departments_router, designations_router, users_router,
           leave_types_router, entitlement_router, holiday_router, workflow_router, balances_router,
-          applications_router, approvals_router, notifications_router, reports_router, admin_router]:
+          applications_router, approvals_router, notifications_router, reports_router, admin_router, broadcasts_router]:
     router.include_router(r)
 
 @router.get("/ping")

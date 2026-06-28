@@ -33,6 +33,8 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+from app.middleware import MaintenanceMiddleware
+
 # CORS
 app.add_middleware(
     CORSMiddleware,
@@ -41,6 +43,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(MaintenanceMiddleware)
 app.add_middleware(SlowAPIMiddleware)
 
 # Routers

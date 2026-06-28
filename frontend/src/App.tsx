@@ -21,8 +21,9 @@ import HodDashboardPage from './pages/HodDashboardPage';
 import ApproverDashboardPage from './pages/ApproverDashboardPage';
 import { authApi } from './api/endpoints';
 import { PageHeader } from './components/PageHeader';
-import { ImpersonationFab } from './components/ImpersonationFab';
-
+import { AdminPowerSidebar } from './components/AdminPowerSidebar';
+import { MaintenancePage } from './pages/MaintenancePage';
+import { BroadcastBanner } from './components/BroadcastBanner';
 const REPORT_ROLES = ['ESTABLISHMENT_OFFICER', 'REGISTRAR', 'DIRECTOR'] as const;
 const ADMIN_ROLES = ['ADMIN'] as const;
 const CONFIG_ROLES = ['ADMIN', 'ESTABLISHMENT_OFFICER', 'REGISTRAR'] as const;
@@ -142,10 +143,9 @@ function RoleRoute({
   children: ReactNode;
   fallback: string;
 }) {
-  const role = useAuthStore((s) => s.user?.role);
-  if (!hasRole(role, allowedRoles)) {
-    return <RouteDenied message={fallback} />;
-  }
+  const user = useAuthStore((s) => s.user);
+  if (!user) return <Navigate to="/login" replace />;
+  if (!hasRole(user.role, allowedRoles)) return <RouteDenied message={fallback} />;
   return <>{children}</>;
 }
 
@@ -185,6 +185,8 @@ function Layout({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex h-screen bg-slate-100 overflow-hidden flex-col">
+      <BroadcastBanner />
+      
       {/* Impersonation Banner */}
       {adminToken && adminUser && (
         <div className="bg-amber-500 text-amber-950 px-4 py-2 flex items-center justify-between shadow-md z-50 shrink-0">
@@ -283,9 +285,12 @@ function Layout({ children }: { children: ReactNode }) {
               {hasRole(role, EMPLOYEE_MASTER_ROLES) && role !== 'ADMIN' && <div className="border-t border-slate-800 my-1.5" />}
 
               {hasRole(role, ADMIN_ROLES) && role === 'ADMIN' && (
-                <Link to="/admin" className="flex items-center px-3 py-2.5 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white rounded-md transition-colors">
-                  Admin Console
-                </Link>
+                <>
+                  <Link to="/admin" className="flex items-center px-3 py-2.5 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white rounded-md transition-colors">
+                    Admin Console
+                  </Link>
+                  <AdminPowerSidebar />
+                </>
               )}
 
               {hasRole(role, EMPLOYEE_MASTER_ROLES) && (
@@ -363,7 +368,6 @@ function Layout({ children }: { children: ReactNode }) {
           </div>
         </main>
       </div>
-      <ImpersonationFab />
     </div>
   </div>
 );
@@ -385,6 +389,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/maintenance" element={<MaintenancePage />} />
       <Route path="/*" element={
         token ? (
           <Layout>

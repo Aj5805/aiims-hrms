@@ -26,6 +26,8 @@ api.interceptors.response.use(
       window.location.href = '/login';
     } else if (err.response?.status === 403 && err.response?.data?.detail === 'PASSWORD_CHANGE_REQUIRED') {
       window.location.href = '/change-password';
+    } else if (err.response?.status === 503 && err.response?.data?.code === 'MAINTENANCE_MODE') {
+      window.location.href = '/maintenance';
     }
     return Promise.reject(err);
   },

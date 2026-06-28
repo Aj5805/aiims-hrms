@@ -73,7 +73,17 @@ export const reportsApi = {
 };
 
 export const adminApi = {
-  auditLog: (params: Record<string, string | number>) => api.get('/admin/audit-log', { params }),
+  auditLog: (params: Record<string, string | number>) =>
+    api.get('/admin/audit-log', { params }),
   healthDashboard: () => api.get('/admin/health-dashboard'),
   forceLogout: (userId: string) => api.post(`/admin/force-logout/${userId}`),
+  getMaintenanceMode: () => api.get('/admin/maintenance-mode'),
+  toggleMaintenanceMode: (enable: boolean) => api.post(`/admin/maintenance-mode?enable=${enable}`),
+};
+
+export const broadcastsApi = {
+  getActive: () => api.get('/broadcasts/active'),
+  getAll: () => api.get('/broadcasts/'),
+  create: (data: any) => api.post('/broadcasts/', data),
+  update: (id: string, data: any) => api.put(`/broadcasts/${id}`, data),
 };
