@@ -197,11 +197,16 @@ function Layout({ children }: { children: ReactNode }) {
           <button
             onClick={() => {
               stopImpersonation();
-              navigate('/admin');
+              setTimeout(() => {
+                window.location.href = '/admin';
+              }, 100);
             }}
-            className="bg-amber-950 text-amber-400 hover:bg-amber-900 px-3 py-1 rounded text-xs font-bold uppercase tracking-wider transition-colors shadow-sm"
+            className="bg-amber-950 text-amber-400 hover:bg-amber-900 px-4 py-1.5 rounded-md text-sm font-bold uppercase tracking-wider transition-colors shadow-sm flex items-center gap-2"
           >
-            Exit Impersonation
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+            Return to Admin
           </button>
         </div>
       )}
