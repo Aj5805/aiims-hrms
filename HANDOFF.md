@@ -5,6 +5,15 @@ The AIIMS HRMS project has successfully completed Phase 8 and two additional pos
 
 ---
 
+## Session Summary (2026-06-28)
+
+### 1. Cross-Platform Database Snapshot Sync
+- **Feature:** Automated cross-platform syncing of the PostgreSQL test database snapshot via Git (`database/db_snap.sql`).
+- **Implementation:** Created `scripts/db_sync.py` to seamlessly wrap `pg_dump` and `psql` for Windows & Mac portability, allowing the test database state to be ported exactly as it is across machines.
+- **Agent Hand-off Protocol:** Updated local startup instructions to conditionally sync the database only when explicitly requested (`with db`), preventing accidental overwriting of local test data during normal `git pull` operations.
+
+---
+
 ## Session Summary (2026-06-27)
 
 ### 1. Header & Navigation UI Fixes
