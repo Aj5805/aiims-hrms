@@ -133,23 +133,25 @@ Also seeded: `testDept1-10`, `testDesig1-10`, `testLeaveType1-10`, 100 leave bal
 
 ---
 
-## Running Locally & Windows 11 Portability
-The entire database schema and test data are stored as code (Alembic migrations + Python seed scripts), making the project 100% portable to a new machine (like Windows 11) without needing manual SQL dumps.
+## Syncing & Running Locally (Mac & Windows)
+Since you are porting the exact database snapshot alongside the code, use the included sync script when moving between machines.
 
-**To set up on a new Windows 11 machine:**
-1. Install PostgreSQL and create a database named `aiims_hrms`.
-2. Ensure your `.env` (copied from `.env.example`) points to your local Postgres instance.
-3. Run migrations and seeds:
-   ```cmd
-   cd backend
-   .venv\Scripts\python.exe -m alembic upgrade head
-   .venv\Scripts\python.exe seeds\run.py
-   ```
-   *(This will create all tables, insert test employees, leave types, workflows, and test user credentials).*
+**1. Pulling (when you switch to a machine):**
+```bash
+python scripts/db_sync.py pull
+```
+*(This will `git pull` the latest code AND automatically restore the exact database snapshot). *
 
-| Service | Command | URL |
+**2. Pushing (when you are done working):**
+```bash
+python scripts/db_sync.py push
+```
+*(This will dump the local database to a snapshot and `git push` it with your code changes). *
+
+**3. Start the Servers:**
+| Service | Command (with environment activated) | URL |
 |---|---|---|
-| Backend | `cd backend && .venv\Scripts\python.exe -m uvicorn main:app --reload` | http://127.0.0.1:8000 |
+| Backend | `cd backend && python -m uvicorn main:app --reload` | http://127.0.0.1:8000 |
 | Frontend | `cd frontend && npm run dev` | http://localhost:5173 |
 
 ## Next Steps
