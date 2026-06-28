@@ -21,6 +21,7 @@ import HodDashboardPage from './pages/HodDashboardPage';
 import ApproverDashboardPage from './pages/ApproverDashboardPage';
 import { authApi } from './api/endpoints';
 import { PageHeader } from './components/PageHeader';
+import { ImpersonationFab } from './components/ImpersonationFab';
 
 const REPORT_ROLES = ['ESTABLISHMENT_OFFICER', 'REGISTRAR', 'DIRECTOR'] as const;
 const ADMIN_ROLES = ['ADMIN'] as const;
@@ -357,6 +358,7 @@ function Layout({ children }: { children: ReactNode }) {
           </div>
         </main>
       </div>
+      <ImpersonationFab />
     </div>
   </div>
 );
