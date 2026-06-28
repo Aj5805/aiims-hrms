@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { AxiosResponse } from 'axios';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { adminApi, authApi, departmentsApi, notificationsApi, reportsApi, usersApi } from '../api/endpoints';
 import { entitlementRulesApi, leaveTypesApi } from '../api/phase3_endpoints';
 import { PageHeader } from '../components/PageHeader';
@@ -616,9 +616,17 @@ function ReportCard({
 
 export function AdminDashboardPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const startImpersonation = useAuthStore((s) => s.startImpersonation);
   
-  const [activeModule, setActiveModule] = useState<AdminModuleId>('dashboard');
+  const queryModule = new URLSearchParams(location.search).get('module') as AdminModuleId | null;
+  const [activeModule, setActiveModule] = useState<AdminModuleId>(queryModule || 'dashboard');
+
+  useEffect(() => {
+    if (queryModule && queryModule !== activeModule) {
+      setActiveModule(queryModule);
+    }
+  }, [queryModule]);
   const [activePolicyCategory, setActivePolicyCategory] = useState<PolicyCategoryCode>('FACULTY');
   const [dashboard, setDashboard] = useState<HealthDashboard | null>(null);
   const [auditRows, setAuditRows] = useState<AuditLogItem[]>([]);

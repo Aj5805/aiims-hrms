@@ -28,6 +28,11 @@ The AIIMS HRMS project has successfully completed Phase 8 and two additional pos
 - **Implementation:** Created `scripts/db_sync.py` to seamlessly wrap `pg_dump` and `psql` for Windows & Mac portability, allowing the test database state to be ported exactly as it is across machines.
 - **Agent Hand-off Protocol:** Updated local startup instructions to conditionally sync the database only when explicitly requested (`with db`), preventing accidental overwriting of local test data during normal `git pull` operations.
 
+### 5. Admin Powers Implementation & UI Refactor
+- **Features Implemented:** Added functional flows for Workflow Diagnostics & Override, System Maintenance Mode, Broadcast Management, Audit Log Explorer, and Bulk Role Matrix.
+- **Backend:** Added new APIs in `admin.py` for audit logging (`/audit-log`) and bulk role updates (`/bulk-roles`). Audit logs now successfully track `impersonated_by` to trace actions back to the original admin during impersonation.
+- **UI Refactor:** Refactored the UI for Admin Tools based on user feedback. The pop-up modal was completely removed. All tools are now accessible as direct, standalone links in the main sidebar (`/admin/tools/...`). Additionally, the main Admin Console dashboard link was converted into a hover-tree navigation (`NavDropdown`) linking directly to the various dashboard tabs.
+
 ---
 
 ## Session Summary (2026-06-27)

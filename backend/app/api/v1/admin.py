@@ -3,7 +3,9 @@
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Query
+from typing import List
+from fastapi import APIRouter, Depends, Query, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -120,3 +122,151 @@ async def get_maintenance_mode(
     if row and row.value == "true":
         is_enabled = True
     return {"maintenance_mode": is_enabled}
+
+
+@router.get("/workflow/{leave_id}")
+async def get_workflow_diagnostics(
+    leave_id: str,
+    _: dict = Depends(require_role("ADMIN")),
+    db: AsyncSession = Depends(get_db)
+):
+    # Fetch application info
+    app_res = await db.execute(
+        text("""
+            SELECT id, app_number, status, current_step_order, config_id
+            FROM leave_applications
+            WHERE id = :leave_id
+        """),
+        {"leave_id": leave_id}
+    )
+    app = app_res.fetchone()
+    if not app:
+        return {"error": "Leave application not found"}
+
+    # Fetch workflow steps and their approval status
+    steps_res = await db.execute(
+        text("""
+            SELECT ws.id as step_id, ws.step_order, ws.approver_role, ws.approver_office, ws.is_final_authority,
+                   la.id as approval_id, la.action, la.acted_at, la.remarks, u.email as approver_email, u.first_name, u.last_name
+            FROM workflow_steps ws
+            LEFT JOIN leave_approvals la ON ws.id = la.step_id AND la.application_id = :leave_id
+            LEFT JOIN users u ON la.approver_id = u.id
+            WHERE ws.config_id = :config_id
+            ORDER BY ws.step_order ASC
+        """),
+        {"leave_id": leave_id, "config_id": app.config_id}
+    )
+    
+    steps = []
+    for row in steps_res.fetchall():
+        steps.append(dict(row._mapping))
+        
+    return {
+        "application": dict(app._mapping),
+        "steps": steps
+    }
+
+
+@router.post("/workflow/{leave_id}/override")
+async def override_workflow(
+    leave_id: str,
+    admin_user: dict = Depends(require_role("ADMIN")),
+    db: AsyncSession = Depends(get_db)
+):
+    # Fetch application
+    app_res = await db.execute(
+        text("SELECT id, status, current_step_order, config_id FROM leave_applications WHERE id = :leave_id"),
+        {"leave_id": leave_id}
+    )
+    app = app_res.fetchone()
+    if not app:
+        return {"error": "Leave application not found"}
+
+    if app.status == "APPROVED":
+        return {"error": "Already approved"}
+
+    # Force approve
+    await db.execute(
+        text("UPDATE leave_applications SET status = 'APPROVED', last_action_at = now() WHERE id = :leave_id"),
+        {"leave_id": leave_id}
+    )
+
+    # Log in audit_log
+    await db.execute(
+        text("""
+            INSERT INTO audit_log (entity_type, entity_id, actor_id, impersonated_by, action, changes)
+            VALUES ('leave_application', :leave_id, :actor_id, :impersonated_by, 'ADMIN_OVERRIDE_APPROVE', '{"status": "APPROVED"}')
+        """),
+        {
+            "leave_id": leave_id, 
+            "actor_id": admin_user["user_id"],
+            "impersonated_by": admin_user.get("impersonated_by")
+        }
+    )
+
+    # Insert a leave approval record for the current step (or final step)
+    # Find the current step
+    step_res = await db.execute(
+        text("SELECT id FROM workflow_steps WHERE config_id = :config_id AND step_order = :step_order"),
+        {"config_id": app.config_id, "step_order": app.current_step_order}
+    )
+    step = step_res.fetchone()
+    if step:
+        await db.execute(
+            text("""
+                INSERT INTO leave_approvals (application_id, step_id, approver_id, step_order, action, remarks, acted_at)
+                VALUES (:application_id, :step_id, :approver_id, :step_order, 'APPROVED', 'SYSTEM (Admin Override)', now())
+            """),
+            {
+                "application_id": leave_id,
+                "step_id": step.id,
+                "approver_id": admin_user["user_id"],
+                "step_order": app.current_step_order
+            }
+        )
+
+    await db.commit()
+    return {"message": "Application forcefully approved"}
+
+
+class BulkRoleAssignment(BaseModel):
+    user_id: str
+    role: str
+
+class BulkRoleRequest(BaseModel):
+    assignments: List[BulkRoleAssignment]
+
+@router.put("/bulk-roles")
+async def bulk_update_roles(
+    req: BulkRoleRequest,
+    admin_user: dict = Depends(require_role("ADMIN")),
+    db: AsyncSession = Depends(get_db)
+):
+    updates = 0
+    for assignment in req.assignments:
+        if assignment.role not in ["ADMIN", "DIRECTOR", "ESTABLISHMENT_OFFICER", "DEAN_ACADEMIC", "REGISTRAR", "HOD", "STAFF"]:
+            raise HTTPException(status_code=400, detail=f"Invalid role: {assignment.role}")
+            
+        res = await db.execute(
+            text("UPDATE users SET role = :role WHERE id = :id"),
+            {"role": assignment.role, "id": assignment.user_id}
+        )
+        updates += res.rowcount
+        
+        # Optionally, insert into audit_log
+        if res.rowcount > 0:
+            await db.execute(
+                text("""
+                    INSERT INTO audit_log (entity_type, entity_id, actor_id, impersonated_by, action, changes)
+                    VALUES ('user', :user_id, :actor_id, :impersonated_by, 'UPDATE_ROLE', :changes)
+                """),
+                {
+                    "user_id": assignment.user_id,
+                    "actor_id": admin_user["user_id"],
+                    "impersonated_by": admin_user.get("impersonated_by"),
+                    "changes": f'{{"role": "{assignment.role}"}}'
+                }
+            )
+
+    await db.commit()
+    return {"message": f"Successfully updated {updates} roles."}

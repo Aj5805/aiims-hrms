@@ -65,6 +65,7 @@ async def get_current_user(
         "role": payload.get("role", "STAFF"),
         "username": payload.get("username", ""),
         "jti": jti,
+        "impersonated_by": payload.get("impersonated_by"),
     }
 
 

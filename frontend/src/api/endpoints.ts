@@ -79,6 +79,9 @@ export const adminApi = {
   forceLogout: (userId: string) => api.post(`/admin/force-logout/${userId}`),
   getMaintenanceMode: () => api.get('/admin/maintenance-mode'),
   toggleMaintenanceMode: (enable: boolean) => api.post(`/admin/maintenance-mode?enable=${enable}`),
+  getWorkflowDiagnostics: (leaveId: string) => api.get(`/admin/workflow/${leaveId}`),
+  overrideWorkflow: (leaveId: string) => api.post(`/admin/workflow/${leaveId}/override`),
+  bulkRoles: (assignments: any[]) => api.put('/admin/bulk-roles', { assignments }),
 };
 
 export const broadcastsApi = {

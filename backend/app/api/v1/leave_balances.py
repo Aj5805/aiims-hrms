@@ -499,11 +499,12 @@ async def manual_adjust(
     )
     await db.execute(
         text("""
-            INSERT INTO audit_log (id, actor_id, entity_type, entity_id, action, before_state, after_state)
-            VALUES (uuid_generate_v4(), :aid, 'leave_balance', :bid, 'UPDATE', '{}', CAST(:reason AS jsonb))
+            INSERT INTO audit_log (id, actor_id, impersonated_by, entity_type, entity_id, action, before_state, after_state)
+            VALUES (uuid_generate_v4(), :aid, :impersonated_by, 'leave_balance', :bid, 'UPDATE', '{}', CAST(:reason AS jsonb))
         """),
         {
             "aid": current_user["user_id"],
+            "impersonated_by": current_user.get("impersonated_by"),
             "bid": balance_id,
             "reason": json.dumps({"reason": reason, "field": field, "amount": amount}),
         },

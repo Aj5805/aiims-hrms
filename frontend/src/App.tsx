@@ -21,7 +21,7 @@ import HodDashboardPage from './pages/HodDashboardPage';
 import ApproverDashboardPage from './pages/ApproverDashboardPage';
 import { authApi } from './api/endpoints';
 import { PageHeader } from './components/PageHeader';
-import { AdminPowerSidebar } from './components/AdminPowerSidebar';
+import AdminToolsPage from './pages/AdminToolsPage';
 import { MaintenancePage } from './pages/MaintenancePage';
 import { BroadcastBanner } from './components/BroadcastBanner';
 const REPORT_ROLES = ['ESTABLISHMENT_OFFICER', 'REGISTRAR', 'DIRECTOR'] as const;
@@ -286,10 +286,22 @@ function Layout({ children }: { children: ReactNode }) {
 
               {hasRole(role, ADMIN_ROLES) && role === 'ADMIN' && (
                 <>
-                  <Link to="/admin" className="flex items-center px-3 py-2.5 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white rounded-md transition-colors">
-                    Admin Console
-                  </Link>
-                  <AdminPowerSidebar />
+                  <NavDropdown title="Admin Console" landingPath="/admin" items={[
+                    { label: 'Leave Policy Matrix', path: '/admin?module=policy' },
+                    { label: 'Workflow Policy', path: '/admin?module=workflow' },
+                    { label: 'Employees', path: '/admin?module=employees' },
+                    { label: 'Users & Roles', path: '/admin?module=users' },
+                    { label: 'Calendars & Holidays', path: '/admin?module=calendar' },
+                    { label: 'Balances & Credits', path: '/admin?module=balances' },
+                    { label: 'Audit & Health', path: '/admin?module=audit' },
+                  ]} />
+                  <div className="border-t border-slate-800 my-1.5" />
+                  <Link to="/admin/tools/impersonate" className="flex items-center px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white rounded-md transition-colors">Impersonate</Link>
+                  <Link to="/admin/tools/maintenance" className="flex items-center px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white rounded-md transition-colors">Maintenance Mode</Link>
+                  <Link to="/admin/tools/broadcast" className="flex items-center px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white rounded-md transition-colors">Broadcasts</Link>
+                  <Link to="/admin/tools/workflow" className="flex items-center px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white rounded-md transition-colors">Workflow Override</Link>
+                  <Link to="/admin/tools/audit" className="flex items-center px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white rounded-md transition-colors">Audit Log</Link>
+                  <Link to="/admin/tools/roles" className="flex items-center px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white rounded-md transition-colors">Bulk Roles</Link>
                 </>
               )}
 
@@ -406,6 +418,7 @@ export default function App() {
             <Route path="/year-end" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Year-End processing is limited to ADMIN and ESTABLISHMENT_OFFICER."><YearEndProcessingPage /></RoleRoute>} />
             <Route path="/reports" element={<RoleRoute allowedRoles={REPORT_ROLES} fallback="Reports are limited to ESTABLISHMENT_OFFICER, REGISTRAR, and DIRECTOR."><ReportsPage /></RoleRoute>} />
             <Route path="/admin" element={<RoleRoute allowedRoles={ADMIN_ROLES} fallback="Admin dashboard access is limited to ADMIN."><AdminDashboardPage /></RoleRoute>} />
+            <Route path="/admin/tools/:tool" element={<RoleRoute allowedRoles={ADMIN_ROLES} fallback="Admin dashboard access is limited to ADMIN."><AdminToolsPage /></RoleRoute>} />
             <Route path="/leave-types" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Configuration pages are limited to ADMIN and ESTABLISHMENT_OFFICER."><LeaveTypesPage /></RoleRoute>} />
             <Route path="/entitlements" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Configuration pages are limited to ADMIN and ESTABLISHMENT_OFFICER."><EntitlementRulesPage /></RoleRoute>} />
             <Route path="/holidays" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Configuration pages are limited to ADMIN and ESTABLISHMENT_OFFICER."><HolidayPage /></RoleRoute>} />
