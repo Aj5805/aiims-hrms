@@ -134,19 +134,15 @@ Also seeded: `testDept1-10`, `testDesig1-10`, `testLeaveType1-10`, 100 leave bal
 ---
 
 ## Syncing & Running Locally (Mac & Windows)
-Since you are porting the exact database snapshot alongside the code, use the included sync script when moving between machines.
+**Agent Instruction:** Only sync the database if the user explicitly includes "with db" in their hand-off or push/pull request. If they simply say "take hand off" or "push/pull", only sync the code normally without touching the database snapshot.
 
-**1. Pulling (when you switch to a machine):**
-```bash
-python scripts/db_sync.py pull
-```
-*(This will `git pull` the latest code AND automatically restore the exact database snapshot). *
+**1. Code & Database Sync (when explicitly requested "with db"):**
+- **Pulling:** `python scripts/db_sync.py pull` (Pulls code AND restores DB snapshot).
+- **Pushing:** `python scripts/db_sync.py push` (Dumps DB to snapshot, commits, and pushes code).
 
-**2. Pushing (when you are done working):**
-```bash
-python scripts/db_sync.py push
-```
-*(This will dump the local database to a snapshot and `git push` it with your code changes). *
+**2. Standard Code Sync (default):**
+- **Pulling:** `git pull`
+- **Pushing:** standard `git add`, `git commit`, `git push` flow.
 
 **3. Start the Servers:**
 | Service | Command (with environment activated) | URL |
