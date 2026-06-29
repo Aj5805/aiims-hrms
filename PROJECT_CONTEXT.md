@@ -153,20 +153,13 @@ Step 5: Year-end / special   → Closing, encashment, LOP, comp-off (as AIIMS re
 
 **Built so far (foundation):** Auth, role-based navigation, leave apply/approve flow (incl. nodal routing), leave balances (basic), admin console, impersonation, reports shell, hub dashboards, test seed data.
 
-**Latest work (2026-06-29):** Dedicated admin login (`/admin-login`); strict ADMIN vs employee login separation; "HRMS" branding; admin console UI spacing cleanup.
+**Latest work (2026-06-29):** Dedicated admin login (`/admin-login`); strict ADMIN vs employee login separation; "HRMS" branding; admin console UI spacing cleanup; `PROJECT_CONTEXT.md` + agent memory rule; core transaction build roadmap documented.
 
-### WIP / Uncommitted (as of 2026-06-29)
+**Git:** Pushed to `main` at `f33e6b5` (2026-06-29). Working tree clean.
 
-| File | Notes |
-|---|---|
-| `HANDOFF.md` | Modified |
-| `backend/app/api/v1/users.py` | Modified |
-| `frontend/index.html` | Encoding fix |
-| `frontend/src/App.tsx` | Admin routing / nav |
-| `frontend/src/pages/LoginPage.tsx` | Employee login gate |
-| `frontend/src/pages/Phase678Pages.tsx` | Admin console spacing |
-| `frontend/src/pages/AdminDashboardPage.tsx` | **New** |
-| `frontend/src/pages/AdminLoginPage.tsx` | **New** |
+### WIP / Uncommitted
+
+None — last commit `f33e6b5` includes admin login, project memory, and handoff updates.
 
 ---
 
