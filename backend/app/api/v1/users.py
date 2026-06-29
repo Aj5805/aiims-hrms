@@ -79,12 +79,20 @@ async def list_users(
     _: dict = Depends(require_role("ADMIN")),
     db: AsyncSession = Depends(get_db),
 ):
-    query = "SELECT id, username, role, is_active, must_change_password, employee_id, last_login, created_at FROM users"
+    query = """
+        SELECT u.id, u.username, u.role, u.is_active, u.must_change_password, 
+               u.employee_id, u.last_login, u.created_at,
+               e.emp_code, e.name, d.name AS department_name, des.name AS designation_name
+        FROM users u
+        LEFT JOIN employees e ON u.employee_id = e.id
+        LEFT JOIN departments d ON e.department_id = d.id
+        LEFT JOIN designations des ON e.designation_id = des.id
+    """
     params: dict = {}
     if role:
-        query += " WHERE role = :role"
+        query += " WHERE u.role = :role"
         params["role"] = role
-    query += " ORDER BY username"
+    query += " ORDER BY u.username"
     result = await db.execute(text(query), params)
     return [
         {
@@ -93,6 +101,10 @@ async def list_users(
             "employee_id": str(r.employee_id) if r.employee_id else None,
             "last_login": str(r.last_login) if r.last_login else None,
             "created_at": str(r.created_at),
+            "emp_code": r.emp_code,
+            "name": r.name,
+            "department_name": r.department_name,
+            "designation_name": r.designation_name,
         }
         for r in result.fetchall()
     ]

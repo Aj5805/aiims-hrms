@@ -9,6 +9,7 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const setAuth = useAuthStore((s) => s.setAuth);
+  const clearAuth = useAuthStore((s) => s.clearAuth);
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -17,6 +18,16 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const { data } = await authApi.login(username, password);
+      
+      // Strict role validation: Admins must use the dedicated Admin Login
+      if (data.user.role === 'ADMIN') {
+        await authApi.logout().catch(() => {});
+        clearAuth();
+        setError('Administrators must use the secure Admin Portal (/admin-login).');
+        setLoading(false);
+        return;
+      }
+
       localStorage.setItem('access_token', data.access_token);
       setAuth(data.access_token, data.user);
       if (data.user.must_change_password) {
@@ -46,8 +57,7 @@ export default function LoginPage() {
             <div className="w-16 h-16 bg-white/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-white/20 shadow-inner">
               <span className="text-white text-2xl font-bold font-serif tracking-widest">A</span>
             </div>
-            <h1 className="text-2xl font-bold text-white tracking-wide">AIIMS HRMS</h1>
-            <p className="text-slate-400 text-xs mt-2 font-medium tracking-[0.2em] uppercase">Bibinagar</p>
+            <h1 className="text-2xl font-bold text-white tracking-wide">HRMS</h1>
           </div>
           
           <div className="p-8 bg-slate-900/60">

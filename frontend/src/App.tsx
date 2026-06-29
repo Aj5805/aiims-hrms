@@ -3,12 +3,14 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useAuthStore } from './stores';
 import LoginPage from './pages/LoginPage';
+import AdminLoginPage from './pages/AdminLoginPage';
 import EmployeeListPage from './pages/EmployeeListPage';
 import MastersPage from './pages/MastersPage';
 import { LeaveTypesPage, EntitlementRulesPage, HolidayPage, WorkflowPage, OpeningBalancePage } from './pages/Phase3Pages';
 import { ApplyLeavePage, MyApplicationsPage, ApprovalInboxPage } from './pages/Phase4Pages';
 import { MyLeaveAccountPage, YearEndProcessingPage } from './pages/Phase5Pages';
-import { AdminDashboardPage, NotificationBell, ReportsPage } from './pages/Phase678Pages';
+import { NotificationBell, ReportsPage } from './pages/Phase678Pages';
+import { AdminDashboardPage } from './pages/AdminDashboardPage';
 import ChangePasswordPage from './pages/ChangePasswordPage';
 import StaffProfilePage from './pages/StaffProfilePage';
 import ProfileDashboardPage from './pages/ProfileDashboardPage';
@@ -227,7 +229,7 @@ function Layout({ children }: { children: ReactNode }) {
         {/* Logo Area */}
         <div className="h-14 flex items-center px-5 border-b border-slate-800 shrink-0">
           <Link to="/" className="text-sm font-bold text-white tracking-tight truncate">
-            {isAdminRoute ? 'AIIMS (Admin)' : 'AIIMS HRMS'}
+            {isAdminRoute ? 'HRMS (Admin)' : 'HRMS'}
           </Link>
         </div>
 
@@ -295,13 +297,6 @@ function Layout({ children }: { children: ReactNode }) {
                     { label: 'Balances & Credits', path: '/admin?module=balances' },
                     { label: 'Audit & Health', path: '/admin?module=audit' },
                   ]} />
-                  <div className="border-t border-slate-800 my-1.5" />
-                  <Link to="/admin/tools/impersonate" className="flex items-center px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white rounded-md transition-colors">Impersonate</Link>
-                  <Link to="/admin/tools/maintenance" className="flex items-center px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white rounded-md transition-colors">Maintenance Mode</Link>
-                  <Link to="/admin/tools/broadcast" className="flex items-center px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white rounded-md transition-colors">Broadcasts</Link>
-                  <Link to="/admin/tools/workflow" className="flex items-center px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white rounded-md transition-colors">Workflow Override</Link>
-                  <Link to="/admin/tools/audit" className="flex items-center px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white rounded-md transition-colors">Audit Log</Link>
-                  <Link to="/admin/tools/roles" className="flex items-center px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white rounded-md transition-colors">Bulk Roles</Link>
                 </>
               )}
 
@@ -325,6 +320,18 @@ function Layout({ children }: { children: ReactNode }) {
                   { label: 'Workflows', path: '/workflows' },
                   { label: 'Opening Balances', path: '/balances' },
                 ]} />
+              )}
+
+              {hasRole(role, ADMIN_ROLES) && role === 'ADMIN' && (
+                <>
+                  <div className="border-t border-slate-800 my-1.5" />
+                  <Link to="/admin/tools/impersonate" className="flex items-center px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white rounded-md transition-colors">Impersonate</Link>
+                  <Link to="/admin/tools/maintenance" className="flex items-center px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white rounded-md transition-colors">Maintenance Mode</Link>
+                  <Link to="/admin/tools/broadcast" className="flex items-center px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white rounded-md transition-colors">Broadcasts</Link>
+                  <Link to="/admin/tools/workflow" className="flex items-center px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white rounded-md transition-colors">Workflow Override</Link>
+                  <Link to="/admin/tools/audit" className="flex items-center px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white rounded-md transition-colors">Audit Log</Link>
+                  <Link to="/admin/tools/roles" className="flex items-center px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white rounded-md transition-colors">Bulk Roles</Link>
+                </>
               )}
             </>
           )}
@@ -350,7 +357,7 @@ function Layout({ children }: { children: ReactNode }) {
             <button onClick={() => setIsSidebarOpen(true)} className="text-slate-500 hover:text-slate-800 md:hidden transition-colors">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
             </button>
-            <span className="font-bold text-slate-800 text-sm md:hidden">{isAdminRoute ? 'Admin Console' : 'AIIMS HRMS'}</span>
+            <span className="font-bold text-slate-800 text-sm md:hidden">{isAdminRoute ? 'Admin Console' : 'HRMS'}</span>
           </div>
 
           {/* Right controls */}
@@ -401,6 +408,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/admin-login" element={<AdminLoginPage />} />
       <Route path="/maintenance" element={<MaintenancePage />} />
       <Route path="/*" element={
         token ? (

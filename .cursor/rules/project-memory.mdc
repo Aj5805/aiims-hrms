@@ -1,0 +1,34 @@
+---
+description: Load and maintain PROJECT_CONTEXT.md as the live project memory
+alwaysApply: true
+---
+
+# Project Memory
+
+`PROJECT_CONTEXT.md` at the repo root is the canonical live handoff. The user does not need to ask you to load it or keep it updated.
+
+## Stakeholder
+
+The product owner is **non-technical** (AIIMS, central autonomous institution). Use plain language. The app is in **early development** — transaction logic is not complete. **Build features first**; defer code-quality fixes per the **Development Strategy** and **Deferred Improvements Backlog** in `PROJECT_CONTEXT.md` unless they block current work or match a documented trigger (pilot, go-live, touching the same module).
+
+## At session start
+
+1. Read `PROJECT_CONTEXT.md` before planning or coding.
+2. If it disagrees with the live repo, trust the code after verification, then correct the memory file.
+
+## During and after work
+
+Update `PROJECT_CONTEXT.md` when you complete meaningful work:
+
+- New features, bug fixes, or refactors
+- Architecture or workflow decisions
+- Validation you ran (tests, builds)
+- Changes to WIP / uncommitted state or next steps
+
+Keep updates concise: current state, not a full changelog. Append detailed session history to `HANDOFF.md` only when a full session summary is warranted.
+
+## Do not
+
+- Ask the user to "take handoff" or "load handoff" at chat start
+- Wait for the user to request memory updates
+- Let `PROJECT_CONTEXT.md` and `HANDOFF.md` drift into duplicate long-form logs

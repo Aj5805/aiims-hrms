@@ -1,7 +1,57 @@
 # Project Handoff Status
 
 ## Current State
-The AIIMS HRMS project has successfully completed Phase 8 and two additional post-phase feature sessions.
+
+**Stage:** Early active development — building **core transaction logic** (registration, departments, designations, leave mechanics). Phase 1–8 shell is foundation only.
+
+**Next session:** Owner has **default field list** (staff registration), **department list**, and **designation list** ready to share. Start **Step 1: Masters** — import lists and align registration.
+
+**Memory:** `PROJECT_CONTEXT.md` is the live handoff (auto-loaded by agents). This file holds session history.
+
+---
+
+## Session Summary (2026-06-29, continued — planning & handoff)
+
+### 1. Project memory & development strategy
+- Created `PROJECT_CONTEXT.md` and `.cursor/rules/project-memory.mdc` — agents auto-load memory; no need to ask for handoff each chat.
+- Owner is **non-technical**; app is **early stage**; defer code-quality fixes until pilot/go-live triggers.
+- **Deferred Improvements Backlog** captured in `PROJECT_CONTEXT.md` (CI, force-logout, etc.) — fix at optimum time, not now.
+
+### 2. Quality review (deferred)
+- Full quality assessment recorded in memory. Owner directed: **build features first**, harden before production.
+
+### 3. Core transaction logic — build priority confirmed
+Owner confirmed focus areas:
+1. User / employee registration
+2. Departments
+3. Designations
+4. Leave types and internal mechanics
+
+Build sequence: Masters → Registration → Leave config → Leave transactions → Year-end.
+
+### 4. Master data ready
+Owner confirmed they have:
+- Default **staff registration field list**
+- **Department list**
+- **Designation list**
+
+To be provided at start of next session for Step 1 implementation.
+
+### 5. Dedicated Admin Login & Strict Separation (same day, earlier)
+- **Feature:** Added a dedicated, highly secure login portal (`/admin-login`) for system administrators with a distinct "System Administration" dark theme.
+- **Strict Role Gatekeeping:**
+  - Standard employees (`STAFF`, `HOD`, etc.) attempting to log in via `/admin-login` are immediately rejected.
+  - Administrators (`ADMIN`) attempting to log in via the regular `/login` are blocked and redirected to the dedicated admin portal.
+  - Ensures complete separation between employee workflows and system administration.
+
+### 2. Branding & Encoding Fixes
+- **Branding:** Simplified the login banners and sidebar/mobile headers from "AIIMS HRMS" and "AIIMS (Admin)" to a cleaner "HRMS" and "HRMS (Admin)".
+- **Encoding:** Fixed a character encoding issue (mojibake) in `index.html` where an em-dash rendered as garbled text (`â€”`) in the browser tab title.
+
+### 3. Admin Console UI Refinements
+- **UI Optimization:** Standardized vertical spacing (`space-y-4`), padding (`p-4`), and grid gaps (`gap-4`) across all Admin Console screens (`Phase678Pages.tsx`) to achieve a professional data density.
+- **Navigation Cleanup:** Removed the redundant horizontal scroll module menu from the Admin Dashboard, as all modules are easily accessible via the unified left sidebar hover-dropdown.
+- **Menu Organization:** Relocated the "Admin Power Tools" (Impersonate, Maintenance, Broadcasts, Workflow Override, Audit Log, Bulk Roles) to the very bottom of the sidebar, below "System Config," for better logical grouping.
 
 ---
 
@@ -181,7 +231,9 @@ Also seeded: `testDept1-10`, `testDesig1-10`, `testLeaveType1-10`, 100 leave bal
 | Frontend | `cd frontend && npm run dev` | http://localhost:5173 |
 
 ## Next Steps
-- **Admin Flow:** Begin work on the dedicated **Admin Login** implementation and custom features.
-- **General Checks:** Ensure all new dense UI components are mobile-responsive and accessible.
-- The project is otherwise functionally complete with the recent UI standardizations (Hub & Spoke, Approver Dashboard, Admin Dashboard matrices).
-- Reference `docs/GO_LIVE_RUNBOOK.md` for production deployment instructions.
+
+1. **New session:** Owner shares staff registration fields, department list, designation list.
+2. **Step 1:** Load masters into system; align registration screens.
+3. **Step 2–4:** Registration flow → leave config → leave transaction engine.
+4. Defer production hardening per `PROJECT_CONTEXT.md` until pilot/go-live.
+5. Reference `docs/GO_LIVE_RUNBOOK.md` when deployment approaches.
