@@ -2,7 +2,7 @@
 
 > **Agents:** Read this file at the start of every session. Update it after meaningful work (features, fixes, decisions, validation). Keep it concise — current state only, not a full changelog. Detailed history stays in `HANDOFF.md`.
 
-**Last updated:** 2026-06-29 (session close — new window handoff)
+**Last updated:** 2026-06-29 (AIIMS master data — departments + designations)
 
 ---
 
@@ -92,35 +92,86 @@ scripts/db_sync.py      cross-platform DB snapshot sync
 | Shell | Admin can create standalone users (`users.py`) | Clear rule: when is a user created with vs without an employee record; NODAL_OFFICER role missing from admin user-create |
 | Gap | — | Self-registration (if needed for AIIMS), document upload at join, probation period flags |
 
-### Owner-provided master data (ready for Step 1)
+### Owner-provided master data (canonical — real AIIMS)
 
-Owner **has official default lists** (not yet in repo — to be supplied in next session):
-- **Staff registration fields** — required field list for employee onboarding
-- **Department list** — AIIMS departments
-- **Designation list** — AIIMS job titles
+**Important:** Everything already in the database from earlier development (testDept1–10, testStaff, demo users, etc.) is **test data only**. The lists below from the owner are **real working information** and are the source of truth for registration.
 
-**Next session start:** Owner will share these lists. Agent loads `PROJECT_CONTEXT.md`, imports or maps lists into masters + registration flow (Step 1 → Step 2).
+| List | Status |
+|---|---|
+| **Staff registration fields** | Verified 2026-06-29 — see **Staff Registration Field Spec** below |
+| **Department list** | Loaded 2026-06-29 — 57 departments in `backend/seeds/data/aiims_departments.py` (seed `010`) |
+| **Designation list** | Loaded 2026-06-29 — 39 designations in `backend/seeds/data/aiims_designations.py` (seed `009`) |
 
-**Still open (owner):** Staff category breakdown (CCS / Resident / etc.), leave rules priority (CCS vs Resident), pilot vs go-live timeline.
+**Load into DB:** `cd backend && python seeds/run.py` (seeds 009 + 010 are idempotent).
+
+#### Staff Registration Field Spec (owner list — verified & cleaned)
+
+**Currently in system (11 fields):** emp_code, name, gender, dob, doj, department, designation, category (via designation), official email, personal email, working status (`is_active`).
+
+**Duplicates removed from owner list:** `MOBILENO1` (use MOB TEL), `ALT EMAIL` (use Alternate EMAIL ADDRESS), `DEPT NAME` (derived from dept master — do not store separately).
+
+**Typos fixed:** `PARMANENT ADDRESS` → **Permanent Address**.
+
+**Phase 2 — add to employee record (32 fields):**
+
+| Group | Fields |
+|---|---|
+| Personal | address, permanent_address, marital_status, father_name, blood_group, initial, photo |
+| Contact | mobile, alt_mobile |
+| Education | last_qualification |
+| Employment | doj_actual, dol_last_working, next_increment_date, staff_group, is_physically_handicapped, type_of_flat |
+| Social (govt forms) | caste_category, religion |
+| Banking | bank_account_no, bank_name, ifsc_code |
+| IDs & payroll | pan, aadhaar, nps_or_gpf_no, pfms_code |
+| Pay snapshot | grade, pay_level (copy from designation at join; store on employee for history) |
+
+**Suggested additions (not on owner list):** reporting officer, emergency contact, probation end date, residency year (JR1/JR2/SR), appointment type, superannuation date, campus/location, medical council reg no (doctors).
+
+**Build order:** Phase 1 = extend DB + API + form with personal/contact/IDs; Phase 2 = banking/pay snapshot; Phase 3 = e-Service Book display + CSV import columns.
+
+#### Designation master (39 roles — owner list)
+
+| Leave scheme | Category | Count | Examples |
+|---|---|---|---|
+| CCS (faculty) | FACULTY | 11 | Professor, Associate Professor, Lecturer, Dietician, Clinical Psychologist |
+| CCS (nursing) | NURSING | 2 | Senior Nursing Officer, Nursing Officer |
+| CCS (admin) | ADMIN | 22 | Registrar, Executive, Accounts Officer, Lab Technician, Stenographer |
+| Residency | JR_ACAD | 2 | Junior Resident, P.G. Student |
+| Residency | SR_ACAD | 2 | Senior Resident, SR (Academic) |
+
+Duplicates removed from source: Professor, Senior Resident, Technician, Junior Admin row, Executive. Expanded truncated names (e.g. Techniciar → Technician). Pay levels not yet assigned — owner can supply later.
+
+#### Department master (57 departments — owner list)
+
+Clinical & basic sciences (19): Physiology, Microbiology, Biochemistry, Anatomy, Pharmacology, Pathology, Forensic Medicine, etc.
+
+Clinical specialties (24): General Medicine, General Surgery, Paediatrics, Cardiology, Neurology, Anaesthesiology, etc.
+
+Support & administration (14): Nursing, College of Nursing, Administration, Hospital Administration, Finance & Accounts, Library, Dean, Registrar, Engineering, Stores, etc.
+
+All-caps names normalised for display (e.g. NURSING → Nursing, PULMONARY MEDICINE → Pulmonary Medicine). Short codes assigned (e.g. GENMED, OBGYN, CARDIO) — max 20 characters. **Note:** ENT and Otorhinolaryngology both kept; General Medicine and Medicine both kept (distinct rows in owner list). Managing office per department not yet set.
+
+**Still open (owner):** Leave rules priority (CCS vs Resident), pilot vs go-live timeline; pay levels per designation.
 
 ### 2. Departments
 
 | Status | What exists | What transaction logic is still needed |
 |---|---|---|
-| Shell | CRUD: code, name, parent department, managing office | Hierarchy rules (cannot delete dept with active staff), nodal officer assignment as part of dept setup, department transfers affecting leave approval chain |
-| Shell | Nodal routing table (`dept_nodal_assignments`) | Workflow: when nodal officer changes, what happens to pending approvals |
-| Gap | — | AIIMS-specific department tree (clinical vs admin vs school), multi-campus if applicable |
+| **Master locked** | 57 AIIMS departments in seed `010` | Hierarchy (parent depts), managing office per dept, nodal officer assignment |
+| Shell | CRUD: code, name, parent department, managing office | Cannot delete dept with active staff; transfers affecting approval chain |
+| Shell | Nodal routing table (`dept_nodal_assignments`) | Workflow when nodal officer changes mid-approval |
 
-**Suggested order:** Lock the AIIMS department master list, then wire nodal assignments as a required step when a department is activated.
+**Suggested order:** Run seeds to load masters → assign nodal officers per real department → configure managing office where needed.
 
 ### 3. Designations
 
 | Status | What exists | What transaction logic is still needed |
 |---|---|---|
-| Shell | CRUD: name, grade/pay level, linked employee category (CCS / Resident) | Rules: which designations get which leave schemes, promotion path (designation change → leave rule recalculation), duplicate prevention across categories |
-| Gap | — | Mapping to pay commission levels, residency year (JR1/JR2/SR) affecting leave entitlement |
+| **Master locked** | 39 AIIMS designations in seed `009`, linked to leave categories | Pay levels per designation; promotion → leave rule recalculation |
+| Shell | CRUD: name, grade/pay level, linked employee category | Duplicate prevention across categories |
+| Gap | — | Residency year (JR1/JR2/SR) affecting leave entitlement |
 
-**Suggested order:** Confirm designation list with AIIMS HR, then link each designation firmly to employee category and leave scheme.
+**Suggested order:** Run seeds → owner supplies pay levels → link firmly to leave scheme rules.
 
 ### 4. Leave types & internal mechanics
 
@@ -153,13 +204,13 @@ Step 5: Year-end / special   → Closing, encashment, LOP, comp-off (as AIIMS re
 
 **Built so far (foundation):** Auth, role-based navigation, leave apply/approve flow (incl. nodal routing), leave balances (basic), admin console, impersonation, reports shell, hub dashboards, test seed data.
 
-**Latest work (2026-06-29):** Dedicated admin login (`/admin-login`); strict ADMIN vs employee login separation; "HRMS" branding; admin console UI spacing cleanup; `PROJECT_CONTEXT.md` + agent memory rule; core transaction build roadmap documented.
+**Latest work (2026-06-29):** Owner master data captured — 57 departments (seed `010`), 39 designations (seed `009`), staff registration field spec verified. Test seeds 001–008 unchanged.
 
-**Git:** Pushed to `main` at `f33e6b5` (2026-06-29). Working tree clean.
+**Git:** Pushed to `main` after master-data commit (2026-06-29).
 
 ### WIP / Uncommitted
 
-None — last commit `f33e6b5` includes admin login, project memory, and handoff updates.
+None.
 
 ---
 
@@ -249,7 +300,7 @@ Use this ladder. **Default = keep building; fix only when a trigger fires.**
 
 ## Next Action
 
-**Immediate (new window):** Owner starting fresh session. **Step 1 — Masters:** receive owner's field list, department list, and designation list; load into system and align registration screens.
+**Immediate:** Masters in repo — run `python seeds/run.py` locally, then build Phase 1 staff registration fields (mobile, address, Aadhaar, PAN, etc.).
 
 **Build sequence:** Step 1 Masters → Step 2 Registration → Step 3 Leave config → Step 4 Leave transactions → Step 5 Year-end.
 

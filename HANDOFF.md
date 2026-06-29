@@ -2,11 +2,47 @@
 
 ## Current State
 
-**Stage:** Early active development — building **core transaction logic** (registration, departments, designations, leave mechanics). Phase 1–8 shell is foundation only.
+**Stage:** Early active development — **Step 1 Masters largely complete.** Owner-provided real department (57) and designation (39) lists are in repo seeds; staff registration field spec verified in `PROJECT_CONTEXT.md`. Test seed data (007, 008, demo) unchanged — development only.
 
-**Next session:** Owner has **default field list** (staff registration), **department list**, and **designation list** ready to share. Start **Step 1: Masters** — import lists and align registration.
+**Next:** Run `cd backend && python seeds/run.py` to load AIIMS masters into PostgreSQL → implement Phase 1 staff registration fields in DB/API/form.
 
 **Memory:** `PROJECT_CONTEXT.md` is the live handoff (auto-loaded by agents). This file holds session history.
+
+---
+
+## Session Summary (2026-06-29 — AIIMS master data)
+
+### Owner-provided real data (canonical)
+
+| Master | Where stored | Count |
+|---|---|---|
+| Staff registration fields | `PROJECT_CONTEXT.md` — Staff Registration Field Spec | 38 unique fields (verified, not yet in DB schema) |
+| Designations | `backend/seeds/data/aiims_designations.py` + seed `009` | 39 roles, mapped to leave categories |
+| Departments | `backend/seeds/data/aiims_departments.py` + seed `010` | 57 departments with short codes |
+
+**Test vs real:** Seeds 001–008 and `demo_data.py` remain **test/development data only**. Owner lists are **real working AIIMS info** and load additively via seeds 009–010 (idempotent — skips duplicates).
+
+### Field list cleanup (owner confirmed “keep as suggested”)
+
+- Removed duplicate mobile/email fields from spec; fixed Permanent Address typo.
+- Phased implementation plan: Phase 1 personal/contact/IDs → Phase 2 banking/pay → Phase 3 e-Service Book + CSV.
+
+### Designation mapping
+
+- Faculty (11), Nursing (2), Admin (22) → CCS leave scheme.
+- Junior/Senior residents (4) → Residency scheme.
+- Pay levels left blank until owner supplies.
+
+### Department notes
+
+- ALL CAPS names normalised for display.
+- ENT + Otorhinolaryngology and General Medicine + Medicine both kept (owner to confirm if distinct).
+- Managing office per department not yet assigned.
+
+### Not done this session
+
+- Staff registration fields not yet added to `employees` table or onboarding form.
+- `python seeds/run.py` not executed in agent environment (no backend venv here) — **run locally** after pull.
 
 ---
 
