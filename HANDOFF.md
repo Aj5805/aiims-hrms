@@ -2,11 +2,26 @@
 
 ## Current State
 
-**Stage:** Early active development — **Step 1 Masters largely complete.** Owner-provided real department (57) and designation (39) lists are in repo seeds; staff registration field spec verified in `PROJECT_CONTEXT.md`. Test seed data (007, 008, demo) unchanged — development only.
+**Stage:** Early active development — **Step 1 Masters complete in local DB.** 57 departments and 39 designations loaded via seeds 009–010; staff registration field spec in `PROJECT_CONTEXT.md` (not yet in `employees` schema). Test seed data (007, 008, demo) still present alongside real masters.
 
-**Next:** Run `cd backend && python seeds/run.py` to load AIIMS masters into PostgreSQL → implement Phase 1 staff registration fields in DB/API/form.
+**Next:** Implement Phase 1 staff registration fields in DB/API/form (mobile, address, Aadhaar, PAN, etc.).
 
 **Memory:** `PROJECT_CONTEXT.md` is the live handoff (auto-loaded by agents). This file holds session history.
+
+---
+
+## Session Summary (2026-06-29 — masters loaded into DB)
+
+### Done
+
+- Ran `cd backend && python seeds/run.py` — seeds 009 + 010 inserted 57 AIIMS departments and 39 designations into local PostgreSQL (idempotent; test depts/designations remain).
+- Onboard New Staff form can now select real department and designation lists.
+- Updated `PROJECT_CONTEXT.md` and this handoff.
+
+### Not done
+
+- Phase 1 staff registration fields (mobile, address, IDs, etc.) — still spec-only, not on `employees` table or form.
+- Filter/hide test departments and designations from production dropdowns (deferred).
 
 ---
 
@@ -39,10 +54,10 @@
 - ENT + Otorhinolaryngology and General Medicine + Medicine both kept (owner to confirm if distinct).
 - Managing office per department not yet assigned.
 
-### Not done this session
+### Not done this session (superseded by DB load session above)
 
 - Staff registration fields not yet added to `employees` table or onboarding form.
-- `python seeds/run.py` not executed in agent environment (no backend venv here) — **run locally** after pull.
+- Seeds were in repo only until the follow-up session ran `python seeds/run.py` locally.
 
 ---
 

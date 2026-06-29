@@ -2,7 +2,7 @@
 
 > **Agents:** Read this file at the start of every session. Update it after meaningful work (features, fixes, decisions, validation). Keep it concise — current state only, not a full changelog. Detailed history stays in `HANDOFF.md`.
 
-**Last updated:** 2026-06-29 (AIIMS master data — departments + designations)
+**Last updated:** 2026-06-29 (AIIMS masters loaded into local DB)
 
 ---
 
@@ -99,10 +99,10 @@ scripts/db_sync.py      cross-platform DB snapshot sync
 | List | Status |
 |---|---|
 | **Staff registration fields** | Verified 2026-06-29 — see **Staff Registration Field Spec** below |
-| **Department list** | Loaded 2026-06-29 — 57 departments in `backend/seeds/data/aiims_departments.py` (seed `010`) |
-| **Designation list** | Loaded 2026-06-29 — 39 designations in `backend/seeds/data/aiims_designations.py` (seed `009`) |
+| **Department list** | In DB 2026-06-29 — 57 departments (`backend/seeds/data/aiims_departments.py`, seed `010`) |
+| **Designation list** | In DB 2026-06-29 — 39 designations (`backend/seeds/data/aiims_designations.py`, seed `009`) |
 
-**Load into DB:** `cd backend && python seeds/run.py` (seeds 009 + 010 are idempotent).
+**Load into DB:** `cd backend && python seeds/run.py` (seeds 009 + 010 are idempotent). **Ran locally 2026-06-29** — 57 departments + 39 designations confirmed in PostgreSQL.
 
 #### Staff Registration Field Spec (owner list — verified & cleaned)
 
@@ -157,21 +157,21 @@ All-caps names normalised for display (e.g. NURSING → Nursing, PULMONARY MEDIC
 
 | Status | What exists | What transaction logic is still needed |
 |---|---|---|
-| **Master locked** | 57 AIIMS departments in seed `010` | Hierarchy (parent depts), managing office per dept, nodal officer assignment |
+| **Master in DB** | 57 AIIMS departments loaded (seed `010` ran locally) | Hierarchy (parent depts), managing office per dept, nodal officer assignment |
 | Shell | CRUD: code, name, parent department, managing office | Cannot delete dept with active staff; transfers affecting approval chain |
 | Shell | Nodal routing table (`dept_nodal_assignments`) | Workflow when nodal officer changes mid-approval |
 
-**Suggested order:** Run seeds to load masters → assign nodal officers per real department → configure managing office where needed.
+**Suggested order:** Assign nodal officers per real department → configure managing office where needed.
 
 ### 3. Designations
 
 | Status | What exists | What transaction logic is still needed |
 |---|---|---|
-| **Master locked** | 39 AIIMS designations in seed `009`, linked to leave categories | Pay levels per designation; promotion → leave rule recalculation |
+| **Master in DB** | 39 AIIMS designations loaded (seed `009` ran locally), linked to leave categories | Pay levels per designation; promotion → leave rule recalculation |
 | Shell | CRUD: name, grade/pay level, linked employee category | Duplicate prevention across categories |
 | Gap | — | Residency year (JR1/JR2/SR) affecting leave entitlement |
 
-**Suggested order:** Run seeds → owner supplies pay levels → link firmly to leave scheme rules.
+**Suggested order:** Owner supplies pay levels → link firmly to leave scheme rules.
 
 ### 4. Leave types & internal mechanics
 
@@ -204,13 +204,13 @@ Step 5: Year-end / special   → Closing, encashment, LOP, comp-off (as AIIMS re
 
 **Built so far (foundation):** Auth, role-based navigation, leave apply/approve flow (incl. nodal routing), leave balances (basic), admin console, impersonation, reports shell, hub dashboards, test seed data.
 
-**Latest work (2026-06-29):** Owner master data captured — 57 departments (seed `010`), 39 designations (seed `009`), staff registration field spec verified. Test seeds 001–008 unchanged.
+**Latest work (2026-06-29):** AIIMS department (57) and designation (39) masters loaded into local PostgreSQL via `python seeds/run.py`. Onboard Staff dropdowns now use real lists. Staff registration field spec verified in doc — extra fields not yet in `employees` schema. Test seeds 001–008 unchanged.
 
-**Git:** Pushed to `main` after master-data commit (2026-06-29).
+**Git:** Pushed to `main` (handoff update after DB seed run).
 
 ### WIP / Uncommitted
 
-None.
+Handoff docs only (this commit).
 
 ---
 
@@ -300,7 +300,7 @@ Use this ladder. **Default = keep building; fix only when a trigger fires.**
 
 ## Next Action
 
-**Immediate:** Masters in repo — run `python seeds/run.py` locally, then build Phase 1 staff registration fields (mobile, address, Aadhaar, PAN, etc.).
+**Immediate:** Build Phase 1 staff registration fields in DB/API/form (mobile, address, Aadhaar, PAN, etc.). Masters (57 depts, 39 designations) are loaded in local DB.
 
 **Build sequence:** Step 1 Masters → Step 2 Registration → Step 3 Leave config → Step 4 Leave transactions → Step 5 Year-end.
 
