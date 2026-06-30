@@ -6,7 +6,8 @@ import LoginPage from './pages/LoginPage';
 import AdminLoginPage from './pages/AdminLoginPage';
 import EmployeeListPage from './pages/EmployeeListPage';
 import MastersPage from './pages/MastersPage';
-import { LeaveTypesPage, EntitlementRulesPage, HolidayPage, WorkflowPage, OpeningBalancePage } from './pages/Phase3Pages';
+import { OpeningBalancePage } from './pages/Phase3Pages';
+import { MastersRedirect } from './components/MastersRedirect';
 import { ApplyLeavePage, MyApplicationsPage, ApprovalInboxPage } from './pages/Phase4Pages';
 import { MyLeaveAccountPage, YearEndProcessingPage } from './pages/Phase5Pages';
 import { NotificationBell, ReportsPage } from './pages/Phase678Pages';
@@ -287,51 +288,51 @@ function Layout({ children }: { children: ReactNode }) {
               {hasRole(role, EMPLOYEE_MASTER_ROLES) && role !== 'ADMIN' && <div className="border-t border-slate-800 my-1.5" />}
 
               {hasRole(role, ADMIN_ROLES) && role === 'ADMIN' && (
-                <>
-                  <NavDropdown title="Admin Console" landingPath="/admin" items={[
-                    { label: 'Leave Policy Matrix', path: '/admin?module=policy' },
-                    { label: 'Workflow Policy', path: '/admin?module=workflow' },
-                    { label: 'Employees', path: '/admin?module=employees' },
-                    { label: 'Users & Roles', path: '/admin?module=users' },
-                    { label: 'Calendars & Holidays', path: '/admin?module=calendar' },
-                    { label: 'Balances & Credits', path: '/admin?module=balances' },
-                    { label: 'Audit & Health', path: '/admin?module=audit' },
-                  ]} />
-                </>
+                <NavDropdown title="Admin Console" landingPath="/admin" items={[
+                  { label: 'Dashboard', path: '/admin' },
+                  { label: 'Leave Policy Matrix', path: '/admin?module=policy' },
+                  { label: 'Users & Roles', path: '/admin?module=users' },
+                  { label: 'Audit & Health', path: '/admin?module=audit' },
+                ]} />
               )}
 
               {hasRole(role, EMPLOYEE_MASTER_ROLES) && (
                 <NavDropdown title="HR Operations" items={[
                   { label: 'Employee Directory', path: '/employees?tab=directory' },
                   { label: 'Onboard Employee', path: '/employees?tab=onboard' },
-                  { label: 'Master Settings', path: '/masters' },
                 ]} />
               )}
+
+              {hasRole(role, CONFIG_ROLES) && (
+                <NavDropdown title="Masters" landingPath="/masters" items={[
+                  { label: 'Departments', path: '/masters?tab=dept' },
+                  { label: 'Designations', path: '/masters?tab=desg' },
+                  { label: 'Leave Types', path: '/masters?tab=leave-types' },
+                  { label: 'Entitlements', path: '/masters?tab=entitlements' },
+                  { label: 'Holidays', path: '/masters?tab=holidays' },
+                  { label: 'Workflows', path: '/masters?tab=workflows' },
+                ]} />
+              )}
+
               {hasRole(role, EMPLOYEE_MASTER_ROLES) && (
                 <NavDropdown title="Reports & Data" items={[
                   { label: 'Reports', path: '/reports' },
-                  ...(hasRole(role, CONFIG_ROLES) ? [{ label: 'Year-End', path: '/year-end' }] : []),
-                ]} />
-              )}
-              {hasRole(role, CONFIG_ROLES) && (
-                <NavDropdown title="System Config" items={[
-                  { label: 'Leave Types', path: '/leave-types' },
-                  { label: 'Entitlements', path: '/entitlements' },
-                  { label: 'Holidays', path: '/holidays' },
-                  { label: 'Workflows', path: '/workflows' },
-                  { label: 'Opening Balances', path: '/balances' },
+                  ...(hasRole(role, CONFIG_ROLES) ? [
+                    { label: 'Year-End', path: '/year-end' },
+                    { label: 'Opening Balances', path: '/balances' },
+                  ] : []),
                 ]} />
               )}
 
               {hasRole(role, ADMIN_ROLES) && role === 'ADMIN' && (
                 <>
                   <div className="border-t border-slate-800 my-1.5" />
-                  <Link to="/admin/tools/impersonate" className="flex items-center px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white rounded-md transition-colors">Impersonate</Link>
-                  <Link to="/admin/tools/maintenance" className="flex items-center px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white rounded-md transition-colors">Maintenance Mode</Link>
-                  <Link to="/admin/tools/broadcast" className="flex items-center px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white rounded-md transition-colors">Broadcasts</Link>
-                  <Link to="/admin/tools/workflow" className="flex items-center px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white rounded-md transition-colors">Workflow Override</Link>
-                  <Link to="/admin/tools/audit" className="flex items-center px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white rounded-md transition-colors">Audit Log</Link>
-                  <Link to="/admin/tools/roles" className="flex items-center px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white rounded-md transition-colors">Bulk Roles</Link>
+                  <NavDropdown title="Admin Tools" items={[
+                    { label: 'Maintenance Mode', path: '/admin/tools/maintenance' },
+                    { label: 'Broadcasts', path: '/admin/tools/broadcast' },
+                    { label: 'Workflow Diagnostics', path: '/admin/tools/workflow' },
+                    { label: 'Bulk Roles', path: '/admin/tools/roles' },
+                  ]} />
                 </>
               )}
             </>
@@ -417,7 +418,7 @@ export default function App() {
             <Routes>
             <Route path="/" element={role === 'ADMIN' ? <Navigate to="/admin" replace /> : <HomeDashboardPage />} />
             <Route path="/employees" element={<RoleRoute allowedRoles={EMPLOYEE_MASTER_ROLES} fallback="Access restricted."><EmployeeListPage /></RoleRoute>} />
-            <Route path="/masters" element={<RoleRoute allowedRoles={EMPLOYEE_MASTER_ROLES} fallback="Masters access is restricted."><MastersPage /></RoleRoute>} />
+            <Route path="/masters" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Masters access is limited to ADMIN, ESTABLISHMENT_OFFICER, and REGISTRAR."><MastersPage /></RoleRoute>} />
             <Route path="/apply" element={<ApplyLeavePage />} />
             <Route path="/my-apps" element={<MyApplicationsPage />} />
             <Route path="/approver-dashboard" element={<RoleRoute allowedRoles={APPROVER_ROLES} fallback="Only approvers have an Approver Dashboard."><ApproverDashboardPage /></RoleRoute>} />
@@ -428,11 +429,11 @@ export default function App() {
             <Route path="/reports" element={<RoleRoute allowedRoles={REPORT_ROLES} fallback="Reports are limited to ESTABLISHMENT_OFFICER, REGISTRAR, and DIRECTOR."><ReportsPage /></RoleRoute>} />
             <Route path="/admin" element={<RoleRoute allowedRoles={ADMIN_ROLES} fallback="Admin dashboard access is limited to ADMIN."><AdminDashboardPage /></RoleRoute>} />
             <Route path="/admin/tools/:tool" element={<RoleRoute allowedRoles={ADMIN_ROLES} fallback="Admin dashboard access is limited to ADMIN."><AdminToolsPage /></RoleRoute>} />
-            <Route path="/leave-types" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Configuration pages are limited to ADMIN and ESTABLISHMENT_OFFICER."><LeaveTypesPage /></RoleRoute>} />
-            <Route path="/entitlements" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Configuration pages are limited to ADMIN and ESTABLISHMENT_OFFICER."><EntitlementRulesPage /></RoleRoute>} />
-            <Route path="/holidays" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Configuration pages are limited to ADMIN and ESTABLISHMENT_OFFICER."><HolidayPage /></RoleRoute>} />
-            <Route path="/workflows" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Configuration pages are limited to ADMIN and ESTABLISHMENT_OFFICER."><WorkflowPage /></RoleRoute>} />
-            <Route path="/balances" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Configuration pages are limited to ADMIN and ESTABLISHMENT_OFFICER."><OpeningBalancePage /></RoleRoute>} />
+            <Route path="/leave-types" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Masters access is limited to ADMIN, ESTABLISHMENT_OFFICER, and REGISTRAR."><MastersRedirect tab="leave-types" /></RoleRoute>} />
+            <Route path="/entitlements" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Masters access is limited to ADMIN, ESTABLISHMENT_OFFICER, and REGISTRAR."><MastersRedirect tab="entitlements" /></RoleRoute>} />
+            <Route path="/holidays" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Masters access is limited to ADMIN, ESTABLISHMENT_OFFICER, and REGISTRAR."><MastersRedirect tab="holidays" /></RoleRoute>} />
+            <Route path="/workflows" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Masters access is limited to ADMIN, ESTABLISHMENT_OFFICER, and REGISTRAR."><MastersRedirect tab="workflows" /></RoleRoute>} />
+            <Route path="/balances" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Opening balances are limited to ADMIN, ESTABLISHMENT_OFFICER, and REGISTRAR."><OpeningBalancePage /></RoleRoute>} />
             <Route path="/change-password" element={<ChangePasswordPage />} />
             <Route path="/profile-dashboard" element={<ProfileDashboardPage />} />
             <Route path="/profile" element={<StaffProfilePage />} />

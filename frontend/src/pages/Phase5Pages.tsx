@@ -500,7 +500,7 @@ export function YearEndProcessingPage() {
   return (
     <div className="max-w-5xl space-y-6">
       <PageHeader 
-        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Admin', to: '/admin' }, { label: 'Year-End Processing' }]}
+        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Reports & Data', to: '/reports' }, { label: 'Year-End Processing' }]}
         title="Year-End / Account Processing"
       />
       {message && <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">{message}</div>}

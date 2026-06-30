@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useLocation, Navigate } from 'react-router-dom';
-import { adminApi, authApi, departmentsApi, usersApi } from '../api/endpoints';
+import { useLocation, Navigate } from 'react-router-dom';
+import { adminApi, authApi, usersApi } from '../api/endpoints';
 import { entitlementRulesApi, leaveTypesApi } from '../api/phase3_endpoints';
 import { PageHeader } from '../components/PageHeader';
 import { useAuthStore } from '../stores';
 import { SYSTEM_ROLES } from '../constants/roles';
 
-type DepartmentOption = { id: string; code: string; name: string };
 type LeaveTypeOption = { id: string; code: string; name: string; scheme?: string | null; is_accumulating?: boolean; max_accumulation?: number | null; requires_mc?: boolean; min_days_for_mc?: number | null; count_holidays?: boolean; is_half_day_allowed?: boolean; carry_forward?: boolean };
 type UserOption = { id: string; username: string; role: string; is_active?: boolean; must_change_password?: boolean; employee_id?: string | null; last_login?: string | null; emp_code?: string | null; name?: string | null; department_name?: string | null; designation_name?: string | null; };
 type AuditLogItem = { id: string; entity_type?: string | null; entity_id?: string | null; actor_id?: string | null; action?: string | null; created_at?: string | null };
@@ -14,7 +13,8 @@ type HealthDashboard = { queue_depth?: number; recent_errors_24h?: number; db_po
 type EntitlementRule = { id: string; category_code: string; leave_type_code: string; year_ref?: string | null; days_per_year?: number | null; prorata_rate?: number | null; year1_days?: number | null; year2_plus_days?: number | null; max_at_a_stretch?: number | null; max_in_tenure?: number | null; carry_forward?: boolean };
 
 type PolicyRowDraft = { annualCredit: string; maxAtATime: string; maxInTenure: string; maxAccumulation: string };
-type AdminModuleId = 'dashboard' | 'policy' | 'workflow' | 'employees' | 'users' | 'calendar' | 'balances' | 'audit';
+type AdminModuleId = 'dashboard' | 'policy' | 'users' | 'audit';
+const VALID_MODULES = new Set<AdminModuleId>(['dashboard', 'policy', 'users', 'audit']);
 const POLICY_CATEGORY_CODES = ['FACULTY', 'NURSING', 'ADMIN', 'JR_ACAD', 'SR_ACAD', 'JR_NA', 'SR_NA'] as const;
 type PolicyCategoryCode = (typeof POLICY_CATEGORY_CODES)[number];
 const ELIGIBILITY_OPTIONS = ['ALL', 'NONE', 'MALE_ONLY', 'FEMALE_ONLY'] as const;
@@ -34,21 +34,14 @@ const Icons = {
   Policy: (props: any) => <svg {...props} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>,
   Workflow: (props: any) => <svg {...props} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>,
   Users: (props: any) => <svg {...props} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>,
-  Employees: (props: any) => <svg {...props} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2" /></svg>,
-  Calendar: (props: any) => <svg {...props} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>,
-  Balances: (props: any) => <svg {...props} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" /></svg>,
   Audit: (props: any) => <svg {...props} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>
 };
 
-const MODULES: { id: AdminModuleId; label: string; icon: any }[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: Icons.Dashboard },
-  { id: 'policy', label: 'Leave Policy', icon: Icons.Policy },
-  { id: 'workflow', label: 'Workflow', icon: Icons.Workflow },
-  { id: 'employees', label: 'Employees', icon: Icons.Employees },
-  { id: 'users', label: 'Users & Roles', icon: Icons.Users },
-  { id: 'calendar', label: 'Calendar', icon: Icons.Calendar },
-  { id: 'balances', label: 'Balances', icon: Icons.Balances },
-  { id: 'audit', label: 'Audit Log', icon: Icons.Audit },
+const MODULES: { id: AdminModuleId; label: string }[] = [
+  { id: 'dashboard', label: 'Dashboard' },
+  { id: 'policy', label: 'Leave Policy Matrix' },
+  { id: 'users', label: 'Users & Roles' },
+  { id: 'audit', label: 'Audit & Health' },
 ];
 
 function MetricCard({ label, value, tone = 'default' }: { label: string; value: string; tone?: 'default' | 'amber' | 'green' | 'red' }) {
@@ -72,7 +65,10 @@ export function AdminDashboardPage() {
   const role = useAuthStore((s) => s.user?.role);
   const adminToken = useAuthStore((s) => s.adminToken);
   
-  const queryModule = new URLSearchParams(location.search).get('module') as AdminModuleId | null;
+  const rawModule = new URLSearchParams(location.search).get('module');
+  const queryModule = rawModule && VALID_MODULES.has(rawModule as AdminModuleId)
+    ? (rawModule as AdminModuleId)
+    : null;
   const [activeModule, setActiveModule] = useState<AdminModuleId>(queryModule || 'dashboard');
 
   useEffect(() => {
@@ -85,7 +81,6 @@ export function AdminDashboardPage() {
   const [dashboard, setDashboard] = useState<HealthDashboard | null>(null);
   const [auditRows, setAuditRows] = useState<AuditLogItem[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
-  const [, setDepartments] = useState<DepartmentOption[]>([]);
   const [leaveTypes, setLeaveTypes] = useState<LeaveTypeOption[]>([]);
   const [entitlementRules, setEntitlementRules] = useState<EntitlementRule[]>([]);
   const [policyDraftEligibility, ] = useState<Record<string, EligibilityOption>>({});
@@ -107,16 +102,14 @@ export function AdminDashboardPage() {
 
   useEffect(() => {
     const bootstrap = async () => {
-      const [dashboardResponse, usersResponse, departmentsResponse, leaveTypesResponse, entitlementRulesResponse] = await Promise.all([
+      const [dashboardResponse, usersResponse, leaveTypesResponse, entitlementRulesResponse] = await Promise.all([
         adminApi.healthDashboard(),
         usersApi.list(),
-        departmentsApi.list(),
         leaveTypesApi.list(),
         entitlementRulesApi.list(),
       ]);
       setDashboard(dashboardResponse.data || {});
       setUsers(usersResponse.data || []);
-      setDepartments(departmentsResponse.data || []);
       setLeaveTypes(leaveTypesResponse.data || []);
       setEntitlementRules(entitlementRulesResponse.data || []);
       const { data } = await adminApi.auditLog({ skip: 0, limit: 50 });
@@ -530,22 +523,6 @@ export function AdminDashboardPage() {
                     </table>
                   </div>
                 </div>
-              </div>
-            )}
-
-            {/* Quick links for modules that are mostly external pages */}
-            {(activeModule === 'employees' || activeModule === 'workflow' || activeModule === 'calendar' || activeModule === 'balances') && (
-              <div className="py-20 flex flex-col items-center justify-center text-center max-w-lg mx-auto">
-                <div className="w-20 h-20 bg-indigo-50 text-indigo-500 rounded-full flex items-center justify-center mb-6">
-                  <currentModuleDef.icon className="w-10 h-10" />
-                </div>
-                <h3 className="text-2xl font-black text-slate-800 mb-3">{currentModuleDef.label} Area</h3>
-                <p className="text-slate-500 font-medium leading-relaxed mb-8">
-                  This module connects to dedicated system pages for full control over {currentModuleDef.label.toLowerCase()}.
-                </p>
-                <Link to={activeModule === 'employees' ? '/' : activeModule === 'calendar' ? '/holidays' : activeModule === 'workflow' ? '/workflows' : '/balances'} className="bg-slate-900 text-white font-bold text-base px-8 py-4 rounded-2xl shadow-lg hover:bg-slate-800 hover:-translate-y-0.5 transition-all">
-                  Open {currentModuleDef.label} Manager
-                </Link>
               </div>
             )}
 

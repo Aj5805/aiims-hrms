@@ -11,7 +11,7 @@ import { PageHeader } from '../components/PageHeader';
 
 // ── Leave Types ────────────────────────────────────────────────────────────
 
-export function LeaveTypesPage() {
+export function LeaveTypesPanel() {
   const [items, setItems] = useState<Record<string, unknown>[]>([]);
   const load = async () => {
     const { data } = await leaveTypesApi.list();
@@ -20,46 +20,54 @@ export function LeaveTypesPage() {
   useEffect(() => { load(); }, []);
 
   return (
+    <div className="overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Code</th>
+              <th>Name</th>
+              <th>Scheme</th>
+              <th className="text-center">Half-Day</th>
+              <th className="text-center">MC Req.</th>
+              <th className="text-center">Carry Fwd</th>
+              <th className="text-center">Encashable</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((lt) => (
+              <tr key={lt.id as string}>
+                <td className="font-mono font-medium">{lt.code as string}</td>
+                <td>{lt.name as string}</td>
+                <td>
+                  <span className="badge badge-blue">{lt.scheme as string}</span>
+                </td>
+                <td className="text-center">{lt.is_half_day_allowed ? '✓' : '—'}</td>
+                <td className="text-center">{lt.requires_mc ? '✓' : '—'}</td>
+                <td className="text-center">{lt.carry_forward ? '✓' : '—'}</td>
+                <td className="text-center">{lt.encashable ? '✓' : '—'}</td>
+              </tr>
+            ))}
+            {items.length === 0 && (
+              <tr><td colSpan={7} className="py-10 text-center text-slate-400">No leave types configured.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+export function LeaveTypesPage() {
+  return (
     <div className="page">
       <PageHeader
-        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'System Config', to: '/admin' }, { label: 'Leave Types' }]}
+        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Masters', to: '/masters' }, { label: 'Leave Types' }]}
         title="Leave Types Master"
         description="Core definitions for all available leave types across the institution."
       />
       <div className="card overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Code</th>
-                <th>Name</th>
-                <th>Scheme</th>
-                <th className="text-center">Half-Day</th>
-                <th className="text-center">MC Req.</th>
-                <th className="text-center">Carry Fwd</th>
-                <th className="text-center">Encashable</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((lt) => (
-                <tr key={lt.id as string}>
-                  <td className="font-mono font-medium">{lt.code as string}</td>
-                  <td>{lt.name as string}</td>
-                  <td>
-                    <span className="badge badge-blue">{lt.scheme as string}</span>
-                  </td>
-                  <td className="text-center">{lt.is_half_day_allowed ? '✓' : '—'}</td>
-                  <td className="text-center">{lt.requires_mc ? '✓' : '—'}</td>
-                  <td className="text-center">{lt.carry_forward ? '✓' : '—'}</td>
-                  <td className="text-center">{lt.encashable ? '✓' : '—'}</td>
-                </tr>
-              ))}
-              {items.length === 0 && (
-                <tr><td colSpan={7} className="py-10 text-center text-slate-400">No leave types configured.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        <LeaveTypesPanel />
       </div>
     </div>
   );
@@ -67,7 +75,7 @@ export function LeaveTypesPage() {
 
 // ── Entitlement Rules ──────────────────────────────────────────────────────
 
-export function EntitlementRulesPage() {
+export function EntitlementRulesPanel() {
   const [items, setItems] = useState<Record<string, unknown>[]>([]);
   const load = async () => {
     const { data } = await entitlementRulesApi.list();
@@ -76,42 +84,50 @@ export function EntitlementRulesPage() {
   useEffect(() => { load(); }, []);
 
   return (
+    <div className="overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Category</th>
+              <th>Leave Type</th>
+              <th className="text-center">Days/Yr</th>
+              <th className="text-center">Yr 1 Days</th>
+              <th className="text-center">Max/Stretch</th>
+              <th className="text-center">Max/Tenure</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((r) => (
+              <tr key={r.id as string}>
+                <td className="font-mono text-xs">{r.category_code as string}</td>
+                <td className="font-mono text-xs">{r.leave_type_code as string}</td>
+                <td className="text-right">{r.days_per_year != null ? String(r.days_per_year) : '—'}</td>
+                <td className="text-right">{r.year1_days != null ? String(r.year1_days) : '—'}</td>
+                <td className="text-right">{r.year2_plus_days != null ? String(r.year2_plus_days) : '—'}</td>
+                <td className="text-right">{r.max_in_tenure != null ? String(r.max_in_tenure) : '—'}</td>
+              </tr>
+            ))}
+            {items.length === 0 && (
+              <tr><td colSpan={6} className="py-10 text-center text-slate-400">No entitlement rules configured.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+export function EntitlementRulesPage() {
+  return (
     <div className="page">
       <PageHeader
-        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'System Config', to: '/admin' }, { label: 'Entitlement Rules' }]}
+        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Masters', to: '/masters' }, { label: 'Entitlement Rules' }]}
         title="Entitlement Rules Master"
         description="Defines annual credit and limits for each category and leave type."
       />
       <div className="card overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Category</th>
-                <th>Leave Type</th>
-                <th className="text-center">Days/Yr</th>
-                <th className="text-center">Yr 1 Days</th>
-                <th className="text-center">Max/Stretch</th>
-                <th className="text-center">Max/Tenure</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((r) => (
-                <tr key={r.id as string}>
-                  <td className="font-mono text-xs">{r.category_code as string}</td>
-                  <td className="font-mono text-xs">{r.leave_type_code as string}</td>
-                  <td className="text-right">{r.days_per_year != null ? String(r.days_per_year) : '—'}</td>
-                  <td className="text-right">{r.year1_days != null ? String(r.year1_days) : '—'}</td>
-                  <td className="text-right">{r.year2_plus_days != null ? String(r.year2_plus_days) : '—'}</td>
-                  <td className="text-right">{r.max_in_tenure != null ? String(r.max_in_tenure) : '—'}</td>
-                </tr>
-              ))}
-              {items.length === 0 && (
-                <tr><td colSpan={6} className="py-10 text-center text-slate-400">No entitlement rules configured.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        <EntitlementRulesPanel />
       </div>
     </div>
   );
@@ -119,7 +135,7 @@ export function EntitlementRulesPage() {
 
 // ── Holiday Master ─────────────────────────────────────────────────────────
 
-export function HolidayPage() {
+export function HolidayPanel() {
   const [items, setItems] = useState<Record<string, unknown>[]>([]);
   const [year, setYear] = useState(new Date().getFullYear());
   const [name, setName] = useState('');
@@ -146,21 +162,17 @@ export function HolidayPage() {
   };
 
   return (
-    <div className="page">
-      <PageHeader
-        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'System Config', to: '/admin' }, { label: 'Holiday Master' }]}
-        title="Holiday Master"
-        rightContent={
-          <select
-            value={year}
-            onChange={(e) => setYear(+e.target.value)}
-            className="form-select w-28"
-          >
-            {[2025, 2026, 2027, 2028].map((y) => <option key={y}>{y}</option>)}
-          </select>
-        }
-      />
-      <form onSubmit={add} className="card card-body flex flex-wrap gap-3 items-end mb-0">
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <select
+          value={year}
+          onChange={(e) => setYear(+e.target.value)}
+          className="form-select w-28"
+        >
+          {[2025, 2026, 2027, 2028].map((y) => <option key={y}>{y}</option>)}
+        </select>
+      </div>
+      <form onSubmit={add} className="flex flex-wrap gap-3 items-end bg-gray-50 p-4 rounded-lg border border-gray-200">
         <div className="flex-1 min-w-32">
           <label className="form-label">Date</label>
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="form-input" required />
@@ -177,7 +189,7 @@ export function HolidayPage() {
         </div>
         <button type="submit" className="btn-primary btn-sm self-end mb-0.5">Add Holiday</button>
       </form>
-      <div className="card overflow-hidden">
+      <div className="overflow-hidden border border-gray-200 rounded-lg">
         <table className="data-table">
           <thead>
             <tr>
@@ -212,9 +224,23 @@ export function HolidayPage() {
   );
 }
 
+export function HolidayPage() {
+  return (
+    <div className="page">
+      <PageHeader
+        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Masters', to: '/masters' }, { label: 'Holiday Master' }]}
+        title="Holiday Master"
+      />
+      <div className="card p-5">
+        <HolidayPanel />
+      </div>
+    </div>
+  );
+}
+
 // ── Workflow Configurator ──────────────────────────────────────────────────
 
-export function WorkflowPage() {
+export function WorkflowPanel() {
   const [configs, setConfigs] = useState<Record<string, unknown>[]>([]);
   const [simResult, setSimResult] = useState<Record<string, unknown> | null>(null);
   const [name, setName] = useState('');
@@ -241,13 +267,8 @@ export function WorkflowPage() {
   };
 
   return (
-    <div className="page">
-      <PageHeader
-        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'System Config', to: '/admin' }, { label: 'Workflow Configurator' }]}
-        title="Workflow Configurator"
-        description="Define approval hierarchies and escalation logic."
-      />
-      <div className="card card-body flex gap-3">
+    <div className="space-y-4">
+      <div className="flex gap-3">
         <input
           id="wf-new-name"
           placeholder="New workflow config name"
@@ -258,7 +279,7 @@ export function WorkflowPage() {
         <button onClick={createCfg} className="btn-primary">Create</button>
       </div>
       <div className="grid gap-5 md:grid-cols-2">
-        <div className="card p-5">
+        <div className="border border-slate-200 rounded-lg p-5">
           <h3 className="text-sm font-semibold text-slate-800 mb-4">Existing Workflow Chains</h3>
           {configs.map((c) => (
             <details key={c.id as string} className="mb-2 border border-slate-200 rounded-lg group">
@@ -280,7 +301,7 @@ export function WorkflowPage() {
           ))}
           {configs.length === 0 && <p className="text-slate-400 text-sm">No workflows configured.</p>}
         </div>
-        <div className="card p-5">
+        <div className="border border-slate-200 rounded-lg p-5">
           <h3 className="text-sm font-semibold text-slate-800 mb-4">Simulate Routing</h3>
           <div className="grid grid-cols-3 gap-2 mb-3">
             <input id="sim-cat" placeholder="Category" className="form-input" />
@@ -315,7 +336,22 @@ export function WorkflowPage() {
   );
 }
 
-// ── Opening Balances ───────────────────────────────────────────────────────
+export function WorkflowPage() {
+  return (
+    <div className="page">
+      <PageHeader
+        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Masters', to: '/masters' }, { label: 'Workflow Configurator' }]}
+        title="Workflow Configurator"
+        description="Define approval hierarchies and escalation logic."
+      />
+      <div className="card p-5">
+        <WorkflowPanel />
+      </div>
+    </div>
+  );
+}
+
+// ── Opening Balances (transactional — not a reference master) ──────────────
 
 export function OpeningBalancePage() {
   const [jsonText, setJsonText] = useState('');
@@ -343,7 +379,7 @@ export function OpeningBalancePage() {
   return (
     <div className="page">
       <PageHeader
-        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'System Config', to: '/admin' }, { label: 'Opening Balances' }]}
+        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Reports & Data', to: '/reports' }, { label: 'Opening Balances' }]}
         title="Opening Balances"
         description="Manual management of leave balances."
       />

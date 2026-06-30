@@ -221,9 +221,10 @@ export default function AdminToolsPage() {
 
   if (role !== 'ADMIN' || adminToken) return <Navigate to="/" replace />;
 
+  if (activeTab === 'impersonate') return <Navigate to="/admin?module=users" replace />;
+  if (activeTab === 'audit') return <Navigate to="/admin?module=audit" replace />;
+
   const titles: Record<string, string> = {
-    impersonate: 'Login As User',
-    maintenance: 'System Maintenance',
     broadcast: 'Broadcast Manager',
     workflow: 'Workflow Diagnostics',
     audit: 'Audit Log Explorer',

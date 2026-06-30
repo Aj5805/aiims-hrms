@@ -1,43 +1,89 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { departmentsApi, designationsApi } from '../api/endpoints';
 import { PageHeader } from '../components/PageHeader';
+import {
+  LeaveTypesPanel,
+  EntitlementRulesPanel,
+  HolidayPanel,
+  WorkflowPanel,
+} from './Phase3Pages';
 
-interface Dept { id: string; code: string; name: string; managing_office?: string }
-interface Desg { id: string; name: string; grade_pay_level?: string; category_code?: string }
+export const MASTER_TABS = [
+  { id: 'dept', label: 'Departments' },
+  { id: 'desg', label: 'Designations' },
+  { id: 'leave-types', label: 'Leave Types' },
+  { id: 'entitlements', label: 'Entitlements' },
+  { id: 'holidays', label: 'Holidays' },
+  { id: 'workflows', label: 'Workflows' },
+] as const;
+
+export type MasterTabId = (typeof MASTER_TABS)[number]['id'];
+
+const TAB_IDS = new Set<string>(MASTER_TABS.map((t) => t.id));
+
+function resolveTab(raw: string | null): MasterTabId {
+  if (raw && TAB_IDS.has(raw)) return raw as MasterTabId;
+  return 'dept';
+}
+
+const TAB_DESCRIPTIONS: Record<MasterTabId, string> = {
+  dept: 'Organisational departments used across HR and leave routing.',
+  desg: 'Job titles linked to employee categories and pay levels.',
+  'leave-types': 'Core definitions for all available leave types.',
+  entitlements: 'Annual credit and limits per category and leave type.',
+  holidays: 'Institutional holiday calendar by year.',
+  workflows: 'Approval chains and routing simulation.',
+};
 
 export default function MastersPage() {
-  const [tab, setTab] = useState<'dept' | 'desg'>('dept');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = resolveTab(searchParams.get('tab'));
+
+  const setTab = (next: MasterTabId) => {
+    setSearchParams({ tab: next }, { replace: true });
+  };
+
+  const activeLabel = MASTER_TABS.find((t) => t.id === tab)?.label ?? 'Masters';
+
   return (
     <div className="page">
-      <PageHeader 
-        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Admin/Estab', to: '/admin' }, { label: 'Master Settings' }]}
-        title="Masters Configuration"
-        description="Manage system departments and designations."
+      <PageHeader
+        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Masters' }, { label: activeLabel }]}
+        title="Masters"
+        description="All reference data for departments, designations, leave, and workflows in one place."
         rightContent={
-          <div className="flex gap-2 bg-slate-100 p-1 rounded-lg border border-slate-200">
-            <button
-              id="tab-departments"
-              onClick={() => setTab('dept')}
-              className={`px-4 py-1.5 text-sm font-bold rounded-md transition ${tab === 'dept' ? 'bg-white shadow-sm text-blue-700' : 'text-slate-500 hover:text-slate-800'}`}
-            >
-              Departments
-            </button>
-            <button
-              id="tab-designations"
-              onClick={() => setTab('desg')}
-              className={`px-4 py-1.5 text-sm font-bold rounded-md transition ${tab === 'desg' ? 'bg-white shadow-sm text-blue-700' : 'text-slate-500 hover:text-slate-800'}`}
-            >
-              Designations
-            </button>
+          <div className="flex flex-wrap gap-1.5 bg-slate-100 p-1 rounded-lg border border-slate-200 max-w-full">
+            {MASTER_TABS.map((t) => (
+              <button
+                key={t.id}
+                id={`master-tab-${t.id}`}
+                onClick={() => setTab(t.id)}
+                className={`px-3 py-1.5 text-xs sm:text-sm font-bold rounded-md transition whitespace-nowrap ${
+                  tab === t.id ? 'bg-white shadow-sm text-blue-700' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
           </div>
         }
       />
+      <p className="text-sm text-slate-500 -mt-4 mb-2">{TAB_DESCRIPTIONS[tab]}</p>
       <div className="card p-5">
-          {tab === 'dept' ? <DepartmentTab /> : <DesignationTab />}
-        </div>
+        {tab === 'dept' && <DepartmentTab />}
+        {tab === 'desg' && <DesignationTab />}
+        {tab === 'leave-types' && <LeaveTypesPanel />}
+        {tab === 'entitlements' && <EntitlementRulesPanel />}
+        {tab === 'holidays' && <HolidayPanel />}
+        {tab === 'workflows' && <WorkflowPanel />}
+      </div>
     </div>
   );
 }
+
+interface Dept { id: string; code: string; name: string; managing_office?: string }
+interface Desg { id: string; name: string; grade_pay_level?: string; category_code?: string }
 
 function DepartmentTab() {
   const [depts, setDepts] = useState<Dept[]>([]);
@@ -98,7 +144,7 @@ function DepartmentTab() {
               </tr>
             ))}
             {depts.length === 0 && (
-              <tr><td colSpan={3} className="px-6 py-12 text-center text-gray-400 bg-gray-50/50">No departments configured.</td></tr>
+              <tr><td colSpan={3} className="px-6 py-12 text-center text-gray-400">No departments configured.</td></tr>
             )}
           </tbody>
         </table>
@@ -172,7 +218,7 @@ function DesignationTab() {
               </tr>
             ))}
             {desgs.length === 0 && (
-              <tr><td colSpan={3} className="px-6 py-12 text-center text-gray-400 bg-gray-50/50">No designations configured.</td></tr>
+              <tr><td colSpan={3} className="px-6 py-12 text-center text-gray-400">No designations configured.</td></tr>
             )}
           </tbody>
         </table>

@@ -2,7 +2,7 @@
 
 > **Agents:** Read this file at the start of every session. Update it after meaningful work (features, fixes, decisions, validation). Keep it concise — current state only, not a full changelog. Detailed history stays in `HANDOFF.md`.
 
-**Last updated:** 2026-06-30 (staff registration fields + NODAL_OFFICE role)
+**Last updated:** 2026-06-30 (nav cleanup — unified Masters hub)
 
 ---
 
@@ -52,7 +52,7 @@ docs/                   architecture, security, go-live runbook
 scripts/db_sync.py      cross-platform DB snapshot sync
 ```
 
-**Navigation:** Hub & Spoke — landing dashboards (`/`, `/leave-dashboard`, `/claims`, `/payroll`, `/performance`, `/profile-dashboard`) with hover-dropdown sub-nav in `App.tsx`.
+**Navigation:** Hub & Spoke — landing dashboards with hover-dropdown sub-nav in `App.tsx`. **Masters** (`/masters`) is the single hub for departments, designations, leave types, entitlements, holidays, and workflows. **Admin Console** (`/admin`) covers operations only: dashboard, leave policy matrix, users & roles, audit & health. **Admin Tools** dropdown: maintenance, broadcasts, workflow diagnostics, bulk roles.
 
 ---
 
@@ -205,7 +205,9 @@ Step 5: Year-end / special   → Closing, encashment, LOP, comp-off (as AIIMS re
 
 **Built so far (foundation):** Auth, role-based navigation, leave apply/approve flow (incl. nodal routing), leave balances (basic), admin console, impersonation, reports shell, hub dashboards, test seed data.
 
-**Latest work (2026-06-30):** Onboard form uses **12-column width rationalisation** — each field sized to expected data length (narrow for codes/dates/enums, wide for names/addresses/emails). Entry font bumped to 13px with clearer labels; codes (PAN, Aadhaar, mobile, etc.) use monospace tabular digits.
+**Latest work (2026-06-30):** Navigation cleanup — all reference masters consolidated under `/masters` (6 tabs); removed duplicate System Config menu and Admin Console stub modules; legacy `/leave-types` etc. redirect into Masters hub; Admin Tools grouped (impersonate/audit moved into Admin Console users/audit modules).
+
+**Prior (2026-06-30):** Onboard form uses **12-column width rationalisation** — each field sized to expected data length (narrow for codes/dates/enums, wide for names/addresses/emails). Entry font bumped to 13px with clearer labels; codes (PAN, Aadhaar, mobile, etc.) use monospace tabular digits.
 
 **Prior (2026-06-29):** AIIMS department (57) and designation (39) masters loaded into local PostgreSQL via `python seeds/run.py`. Onboard Staff dropdowns now use real lists.
 

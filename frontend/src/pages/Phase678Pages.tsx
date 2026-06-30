@@ -88,33 +88,6 @@ type PolicyRowDraft = {
   maxAccumulation: string;
 };
 
-type AdminModuleId =
-  | 'dashboard'
-  | 'policy'
-  | 'workflow'
-  | 'employees'
-  | 'users'
-  | 'calendar'
-  | 'balances'
-  | 'audit';
-
-type AdminModule = {
-  id: AdminModuleId;
-  label: string;
-  blurb: string;
-};
-
-const ADMIN_MODULES: AdminModule[] = [
-  { id: 'dashboard', label: 'Dashboard', blurb: 'Control center and alerts' },
-  { id: 'policy', label: 'Leave Policy Matrix', blurb: 'Category-wise policy control' },
-  { id: 'workflow', label: 'Workflow Policy', blurb: 'Chains, routing, and simulation' },
-  { id: 'employees', label: 'Employees', blurb: 'Master data and mapping health' },
-  { id: 'users', label: 'Users & Roles', blurb: 'Access, reset, and activation' },
-  { id: 'calendar', label: 'Calendars & Holidays', blurb: 'Holiday master and leave view' },
-  { id: 'balances', label: 'Balances & Credits', blurb: 'Opening, year-end, and exceptions' },
-  { id: 'audit', label: 'Audit & Health', blurb: 'Audit trail and system health' },
-];
-
 const POLICY_CATEGORY_CODES = ['FACULTY', 'NURSING', 'ADMIN', 'JR_ACAD', 'SR_ACAD', 'JR_NA', 'SR_NA'] as const;
 type PolicyCategoryCode = (typeof POLICY_CATEGORY_CODES)[number];
 
