@@ -62,6 +62,34 @@ class EmployeeBase(BaseModel):
     email: Optional[str] = None
     has_institutional_email: bool = False
     personal_email: Optional[str] = None
+    # Extended registration fields
+    initial: Optional[str] = Field(None, max_length=20)
+    address: Optional[str] = None
+    permanent_address: Optional[str] = None
+    marital_status: Optional[str] = Field(None, max_length=20)
+    father_name: Optional[str] = Field(None, max_length=200)
+    blood_group: Optional[str] = Field(None, max_length=10)
+    photo: Optional[str] = Field(None, max_length=500)
+    mobile: Optional[str] = Field(None, max_length=15)
+    alt_mobile: Optional[str] = Field(None, max_length=15)
+    last_qualification: Optional[str] = Field(None, max_length=200)
+    doj_actual: Optional[date] = None
+    dol_last_working: Optional[date] = None
+    next_increment_date: Optional[date] = None
+    staff_group: Optional[str] = Field(None, max_length=50)
+    is_physically_handicapped: bool = False
+    type_of_flat: Optional[str] = Field(None, max_length=50)
+    caste_category: Optional[str] = Field(None, max_length=30)
+    religion: Optional[str] = Field(None, max_length=50)
+    bank_account_no: Optional[str] = Field(None, max_length=30)
+    bank_name: Optional[str] = Field(None, max_length=150)
+    ifsc_code: Optional[str] = Field(None, max_length=15)
+    pan: Optional[str] = Field(None, max_length=10)
+    aadhaar: Optional[str] = Field(None, max_length=12)
+    nps_or_gpf_no: Optional[str] = Field(None, max_length=30)
+    pfms_code: Optional[str] = Field(None, max_length=30)
+    grade: Optional[str] = Field(None, max_length=20)
+    pay_level: Optional[str] = Field(None, max_length=20)
 
 
 class EmployeeCreate(EmployeeBase):
@@ -98,8 +126,36 @@ class EmployeeResponse(BaseModel):
     designation_name: str
     email: Optional[str]
     has_institutional_email: bool
+    personal_email: Optional[str] = None
     is_active: bool
     user_id: Optional[str]
+    initial: Optional[str] = None
+    address: Optional[str] = None
+    permanent_address: Optional[str] = None
+    marital_status: Optional[str] = None
+    father_name: Optional[str] = None
+    blood_group: Optional[str] = None
+    photo: Optional[str] = None
+    mobile: Optional[str] = None
+    alt_mobile: Optional[str] = None
+    last_qualification: Optional[str] = None
+    doj_actual: Optional[date] = None
+    dol_last_working: Optional[date] = None
+    next_increment_date: Optional[date] = None
+    staff_group: Optional[str] = None
+    is_physically_handicapped: bool = False
+    type_of_flat: Optional[str] = None
+    caste_category: Optional[str] = None
+    religion: Optional[str] = None
+    bank_account_no: Optional[str] = None
+    bank_name: Optional[str] = None
+    ifsc_code: Optional[str] = None
+    pan: Optional[str] = None
+    aadhaar: Optional[str] = None
+    nps_or_gpf_no: Optional[str] = None
+    pfms_code: Optional[str] = None
+    grade: Optional[str] = None
+    pay_level: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
 
 

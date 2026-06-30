@@ -23,30 +23,32 @@ from app.schemas import (
 
 router = APIRouter(prefix="/employees", tags=["employees"])
 
-_VIEWER_ROLES = ("ADMIN", "ESTABLISHMENT_OFFICER", "REGISTRAR", "DIRECTOR", "HOD", "DEAN_ACADEMIC", "NODAL_OFFICER")
-_EDITOR_ROLES = ("ADMIN", "ESTABLISHMENT_OFFICER", "REGISTRAR", "NODAL_OFFICER")
+_VIEWER_ROLES = ("ADMIN", "ESTABLISHMENT_OFFICER", "REGISTRAR", "DIRECTOR", "HOD", "DEAN_ACADEMIC", "NODAL_OFFICER", "NODAL_OFFICE")
+_EDITOR_ROLES = ("ADMIN", "ESTABLISHMENT_OFFICER", "REGISTRAR", "NODAL_OFFICER", "NODAL_OFFICE")
+_NODAL_SCOPED_ROLES = ("NODAL_OFFICER", "NODAL_OFFICE")
+
+_EMPLOYEE_SELECT = """
+    SELECT e.id, e.emp_code, e.name, e.gender, e.dob, e.doj, e.email,
+           e.has_institutional_email, e.personal_email, e.is_active,
+           e.initial, e.address, e.permanent_address, e.marital_status,
+           e.father_name, e.blood_group, e.photo, e.mobile, e.alt_mobile,
+           e.last_qualification, e.doj_actual, e.dol_last_working,
+           e.next_increment_date, e.staff_group, e.is_physically_handicapped,
+           e.type_of_flat, e.caste_category, e.religion,
+           e.bank_account_no, e.bank_name, e.ifsc_code,
+           e.pan, e.aadhaar, e.nps_or_gpf_no, e.pfms_code, e.grade, e.pay_level,
+           c.code AS category_code, c.name AS category_name,
+           d.code AS department_code, d.name AS department_name,
+           des.name AS designation_name, u.id AS user_id
+    FROM employees e
+    JOIN employee_categories c ON e.category_id = c.id
+    JOIN departments d ON e.department_id = d.id
+    JOIN designations des ON e.designation_id = des.id
+    LEFT JOIN users u ON u.employee_id = e.id
+"""
 
 
-async def _fetch_employee(db: AsyncSession, employee_id: str) -> EmployeeResponse:
-    result = await db.execute(
-        text("""
-            SELECT e.id, e.emp_code, e.name, e.gender, e.dob, e.doj, e.email,
-                   e.has_institutional_email, e.is_active,
-                   c.code AS category_code, c.name AS category_name,
-                   d.code AS department_code, d.name AS department_name,
-                   des.name AS designation_name, u.id AS user_id
-            FROM employees e
-            JOIN employee_categories c ON e.category_id = c.id
-            JOIN departments d ON e.department_id = d.id
-            JOIN designations des ON e.designation_id = des.id
-            LEFT JOIN users u ON u.employee_id = e.id
-            WHERE e.id = :eid
-        """),
-        {"eid": employee_id},
-    )
-    r = result.fetchone()
-    if not r:
-        raise HTTPException(status_code=404, detail="Employee not found")
+def _row_to_response(r) -> EmployeeResponse:
     return EmployeeResponse(
         id=str(r.id), emp_code=r.emp_code, name=r.name, gender=r.gender,
         dob=r.dob, doj=r.doj,
@@ -54,8 +56,44 @@ async def _fetch_employee(db: AsyncSession, employee_id: str) -> EmployeeRespons
         department_code=r.department_code, department_name=r.department_name,
         designation_name=r.designation_name,
         email=r.email, has_institutional_email=r.has_institutional_email,
+        personal_email=r.personal_email,
         is_active=r.is_active, user_id=str(r.user_id) if r.user_id else None,
+        initial=r.initial, address=r.address, permanent_address=r.permanent_address,
+        marital_status=r.marital_status, father_name=r.father_name,
+        blood_group=r.blood_group, photo=r.photo, mobile=r.mobile,
+        alt_mobile=r.alt_mobile, last_qualification=r.last_qualification,
+        doj_actual=r.doj_actual, dol_last_working=r.dol_last_working,
+        next_increment_date=r.next_increment_date, staff_group=r.staff_group,
+        is_physically_handicapped=bool(r.is_physically_handicapped),
+        type_of_flat=r.type_of_flat, caste_category=r.caste_category,
+        religion=r.religion, bank_account_no=r.bank_account_no,
+        bank_name=r.bank_name, ifsc_code=r.ifsc_code, pan=r.pan,
+        aadhaar=r.aadhaar, nps_or_gpf_no=r.nps_or_gpf_no, pfms_code=r.pfms_code,
+        grade=r.grade, pay_level=r.pay_level,
     )
+
+
+async def _check_nodal_dept_access(db: AsyncSession, user_id: str, department_id) -> None:
+    nodal_check = await db.execute(
+        text(
+            "SELECT 1 FROM dept_nodal_assignments "
+            "WHERE nodal_user_id = :uid AND department_id = :did AND is_active = true"
+        ),
+        {"uid": user_id, "did": department_id},
+    )
+    if not nodal_check.fetchone():
+        raise HTTPException(status_code=403, detail="Not authorized for this department")
+
+
+async def _fetch_employee(db: AsyncSession, employee_id: str) -> EmployeeResponse:
+    result = await db.execute(
+        text(_EMPLOYEE_SELECT + " WHERE e.id = :eid"),
+        {"eid": employee_id},
+    )
+    r = result.fetchone()
+    if not r:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    return _row_to_response(r)
 
 
 @router.get("", response_model=list[EmployeeResponse])
@@ -70,19 +108,7 @@ async def list_employees(
     scope: dict = Depends(employee_scope),
     db: AsyncSession = Depends(get_db),
 ):
-    query = """
-        SELECT e.id, e.emp_code, e.name, e.gender, e.dob, e.doj, e.email,
-               e.has_institutional_email, e.is_active,
-               c.code AS category_code, c.name AS category_name,
-               d.code AS department_code, d.name AS department_name,
-               des.name AS designation_name, u.id AS user_id
-        FROM employees e
-        JOIN employee_categories c ON e.category_id = c.id
-        JOIN departments d ON e.department_id = d.id
-        JOIN designations des ON e.designation_id = des.id
-        LEFT JOIN users u ON u.employee_id = e.id
-        WHERE 1=1
-    """
+    query = _EMPLOYEE_SELECT + " WHERE 1=1"
     params: dict = {}
 
     if scope["scope"] != "all":
@@ -109,18 +135,7 @@ async def list_employees(
 
     result = await db.execute(text(query), params)
     rows = result.fetchall()
-    return [
-        EmployeeResponse(
-            id=str(r.id), emp_code=r.emp_code, name=r.name, gender=r.gender,
-            dob=r.dob, doj=r.doj,
-            category_code=r.category_code, category_name=r.category_name,
-            department_code=r.department_code, department_name=r.department_name,
-            designation_name=r.designation_name,
-            email=r.email, has_institutional_email=r.has_institutional_email,
-            is_active=r.is_active, user_id=str(r.user_id) if r.user_id else None,
-        )
-        for r in rows
-    ]
+    return [_row_to_response(r) for r in rows]
 
 
 @router.get("/{employee_id}", response_model=EmployeeResponse)
@@ -159,18 +174,18 @@ async def create_employee(
     if not dept_row:
         raise HTTPException(status_code=400, detail=f"Unknown department: {body.department_code}")
     
-    if current_user["role"] == "NODAL_OFFICER":
-        nodal_check = await db.execute(
-            text("SELECT 1 FROM dept_nodal_assignments WHERE nodal_user_id = :uid AND department_id = :did AND is_active = true"),
-            {"uid": current_user["user_id"], "did": dept_row[0]}
-        )
-        if not nodal_check.fetchone():
-            raise HTTPException(status_code=403, detail="Not authorized to add employees to this department")
+    if current_user["role"] in _NODAL_SCOPED_ROLES:
+        await _check_nodal_dept_access(db, current_user["user_id"], dept_row[0])
 
-    des = await db.execute(text("SELECT id FROM designations WHERE name = :n"), {"n": body.designation_name})
+    des = await db.execute(
+        text("SELECT id, grade_pay_level FROM designations WHERE name = :n"),
+        {"n": body.designation_name},
+    )
     des_row = des.fetchone()
     if not des_row:
         raise HTTPException(status_code=400, detail=f"Unknown designation: {body.designation_name}")
+
+    pay_level = body.pay_level or des_row.grade_pay_level
 
     eid = str(uuid.uuid4())
     try:
@@ -178,15 +193,37 @@ async def create_employee(
             text("""
                 INSERT INTO employees
                     (id, emp_code, name, gender, dob, doj, category_id, department_id,
-                     designation_id, email, has_institutional_email, personal_email)
+                     designation_id, email, has_institutional_email, personal_email,
+                     initial, address, permanent_address, marital_status, father_name,
+                     blood_group, photo, mobile, alt_mobile, last_qualification,
+                     doj_actual, dol_last_working, next_increment_date, staff_group,
+                     is_physically_handicapped, type_of_flat, caste_category, religion,
+                     bank_account_no, bank_name, ifsc_code, pan, aadhaar,
+                     nps_or_gpf_no, pfms_code, grade, pay_level)
                 VALUES
-                    (:id, :ec, :nm, :g, :dob, :doj, :cat, :dept, :des, :em, :hie, :pe)
+                    (:id, :ec, :nm, :g, :dob, :doj, :cat, :dept, :des, :em, :hie, :pe,
+                     :initial, :address, :perm_addr, :marital, :father, :blood, :photo,
+                     :mobile, :alt_mobile, :qual, :doj_act, :dol, :incr, :staff_grp,
+                     :ph, :flat, :caste, :religion, :bank_acct, :bank_name, :ifsc,
+                     :pan, :aadhaar, :nps, :pfms, :grade, :pay_level)
             """),
             {
                 "id": eid, "ec": body.emp_code, "nm": body.name, "g": body.gender,
                 "dob": body.dob, "doj": body.doj,
                 "cat": str(cat_row[0]), "dept": str(dept_row[0]), "des": str(des_row[0]),
                 "em": body.email, "hie": body.has_institutional_email, "pe": body.personal_email,
+                "initial": body.initial, "address": body.address,
+                "perm_addr": body.permanent_address, "marital": body.marital_status,
+                "father": body.father_name, "blood": body.blood_group, "photo": body.photo,
+                "mobile": body.mobile, "alt_mobile": body.alt_mobile,
+                "qual": body.last_qualification, "doj_act": body.doj_actual,
+                "dol": body.dol_last_working, "incr": body.next_increment_date,
+                "staff_grp": body.staff_group, "ph": body.is_physically_handicapped,
+                "flat": body.type_of_flat, "caste": body.caste_category,
+                "religion": body.religion, "bank_acct": body.bank_account_no,
+                "bank_name": body.bank_name, "ifsc": body.ifsc_code,
+                "pan": body.pan, "aadhaar": body.aadhaar, "nps": body.nps_or_gpf_no,
+                "pfms": body.pfms_code, "grade": body.grade, "pay_level": pay_level,
             },
         )
     except IntegrityError:
@@ -230,13 +267,8 @@ async def update_employee(
         if not dept_row:
             raise HTTPException(status_code=400, detail=f"Unknown department: {body.department_code}")
         
-        if current_user["role"] == "NODAL_OFFICER":
-            nodal_check = await db.execute(
-                text("SELECT 1 FROM dept_nodal_assignments WHERE nodal_user_id = :uid AND department_id = :did AND is_active = true"),
-                {"uid": current_user["user_id"], "did": dept_row[0]}
-            )
-            if not nodal_check.fetchone():
-                raise HTTPException(status_code=403, detail="Not authorized to move employees to this department")
+        if current_user["role"] in _NODAL_SCOPED_ROLES:
+            await _check_nodal_dept_access(db, current_user["user_id"], dept_row[0])
                 
         updates["department_id"] = str(dept_row[0])
     if body.designation_name is not None:
@@ -265,8 +297,8 @@ async def import_csv(
     _: dict = Depends(require_role(*_EDITOR_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
-    if current_user["role"] == "NODAL_OFFICER":
-        raise HTTPException(status_code=403, detail="Bulk import is not available for Nodal Officers")
+    if current_user["role"] in _NODAL_SCOPED_ROLES:
+        raise HTTPException(status_code=403, detail="Bulk import is not available for nodal users")
         
     """Import employees from CSV. Columns: emp_code, name, gender, doj, category, department, designation."""
     await validate_import_upload(

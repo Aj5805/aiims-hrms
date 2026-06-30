@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { employeesApi, departmentsApi, designationsApi } from '../api/endpoints';
+import { formatApiError } from '../constants/roles';
+import { useAuthStore } from '../stores';
 
 interface Department {
   id: string;
@@ -11,6 +13,7 @@ interface Designation {
   id: string;
   name: string;
   category_code: string;
+  grade_pay_level?: string | null;
 }
 
 interface AddStaffFormProps {
@@ -18,27 +21,125 @@ interface AddStaffFormProps {
   onCancel: () => void;
 }
 
+const EMPTY_FORM = {
+  emp_code: '',
+  name: '',
+  initial: '',
+  gender: 'MALE',
+  dob: '',
+  father_name: '',
+  marital_status: '',
+  blood_group: '',
+  caste_category: '',
+  religion: '',
+  is_physically_handicapped: false,
+  address: '',
+  permanent_address: '',
+  mobile: '',
+  alt_mobile: '',
+  email: '',
+  personal_email: '',
+  has_institutional_email: false,
+  doj: '',
+  doj_actual: '',
+  dol_last_working: '',
+  next_increment_date: '',
+  department_code: '',
+  designation_name: '',
+  staff_group: '',
+  type_of_flat: '',
+  grade: '',
+  pay_level: '',
+  last_qualification: '',
+  pan: '',
+  aadhaar: '',
+  nps_or_gpf_no: '',
+  pfms_code: '',
+  bank_account_no: '',
+  bank_name: '',
+  ifsc_code: '',
+  photo: '',
+};
+
+/** 12-column spans: sm (2-col) · md (6-col) · xl (12-col) */
+const COL = {
+  1: 'col-span-1 md:col-span-1 xl:col-span-1',
+  2: 'col-span-1 md:col-span-1 xl:col-span-2',
+  3: 'col-span-2 md:col-span-2 xl:col-span-3',
+  4: 'col-span-2 md:col-span-2 xl:col-span-4',
+  5: 'col-span-2 md:col-span-3 xl:col-span-5',
+  6: 'col-span-2 md:col-span-3 xl:col-span-6',
+  7: 'col-span-2 md:col-span-4 xl:col-span-7',
+  8: 'col-span-2 md:col-span-4 xl:col-span-8',
+  9: 'col-span-2 md:col-span-6 xl:col-span-9',
+  12: 'col-span-2 md:col-span-6 xl:col-span-12',
+} as const;
+
+type ColSpan = keyof typeof COL;
+
+const inputCls = 'dense-field-input';
+const codeCls = 'dense-field-input--code';
+const labelCls = 'dense-field-label';
+
+function Section({ title }: { title: string }) {
+  return (
+    <div className="dense-form-section">
+      <span className="dense-form-section-label">{title}</span>
+      <div className="dense-form-section-line" />
+    </div>
+  );
+}
+
+function Field({
+  label,
+  required,
+  cols = 3,
+  children,
+}: {
+  label: string;
+  required?: boolean;
+  cols?: ColSpan;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={COL[cols]}>
+      <label className={labelCls}>
+        {label}{required && <span className="text-red-500"> *</span>}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+function emptyToNull<T extends Record<string, unknown>>(obj: T): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v === '' || v === undefined) {
+      if (typeof v === 'boolean') out[k] = v;
+      else out[k] = null;
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
 export default function AddStaffForm({ onSaved, onCancel }: AddStaffFormProps) {
+  const token = useAuthStore((s) => s.token);
+  const userRole = useAuthStore((s) => s.user?.role);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [designations, setDesignations] = useState<Designation[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [form, setForm] = useState(EMPTY_FORM);
 
-  const [form, setForm] = useState({
-    emp_code: '',
-    name: '',
-    gender: 'MALE',
-    dob: '',
-    doj: '',
-    department_code: '',
-    designation_name: '',
-    email: '',
-    personal_email: '',
-    has_institutional_email: false,
-  });
+  const set = (key: keyof typeof EMPTY_FORM, value: string | boolean) =>
+    setForm((prev) => ({ ...prev, [key]: value }));
 
   useEffect(() => {
+    if (!token) return;
+
     const fetchData = async () => {
       try {
         const [deptRes, desigRes] = await Promise.all([
@@ -47,194 +148,255 @@ export default function AddStaffForm({ onSaved, onCancel }: AddStaffFormProps) {
         ]);
         setDepartments(deptRes.data || []);
         setDesignations(desigRes.data || []);
-      } catch (err) {
-        setError('Failed to load master data');
+      } catch (err: unknown) {
+        const data = (err as { response?: { data?: { detail?: unknown } } })?.response?.data;
+        const detail = formatApiError(data?.detail);
+        setError(detail || 'Failed to load master data. Check that the backend is running and you are logged in with an HR role.');
       } finally {
         setLoading(false);
       }
     };
     fetchData();
-  }, []);
+  }, [token]);
+
+  const selectedDesig = designations.find((d) => d.name === form.designation_name);
+
+  const handleDesignationChange = (name: string) => {
+    const desig = designations.find((d) => d.name === name);
+    setForm((prev) => ({
+      ...prev,
+      designation_name: name,
+      pay_level: desig?.grade_pay_level || prev.pay_level,
+    }));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     setError('');
-    
-    // Find category from designation to send to backend
-    const selectedDesig = designations.find(d => d.name === form.designation_name);
+
     const category_code = selectedDesig?.category_code || '';
+    if (!category_code) {
+      setError('Please select a valid designation');
+      setSaving(false);
+      return;
+    }
 
     try {
       await employeesApi.create({
-        ...form,
+        ...emptyToNull(form),
         category_code,
+        has_institutional_email: form.has_institutional_email,
+        is_physically_handicapped: form.is_physically_handicapped,
       });
       onSaved();
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to create employee');
+    } catch (err: unknown) {
+      const data = (err as { response?: { data?: { detail?: unknown } } })?.response?.data;
+      setError(formatApiError(data?.detail) || 'Failed to create employee');
       setSaving(false);
     }
   };
 
-  if (loading) return <div className="p-8 text-center text-gray-500">Loading master data...</div>;
-
-  const selectedDesig = designations.find(d => d.name === form.designation_name);
+  if (loading) return <div className="py-6 text-center text-slate-500 text-sm">Loading master data…</div>;
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 max-w-3xl mx-auto">
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-800">Onboard New Staff</h2>
-        <p className="text-sm text-gray-500 mt-1">
-          Select a designation to automatically assign the correct leave scheme. A user account will be generated automatically.
-        </p>
-      </div>
+    <div>
+      {error && (
+        <div className="mb-3 p-2.5 bg-red-50 border border-red-200 text-red-700 rounded text-xs">{error}</div>
+      )}
 
-      {error && <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 rounded-md text-sm">{error}</div>}
+      {!error && !loading && departments.length === 0 && ['NODAL_OFFICER', 'NODAL_OFFICE'].includes(userRole ?? '') && (
+        <div className="mb-3 p-2.5 bg-amber-50 border border-amber-200 text-amber-800 rounded text-xs">
+          No departments assigned to your nodal account. Ask an admin to link departments before onboarding staff.
+        </div>
+      )}
 
-      <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Employee Code *</label>
-            <input 
-              required
-              value={form.emp_code} 
-              onChange={e => setForm({...form, emp_code: e.target.value})}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="e.g. AIIMS-1234"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
-            <input 
-              required
-              value={form.name} 
-              onChange={e => setForm({...form, name: e.target.value})}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Dr. John Doe"
-            />
-          </div>
+      <p className="text-xs text-slate-500 mb-3 leading-relaxed">
+        Tab through fields left-to-right. Designation sets leave scheme. Login is auto-created from employee code.
+      </p>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Gender *</label>
-            <select 
-              required
-              value={form.gender} 
-              onChange={e => setForm({...form, gender: e.target.value})}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-            >
+      <form onSubmit={handleSubmit}>
+        <div className="dense-form">
+          <Section title="Personal Identity" />
+          <Field label="Initial" cols={1}>
+            <input value={form.initial} onChange={(e) => set('initial', e.target.value)} className={inputCls} placeholder="Dr." maxLength={8} />
+          </Field>
+          <Field label="Full Name" required cols={6}>
+            <input required value={form.name} onChange={(e) => set('name', e.target.value)} className={inputCls} />
+          </Field>
+          <Field label="Gender" required cols={2}>
+            <select required value={form.gender} onChange={(e) => set('gender', e.target.value)} className={inputCls}>
               <option value="MALE">Male</option>
               <option value="FEMALE">Female</option>
               <option value="OTHER">Other</option>
             </select>
-          </div>
+          </Field>
+          <Field label="Blood Group" cols={2}>
+            <select value={form.blood_group} onChange={(e) => set('blood_group', e.target.value)} className={inputCls}>
+              <option value="">—</option>
+              {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map((bg) => (
+                <option key={bg} value={bg}>{bg}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Father's Name" cols={5}>
+            <input value={form.father_name} onChange={(e) => set('father_name', e.target.value)} className={inputCls} />
+          </Field>
+          <Field label="Date of Birth" cols={3}>
+            <input type="date" value={form.dob} onChange={(e) => set('dob', e.target.value)} className={inputCls} />
+          </Field>
+          <Field label="Marital Status" cols={2}>
+            <select value={form.marital_status} onChange={(e) => set('marital_status', e.target.value)} className={inputCls}>
+              <option value="">—</option>
+              <option value="SINGLE">Single</option>
+              <option value="MARRIED">Married</option>
+              <option value="WIDOWED">Widowed</option>
+              <option value="DIVORCED">Divorced</option>
+            </select>
+          </Field>
+          <Field label="Caste Category" cols={2}>
+            <select value={form.caste_category} onChange={(e) => set('caste_category', e.target.value)} className={inputCls}>
+              <option value="">—</option>
+              <option value="GEN">General</option>
+              <option value="OBC">OBC</option>
+              <option value="SC">SC</option>
+              <option value="ST">ST</option>
+              <option value="EWS">EWS</option>
+            </select>
+          </Field>
+          <Field label="Religion" cols={3}>
+            <input value={form.religion} onChange={(e) => set('religion', e.target.value)} className={inputCls} />
+          </Field>
+          <Field label="PwD" cols={2}>
+            <label className="flex items-center gap-2 h-[34px] cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.is_physically_handicapped}
+                onChange={(e) => set('is_physically_handicapped', e.target.checked)}
+                className="h-4 w-4 text-indigo-600 border-slate-300 rounded"
+              />
+              <span className="text-xs text-slate-600">Yes</span>
+            </label>
+          </Field>
+          <Field label="Photo Ref" cols={4}>
+            <input value={form.photo} onChange={(e) => set('photo', e.target.value)} className={inputCls} placeholder="File path or reference" />
+          </Field>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Date of Joining *</label>
-            <input 
-              required
-              type="date"
-              value={form.doj} 
-              onChange={e => setForm({...form, doj: e.target.value})}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
+          <Section title="Address & Contact" />
+          <Field label="Present Address" cols={6}>
+            <input value={form.address} onChange={(e) => set('address', e.target.value)} className={inputCls} />
+          </Field>
+          <Field label="Permanent Address" cols={6}>
+            <input value={form.permanent_address} onChange={(e) => set('permanent_address', e.target.value)} className={inputCls} />
+          </Field>
+          <Field label="Flat / Quarters" cols={3}>
+            <input value={form.type_of_flat} onChange={(e) => set('type_of_flat', e.target.value)} className={inputCls} placeholder="Type-IV" />
+          </Field>
+          <Field label="Mobile" cols={3}>
+            <input type="tel" value={form.mobile} onChange={(e) => set('mobile', e.target.value)} className={codeCls} placeholder="10-digit" maxLength={10} />
+          </Field>
+          <Field label="Alt Mobile" cols={3}>
+            <input type="tel" value={form.alt_mobile} onChange={(e) => set('alt_mobile', e.target.value)} className={codeCls} maxLength={10} />
+          </Field>
+          <Field label="Inst. Email Active" cols={3}>
+            <label className="flex items-center gap-2 h-[34px] cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.has_institutional_email}
+                onChange={(e) => set('has_institutional_email', e.target.checked)}
+                className="h-4 w-4 text-indigo-600 border-slate-300 rounded"
+              />
+              <span className="text-xs text-slate-600">Verified</span>
+            </label>
+          </Field>
+          <Field label="Official Email" cols={6}>
+            <input type="email" value={form.email} onChange={(e) => set('email', e.target.value)} className={inputCls} placeholder="name@aiims.edu" />
+          </Field>
+          <Field label="Personal Email" cols={6}>
+            <input type="email" value={form.personal_email} onChange={(e) => set('personal_email', e.target.value)} className={inputCls} placeholder="personal@email.com" />
+          </Field>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Department *</label>
-            <select 
-              required
-              value={form.department_code} 
-              onChange={e => setForm({...form, department_code: e.target.value})}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">Select Department...</option>
-              {departments.map(d => (
+          <Section title="Employment" />
+          <Field label="Employee Code" required cols={3}>
+            <input required value={form.emp_code} onChange={(e) => set('emp_code', e.target.value)} className={codeCls} />
+          </Field>
+          <Field label="Staff Group" cols={3}>
+            <input value={form.staff_group} onChange={(e) => set('staff_group', e.target.value)} className={inputCls} placeholder="Faculty, Nursing…" />
+          </Field>
+          <Field label="Grade" cols={2}>
+            <input value={form.grade} onChange={(e) => set('grade', e.target.value)} className={inputCls} />
+          </Field>
+          <Field label="Pay Level" cols={2}>
+            <input value={form.pay_level} onChange={(e) => set('pay_level', e.target.value)} className={inputCls} />
+          </Field>
+          <Field label="Date of Joining" required cols={2}>
+            <input required type="date" value={form.doj} onChange={(e) => set('doj', e.target.value)} className={inputCls} />
+          </Field>
+          <Field label="Department" required cols={6}>
+            <select required value={form.department_code} onChange={(e) => set('department_code', e.target.value)} className={inputCls}>
+              <option value="">Select…</option>
+              {departments.map((d) => (
                 <option key={d.id} value={d.code}>{d.name} ({d.code})</option>
               ))}
             </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Designation *</label>
-            <select 
-              required
-              value={form.designation_name} 
-              onChange={e => setForm({...form, designation_name: e.target.value})}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">Select Designation...</option>
-              {designations.map(d => (
+          </Field>
+          <Field label="Designation" required cols={6}>
+            <select required value={form.designation_name} onChange={(e) => handleDesignationChange(e.target.value)} className={inputCls}>
+              <option value="">Select…</option>
+              {designations.map((d) => (
                 <option key={d.id} value={d.name}>{d.name}</option>
               ))}
             </select>
             {selectedDesig && (
-              <p className="mt-1 text-xs text-blue-600 font-medium">
-                Auto-assigned category: {selectedDesig.category_code}
+              <p className="mt-0.5 text-[11px] text-indigo-600 font-medium">
+                {selectedDesig.category_code}
+                {selectedDesig.grade_pay_level ? ` · Level ${selectedDesig.grade_pay_level}` : ''}
               </p>
             )}
-          </div>
+          </Field>
+          <Field label="Actual DOJ" cols={3}>
+            <input type="date" value={form.doj_actual} onChange={(e) => set('doj_actual', e.target.value)} className={inputCls} />
+          </Field>
+          <Field label="Last Working Day" cols={3}>
+            <input type="date" value={form.dol_last_working} onChange={(e) => set('dol_last_working', e.target.value)} className={inputCls} />
+          </Field>
+          <Field label="Next Increment" cols={3}>
+            <input type="date" value={form.next_increment_date} onChange={(e) => set('next_increment_date', e.target.value)} className={inputCls} />
+          </Field>
+          <Field label="Last Qualification" cols={3}>
+            <input value={form.last_qualification} onChange={(e) => set('last_qualification', e.target.value)} className={inputCls} placeholder="MD, M.Sc…" />
+          </Field>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Official Email</label>
-            <input 
-              type="email"
-              value={form.email} 
-              onChange={e => setForm({...form, email: e.target.value})}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="user@aiims.edu"
-            />
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Personal Email</label>
-            <input 
-              type="email"
-              value={form.personal_email} 
-              onChange={e => setForm({...form, personal_email: e.target.value})}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="user@gmail.com"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
-            <input 
-              type="date"
-              value={form.dob} 
-              onChange={e => setForm({...form, dob: e.target.value})}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          
-          <div className="flex items-center pt-6">
-            <input 
-              type="checkbox"
-              id="has_inst_email"
-              checked={form.has_institutional_email} 
-              onChange={e => setForm({...form, has_institutional_email: e.target.checked})}
-              className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-            />
-            <label htmlFor="has_inst_email" className="ml-2 block text-sm text-gray-700">
-              Institutional Email Verified
-            </label>
-          </div>
+          <Section title="IDs & Banking" />
+          <Field label="PAN" cols={3}>
+            <input value={form.pan} onChange={(e) => set('pan', e.target.value.toUpperCase())} className={codeCls} maxLength={10} placeholder="ABCDE1234F" />
+          </Field>
+          <Field label="Aadhaar" cols={3}>
+            <input value={form.aadhaar} onChange={(e) => set('aadhaar', e.target.value.replace(/\D/g, '').slice(0, 12))} className={codeCls} maxLength={12} />
+          </Field>
+          <Field label="IFSC" cols={3}>
+            <input value={form.ifsc_code} onChange={(e) => set('ifsc_code', e.target.value.toUpperCase())} className={codeCls} maxLength={11} />
+          </Field>
+          <Field label="NPS / GPF" cols={3}>
+            <input value={form.nps_or_gpf_no} onChange={(e) => set('nps_or_gpf_no', e.target.value)} className={inputCls} />
+          </Field>
+          <Field label="PFMS Code" cols={3}>
+            <input value={form.pfms_code} onChange={(e) => set('pfms_code', e.target.value)} className={inputCls} />
+          </Field>
+          <Field label="Bank A/C" cols={4}>
+            <input value={form.bank_account_no} onChange={(e) => set('bank_account_no', e.target.value)} className={codeCls} />
+          </Field>
+          <Field label="Bank Name" cols={5}>
+            <input value={form.bank_name} onChange={(e) => set('bank_name', e.target.value)} className={inputCls} />
+          </Field>
         </div>
 
-        <div className="bg-gray-50 -mx-6 -mb-6 px-6 py-4 mt-8 flex justify-end gap-3 rounded-b-lg border-t border-gray-200">
-          <button 
-            type="button" 
-            onClick={onCancel}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-          >
+        <div className="sticky bottom-0 -mx-4 sm:-mx-6 mt-4 px-4 sm:px-6 py-2.5 flex justify-end gap-2 bg-white/95 backdrop-blur border-t border-slate-200">
+          <button type="button" onClick={onCancel} className="btn-secondary btn-sm">
             Cancel
           </button>
-          <button 
-            type="submit" 
-            disabled={saving || !selectedDesig}
-            className="px-6 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {saving ? 'Onboarding...' : 'Onboard Staff'}
+          <button type="submit" disabled={saving || !selectedDesig} className="btn-primary btn-sm">
+            {saving ? 'Saving…' : 'Onboard Staff'}
           </button>
         </div>
       </form>

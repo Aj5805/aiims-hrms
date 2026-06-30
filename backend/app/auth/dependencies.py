@@ -138,7 +138,7 @@ async def employee_scope(
             """),
         )
         res = {"scope": "residents", "employee_ids": [str(r[0]) for r in reg_result.fetchall()]}
-    elif role == "NODAL_OFFICER":
+    elif role in ("NODAL_OFFICER", "NODAL_OFFICE"):
         nodal_result = await db.execute(
             text("""
                 SELECT DISTINCT e.id FROM employees e

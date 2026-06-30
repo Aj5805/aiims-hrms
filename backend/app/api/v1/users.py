@@ -34,6 +34,8 @@ async def create_user(
         "ESTABLISHMENT_OFFICER",
         "DIRECTOR",
         "ADMIN",
+        "NODAL_OFFICER",
+        "NODAL_OFFICE",
     }
     if role not in allowed_roles:
         raise HTTPException(status_code=400, detail=f"Invalid role: {role}")

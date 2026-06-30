@@ -2,7 +2,7 @@
 
 > **Agents:** Read this file at the start of every session. Update it after meaningful work (features, fixes, decisions, validation). Keep it concise — current state only, not a full changelog. Detailed history stays in `HANDOFF.md`.
 
-**Last updated:** 2026-06-29 (AIIMS masters loaded into local DB)
+**Last updated:** 2026-06-30 (staff registration fields + NODAL_OFFICE role)
 
 ---
 
@@ -66,6 +66,7 @@ scripts/db_sync.py      cross-platform DB snapshot sync
 | `DEAN_ACADEMIC` | Residents | Final approver (resident leave) |
 | `HOD` | Own dept | First-stage approver |
 | `NODAL_OFFICER` | Assigned depts | Final approver (nodal chain) |
+| `NODAL_OFFICE` | Assigned depts | Clerical staff — onboarding, directory, reports (no leave approval) |
 | `STAFF` | Own record | Apply leave, view balances |
 
 **Nodal leave workflow:** `Staff → HOD (step 1) → NODAL_OFFICER (step 2, FINAL)` via `dept_nodal_assignments`.
@@ -106,7 +107,7 @@ scripts/db_sync.py      cross-platform DB snapshot sync
 
 #### Staff Registration Field Spec (owner list — verified & cleaned)
 
-**Currently in system (11 fields):** emp_code, name, gender, dob, doj, department, designation, category (via designation), official email, personal email, working status (`is_active`).
+**Currently in system (43 fields):** Original 11 plus 32 extended registration fields — all in `employees` table (migration `a1b2c3d4e5f6`). Onboard form shows all fields grouped by section.
 
 **Duplicates removed from owner list:** `MOBILENO1` (use MOB TEL), `ALT EMAIL` (use Alternate EMAIL ADDRESS), `DEPT NAME` (derived from dept master — do not store separately).
 
@@ -204,13 +205,15 @@ Step 5: Year-end / special   → Closing, encashment, LOP, comp-off (as AIIMS re
 
 **Built so far (foundation):** Auth, role-based navigation, leave apply/approve flow (incl. nodal routing), leave balances (basic), admin console, impersonation, reports shell, hub dashboards, test seed data.
 
-**Latest work (2026-06-29):** AIIMS department (57) and designation (39) masters loaded into local PostgreSQL via `python seeds/run.py`. Onboard Staff dropdowns now use real lists. Staff registration field spec verified in doc — extra fields not yet in `employees` schema. Test seeds 001–008 unchanged.
+**Latest work (2026-06-30):** Onboard form uses **12-column width rationalisation** — each field sized to expected data length (narrow for codes/dates/enums, wide for names/addresses/emails). Entry font bumped to 13px with clearer labels; codes (PAN, Aadhaar, mobile, etc.) use monospace tabular digits.
 
-**Git:** Pushed to `main` (handoff update after DB seed run).
+**Prior (2026-06-29):** AIIMS department (57) and designation (39) masters loaded into local PostgreSQL via `python seeds/run.py`. Onboard Staff dropdowns now use real lists.
+
+**Git:** Uncommitted — staff reg fields, NODAL_OFFICE role, form rebuild.
 
 ### WIP / Uncommitted
 
-Handoff docs only (this commit).
+Staff registration DB/API/form + NODAL_OFFICE role (this session).
 
 ---
 
@@ -300,9 +303,9 @@ Use this ladder. **Default = keep building; fix only when a trigger fires.**
 
 ## Next Action
 
-**Immediate:** Build Phase 1 staff registration fields in DB/API/form (mobile, address, Aadhaar, PAN, etc.). Masters (57 depts, 39 designations) are loaded in local DB.
+**Immediate:** Run `cd backend && alembic upgrade head` locally to apply employee field migration. Create NODAL_OFFICE users in Admin → Users & Roles and assign departments via nodal assignments.
 
-**Build sequence:** Step 1 Masters → Step 2 Registration → Step 3 Leave config → Step 4 Leave transactions → Step 5 Year-end.
+**Build sequence:** Step 1 Masters ✓ → Step 2 Registration (fields done; workflow rules next) → Step 3 Leave config → Step 4 Leave transactions → Step 5 Year-end.
 
 **Still open (plain language):** Staff categories breakdown; CCS vs Resident leave rules first; pilot timeline.
 

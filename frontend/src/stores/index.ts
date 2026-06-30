@@ -55,6 +55,11 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'auth-storage',
+      onRehydrateStorage: () => (state) => {
+        if (state?.token) {
+          localStorage.setItem('access_token', state.token);
+        }
+      },
     }
   )
 );

@@ -26,7 +26,7 @@ from app.core.config import settings
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
-REPORT_ROLES = ("ESTABLISHMENT_OFFICER", "REGISTRAR", "DIRECTOR", "NODAL_OFFICER")
+REPORT_ROLES = ("ESTABLISHMENT_OFFICER", "REGISTRAR", "DIRECTOR", "NODAL_OFFICER", "NODAL_OFFICE")
 PAYROLL_EXPORT_ROLES = ("ESTABLISHMENT_OFFICER", "REGISTRAR", "DIRECTOR")
 
 # Placeholder until AIIMS Finance / NIC provides the actual column contract.
@@ -40,8 +40,11 @@ PAYROLL_NIC_MAPPING_PLACEHOLDER = {
 }
 
 
+_NODAL_SCOPED_ROLES = ("NODAL_OFFICER", "NODAL_OFFICE")
+
+
 def _apply_nodal_scope(query: str, current_user: dict | None, params: dict, employee_alias: str = "e") -> str:
-    if current_user and current_user.get("role") == "NODAL_OFFICER":
+    if current_user and current_user.get("role") in _NODAL_SCOPED_ROLES:
         query += f" AND EXISTS (SELECT 1 FROM dept_nodal_assignments dna WHERE dna.department_id = {employee_alias}.department_id AND dna.nodal_user_id = :nodal_user_id)"
         params["nodal_user_id"] = current_user.get("user_id")
     return query
@@ -172,7 +175,7 @@ async def _fetch_category_summary_rows(db: AsyncSession, from_date: date, to_dat
             + _apply_nodal_scope("", current_user, {}, "e") + 
             " GROUP BY c.code "
             "ORDER BY c.code"
-        ), {"nodal_user_id": current_user.get("user_id")} if current_user and current_user.get("role") == "NODAL_OFFICER" else {}
+        ), {"nodal_user_id": current_user.get("user_id")} if current_user and current_user.get("role") in _NODAL_SCOPED_ROLES else {}
     )
     staff_counts = {row._mapping["category"]: int(row._mapping["total_staff"] or 0) for row in staff_result.fetchall()}
 
@@ -193,7 +196,7 @@ async def _fetch_category_summary_rows(db: AsyncSession, from_date: date, to_dat
             " GROUP BY c.code, lt.code "
             "ORDER BY c.code, lt.code"
         ),
-        {"from_date": from_date, "to_date": to_date, **({"nodal_user_id": current_user.get("user_id")} if current_user and current_user.get("role") == "NODAL_OFFICER" else {})},
+        {"from_date": from_date, "to_date": to_date, **({"nodal_user_id": current_user.get("user_id")} if current_user and current_user.get("role") in _NODAL_SCOPED_ROLES else {})},
     )
 
     grouped: dict[str, dict[str, object]] = {}

@@ -3,6 +3,7 @@ import { useParams, Navigate } from 'react-router-dom';
 import { useAuthStore } from '../stores';
 import { usersApi, authApi, adminApi, broadcastsApi } from '../api/endpoints';
 import { PageHeader } from '../components/PageHeader';
+import { ASSIGNABLE_ROLES } from '../constants/roles';
 
 function formatDateTime(value?: string | null): string {
   if (!value) return '-';
@@ -587,7 +588,7 @@ export default function AdminToolsPage() {
                                   isChanged ? 'border-indigo-300 bg-indigo-50 text-indigo-900 font-medium' : 'border-slate-200 bg-white'
                                 }`}
                               >
-                                {['STAFF', 'HOD', 'DEAN_ACADEMIC', 'ESTABLISHMENT_OFFICER', 'REGISTRAR', 'DIRECTOR', 'ADMIN'].map(r => (
+                                {ASSIGNABLE_ROLES.map(r => (
                                   <option key={r} value={r}>{r}</option>
                                 ))}
                               </select>

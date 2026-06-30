@@ -16,7 +16,7 @@ router = APIRouter(prefix="/designations", tags=["designations"])
 
 @router.get("", response_model=list[DesignationResponse])
 async def list_designations(
-    _: dict = Depends(require_role("ADMIN", "ESTABLISHMENT_OFFICER", "REGISTRAR", "DIRECTOR")),
+    _: dict = Depends(require_role("ADMIN", "ESTABLISHMENT_OFFICER", "REGISTRAR", "DIRECTOR", "NODAL_OFFICER", "NODAL_OFFICE")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(

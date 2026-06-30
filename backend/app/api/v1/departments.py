@@ -7,21 +7,37 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import require_role
+from app.auth.dependencies import require_role, get_current_user
 from app.core.database import get_db
 from app.schemas import DepartmentCreate, DepartmentResponse, DepartmentUpdate
 
 router = APIRouter(prefix="/departments", tags=["departments"])
 
 
+_MASTER_VIEW_ROLES = ("ADMIN", "ESTABLISHMENT_OFFICER", "REGISTRAR", "DIRECTOR", "NODAL_OFFICER", "NODAL_OFFICE")
+_NODAL_SCOPED_ROLES = ("NODAL_OFFICER", "NODAL_OFFICE")
+
+
 @router.get("", response_model=list[DepartmentResponse])
 async def list_departments(
-    _: dict = Depends(require_role("ADMIN", "ESTABLISHMENT_OFFICER", "REGISTRAR", "DIRECTOR")),
+    current_user: dict = Depends(require_role(*_MASTER_VIEW_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        text("SELECT id, code, name, parent_dept_id, managing_office FROM departments ORDER BY name")
-    )
+    if current_user["role"] in _NODAL_SCOPED_ROLES:
+        result = await db.execute(
+            text("""
+                SELECT d.id, d.code, d.name, d.parent_dept_id, d.managing_office
+                FROM departments d
+                JOIN dept_nodal_assignments dna ON dna.department_id = d.id
+                WHERE dna.nodal_user_id = :uid AND dna.is_active = true
+                ORDER BY d.name
+            """),
+            {"uid": current_user["user_id"]},
+        )
+    else:
+        result = await db.execute(
+            text("SELECT id, code, name, parent_dept_id, managing_office FROM departments ORDER BY name")
+        )
     return [
         DepartmentResponse(
             id=str(r.id), code=r.code, name=r.name,

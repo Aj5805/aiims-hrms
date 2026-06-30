@@ -26,10 +26,10 @@ import { PageHeader } from './components/PageHeader';
 import AdminToolsPage from './pages/AdminToolsPage';
 import { MaintenancePage } from './pages/MaintenancePage';
 import { BroadcastBanner } from './components/BroadcastBanner';
-const REPORT_ROLES = ['ESTABLISHMENT_OFFICER', 'REGISTRAR', 'DIRECTOR'] as const;
+const REPORT_ROLES = ['ESTABLISHMENT_OFFICER', 'REGISTRAR', 'DIRECTOR', 'NODAL_OFFICER', 'NODAL_OFFICE'] as const;
 const ADMIN_ROLES = ['ADMIN'] as const;
 const CONFIG_ROLES = ['ADMIN', 'ESTABLISHMENT_OFFICER', 'REGISTRAR'] as const;
-const EMPLOYEE_MASTER_ROLES = ['ADMIN', 'ESTABLISHMENT_OFFICER', 'REGISTRAR', 'DIRECTOR', 'NODAL_OFFICER'] as const;
+const EMPLOYEE_MASTER_ROLES = ['ADMIN', 'ESTABLISHMENT_OFFICER', 'REGISTRAR', 'DIRECTOR', 'NODAL_OFFICER', 'NODAL_OFFICE'] as const;
 const APPROVER_ROLES = ['ADMIN', 'ESTABLISHMENT_OFFICER', 'REGISTRAR', 'DIRECTOR', 'HOD', 'DEAN_ACADEMIC', 'NODAL_OFFICER'] as const;
 
 function hasRole(role: string | undefined, allowed: readonly string[]) {
@@ -302,7 +302,8 @@ function Layout({ children }: { children: ReactNode }) {
 
               {hasRole(role, EMPLOYEE_MASTER_ROLES) && (
                 <NavDropdown title="HR Operations" items={[
-                  { label: 'Employees', path: '/employees' },
+                  { label: 'Employee Directory', path: '/employees?tab=directory' },
+                  { label: 'Onboard Employee', path: '/employees?tab=onboard' },
                   { label: 'Master Settings', path: '/masters' },
                 ]} />
               )}

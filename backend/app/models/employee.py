@@ -11,6 +11,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    Text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
@@ -55,7 +56,7 @@ class Department(Base):
 
 
 class DeptNodalAssignment(Base):
-    """Configurable mapping: which NODAL_OFFICER user handles a given department."""
+    """Dept assignment for NODAL_OFFICER (approver) and NODAL_OFFICE (clerical) users."""
 
     __tablename__ = "dept_nodal_assignments"
 
@@ -100,6 +101,34 @@ class Employee(Base):
     email = Column(String(255), nullable=True)
     has_institutional_email = Column(Boolean, default=False)
     personal_email = Column(String(255), nullable=True)
+    # Extended registration fields (owner spec)
+    initial = Column(String(20), nullable=True)
+    address = Column(Text, nullable=True)
+    permanent_address = Column(Text, nullable=True)
+    marital_status = Column(String(20), nullable=True)
+    father_name = Column(String(200), nullable=True)
+    blood_group = Column(String(10), nullable=True)
+    photo = Column(String(500), nullable=True, comment="File path or reference")
+    mobile = Column(String(15), nullable=True)
+    alt_mobile = Column(String(15), nullable=True)
+    last_qualification = Column(String(200), nullable=True)
+    doj_actual = Column(Date, nullable=True)
+    dol_last_working = Column(Date, nullable=True)
+    next_increment_date = Column(Date, nullable=True)
+    staff_group = Column(String(50), nullable=True)
+    is_physically_handicapped = Column(Boolean, default=False)
+    type_of_flat = Column(String(50), nullable=True)
+    caste_category = Column(String(30), nullable=True)
+    religion = Column(String(50), nullable=True)
+    bank_account_no = Column(String(30), nullable=True)
+    bank_name = Column(String(150), nullable=True)
+    ifsc_code = Column(String(15), nullable=True)
+    pan = Column(String(10), nullable=True)
+    aadhaar = Column(String(12), nullable=True)
+    nps_or_gpf_no = Column(String(30), nullable=True)
+    pfms_code = Column(String(30), nullable=True)
+    grade = Column(String(20), nullable=True)
+    pay_level = Column(String(20), nullable=True, comment="Snapshot at join; copied from designation")
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)

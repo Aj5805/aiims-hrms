@@ -4,6 +4,7 @@ import { adminApi, authApi, departmentsApi, usersApi } from '../api/endpoints';
 import { entitlementRulesApi, leaveTypesApi } from '../api/phase3_endpoints';
 import { PageHeader } from '../components/PageHeader';
 import { useAuthStore } from '../stores';
+import { SYSTEM_ROLES } from '../constants/roles';
 
 type DepartmentOption = { id: string; code: string; name: string };
 type LeaveTypeOption = { id: string; code: string; name: string; scheme?: string | null; is_accumulating?: boolean; max_accumulation?: number | null; requires_mc?: boolean; min_days_for_mc?: number | null; count_holidays?: boolean; is_half_day_allowed?: boolean; carry_forward?: boolean };
@@ -390,6 +391,21 @@ export function AdminDashboardPage() {
 
             {activeModule === 'users' && (
               <div className="space-y-6">
+                <details className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <summary className="cursor-pointer text-sm font-bold text-slate-700">
+                    System roles reference ({SYSTEM_ROLES.length} roles)
+                  </summary>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    {SYSTEM_ROLES.map((r) => (
+                      <div key={r.code} className="rounded-xl border border-slate-200 bg-white p-3">
+                        <div className="font-mono text-xs font-bold text-indigo-700">{r.code}</div>
+                        <div className="text-sm font-semibold text-slate-800 mt-0.5">{r.label}</div>
+                        <p className="text-xs text-slate-500 mt-1">{r.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+
                 <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-slate-50 p-4 rounded-2xl border border-slate-200">
                   <p className="text-sm font-medium text-slate-600">Manage user access, roles, and impersonate accounts for troubleshooting.</p>
                   <input 

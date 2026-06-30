@@ -82,6 +82,7 @@ const ROLE_COLOR: Record<string, string> = {
   STAFF:                'bg-blue-600',
   HOD:                  'bg-violet-600',
   NODAL_OFFICER:        'bg-teal-600',
+  NODAL_OFFICE:         'bg-cyan-600',
   ESTABLISHMENT_OFFICER:'bg-orange-600',
   REGISTRAR:            'bg-rose-600',
   DEAN_ACADEMIC:        'bg-indigo-600',
