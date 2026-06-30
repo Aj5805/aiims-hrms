@@ -269,11 +269,11 @@ Step 5: Year-end / special   → Closing, encashment, LOP, comp-off (as AIIMS re
 
 **Prior (2026-06-30):** Leave transaction hardening — pending-balance checks at all approval stages; cancel/modify approved leave; config-driven validation; AIIMS Bibinagar form template API + Apply UI; Jan-1 annual credit scheduler. Migration `d4e5f6a7b8c9`. Seed `005_validation_rules_update`.
 
-**Git:** Uncommitted — leave hardening slice + prior role alignment.
+**Git:** Pushed `419bb82` — staff auto-numbering, 2026 holidays, leave form templates, annual credit scheduler, masters/nav UI.
 
 ### WIP / Uncommitted
 
-Leave transaction hardening + role alignment (masters is_active, HOD assignments, nodal hierarchy, immutable ledger).
+None (working tree clean except `temp/` reference PDFs — not in repo).
 
 
 ---
