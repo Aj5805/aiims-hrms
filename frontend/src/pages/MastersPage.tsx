@@ -32,13 +32,13 @@ function resolveTab(raw: string | null): MasterTabId {
 
 const TAB_DESCRIPTIONS: Record<MasterTabId, string> = {
   dept: 'Organisational departments used across HR and leave routing.',
-  desg: 'Job titles linked to employee categories and pay levels.',
+  desg: 'Job titles linked to employee categories (pay level is captured per employee at registration).',
   assignments: 'Map nodal officers and nodal office staff to departments.',
   'hod-assignments': 'Assign the Head of Department for each department.',
-  'leave-types': 'Core definitions for all available leave types.',
-  entitlements: 'Annual credit and limits per category and leave type.',
-  holidays: 'Institutional holiday calendar by year.',
-  workflows: 'Approval chains and routing simulation.',
+  'leave-types': 'Core definitions for all available leave types — create and edit each type’s rules.',
+  entitlements: 'How leave is credited (frequency and days per year) for each category and leave type.',
+  holidays: 'Closed holidays (institute shut) and restricted holidays (RH — staff choose any 2 per year).',
+  workflows: 'Approval chains — create, edit steps, and simulate routing.',
 };
 
 export default function MastersPage() {
@@ -58,15 +58,16 @@ export default function MastersPage() {
         title="Masters"
         description="All reference data for departments, designations, leave, and workflows in one place."
         rightContent={
-          <div className="flex flex-wrap gap-1.5 bg-slate-100 p-1 rounded-lg border border-slate-200 max-w-full">
+          <div className="flex flex-wrap gap-1.5 p-1 rounded-lg border max-w-full" style={{ background: 'var(--color-surface-alt)', borderColor: 'var(--color-border)' }}>
             {MASTER_TABS.map((t) => (
               <button
                 key={t.id}
                 id={`master-tab-${t.id}`}
                 onClick={() => setTab(t.id)}
                 className={`px-3 py-1.5 text-xs sm:text-sm font-bold rounded-md transition whitespace-nowrap ${
-                  tab === t.id ? 'bg-white shadow-sm text-blue-700' : 'text-slate-500 hover:text-slate-800'
+                  tab === t.id ? 'shadow-sm text-blue-700' : 'text-slate-500 hover:text-slate-800'
                 }`}
+                style={tab === t.id ? { background: 'var(--color-surface)' } : undefined}
               >
                 {t.label}
               </button>
@@ -90,13 +91,18 @@ export default function MastersPage() {
 }
 
 interface Dept { id: string; code: string; name: string; managing_office?: string; is_active?: boolean }
-interface Desg { id: string; name: string; grade_pay_level?: string; category_code?: string; is_active?: boolean }
+interface Desg { id: string; name: string; category_code?: string; is_active?: boolean }
+
+const CATEGORY_CODES = ['FACULTY', 'NURSING', 'ADMIN', 'JR_ACAD', 'SR_ACAD', 'JR_NA', 'SR_NA'] as const;
 
 function DepartmentTab() {
   const [depts, setDepts] = useState<Dept[]>([]);
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
   const [office, setOffice] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editOffice, setEditOffice] = useState('');
 
   const load = async () => {
     const { data } = await departmentsApi.list({ include_inactive: true });
@@ -121,50 +127,95 @@ function DepartmentTab() {
     }
   };
 
+  const startEdit = (dept: Dept) => {
+    setEditingId(dept.id);
+    setEditName(dept.name);
+    setEditOffice(dept.managing_office || '');
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditName('');
+    setEditOffice('');
+  };
+
+  const saveEdit = async (dept: Dept) => {
+    if (!editName.trim()) return;
+    try {
+      await departmentsApi.update(dept.id, {
+        name: editName.trim(),
+        managing_office: editOffice.trim() || null,
+      });
+      cancelEdit();
+      load();
+    } catch {
+      alert('Could not save department changes.');
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+      <div className="p-4 rounded-lg border" style={{ background: 'var(--color-surface-alt)', borderColor: 'var(--color-border)' }}>
         <h3 className="text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wider">Add New Department</h3>
         <form onSubmit={create} className="flex flex-wrap gap-3 items-end">
           <div className="flex-1 min-w-[120px]">
             <label className="block text-xs font-medium text-gray-600 mb-1">Code *</label>
-            <input id="dept-code" placeholder="e.g. CS" value={code} onChange={(e) => setCode(e.target.value)} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" required />
+            <input id="dept-code" placeholder="e.g. CS" value={code} onChange={(e) => setCode(e.target.value)} className="form-input" required />
           </div>
           <div className="flex-[2] min-w-[200px]">
             <label className="block text-xs font-medium text-gray-600 mb-1">Name *</label>
-            <input id="dept-name" placeholder="Computer Science" value={name} onChange={(e) => setName(e.target.value)} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" required />
+            <input id="dept-name" placeholder="Computer Science" value={name} onChange={(e) => setName(e.target.value)} className="form-input" required />
           </div>
           <div className="flex-1 min-w-[150px]">
             <label className="block text-xs font-medium text-gray-600 mb-1">Managing Office</label>
-            <input id="dept-office" placeholder="Dean's Office" value={office} onChange={(e) => setOffice(e.target.value)} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" />
+            <input id="dept-office" placeholder="Dean's Office" value={office} onChange={(e) => setOffice(e.target.value)} className="form-input" />
           </div>
-          <button type="submit" className="bg-blue-600 text-white px-5 py-2 rounded-md hover:bg-blue-700 text-sm font-medium transition shadow-sm h-[38px]">Add</button>
+          <button type="submit" className="btn-primary h-[38px]">Add</button>
         </form>
       </div>
 
-      <div className="border border-gray-200 rounded-lg overflow-hidden">
-        <table className="min-w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200 text-gray-500 uppercase tracking-wider text-xs">
+      <div className="border rounded-lg overflow-hidden" style={{ borderColor: 'var(--color-border)' }}>
+        <table className="min-w-full text-sm data-table">
+          <thead>
             <tr>
-              <th className="px-6 py-3 text-left font-medium">Code</th>
-              <th className="px-6 py-3 text-left font-medium">Name</th>
-              <th className="px-6 py-3 text-left font-medium">Managing Office</th>
-              <th className="px-6 py-3 text-left font-medium">Status</th>
-              <th></th>
+              <th>Code</th>
+              <th>Name</th>
+              <th>Managing Office</th>
+              <th>Status</th>
+              <th className="text-right">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody>
             {depts.map((d) => (
-              <tr key={d.id} className={`hover:bg-gray-50 transition ${d.is_active === false ? 'opacity-60' : ''}`}>
-                <td className="px-6 py-4 font-mono text-xs text-gray-600">{d.code}</td>
-                <td className="px-6 py-4 font-medium text-gray-900">{d.name}</td>
-                <td className="px-6 py-4 text-gray-500">{d.managing_office || '-'}</td>
-                <td className="px-6 py-4">{d.is_active !== false ? <span className="text-emerald-700 font-bold text-xs">Active</span> : <span className="text-slate-400 text-xs">Inactive</span>}</td>
-                <td className="px-6 py-4">
-                  <button type="button" onClick={() => void toggleActive(d)} className="text-xs font-bold text-blue-600 hover:underline">
-                    {d.is_active !== false ? 'Deactivate' : 'Activate'}
-                  </button>
-                </td>
+              <tr key={d.id} className={d.is_active === false ? 'opacity-60' : ''}>
+                <td className="font-mono text-xs text-gray-600">{d.code}</td>
+                {editingId === d.id ? (
+                  <>
+                    <td>
+                      <input value={editName} onChange={(e) => setEditName(e.target.value)} className="form-input py-1.5 text-sm" />
+                    </td>
+                    <td>
+                      <input value={editOffice} onChange={(e) => setEditOffice(e.target.value)} className="form-input py-1.5 text-sm" placeholder="Managing office" />
+                    </td>
+                    <td>{d.is_active !== false ? <span className="text-emerald-700 font-bold text-xs">Active</span> : <span className="text-slate-400 text-xs">Inactive</span>}</td>
+                    <td className="text-right space-x-2 whitespace-nowrap">
+                      <button type="button" onClick={() => void saveEdit(d)} className="text-xs font-bold text-emerald-700 hover:underline">Save</button>
+                      <button type="button" onClick={cancelEdit} className="text-xs font-bold text-slate-500 hover:underline">Cancel</button>
+                    </td>
+                  </>
+                ) : (
+                  <>
+                    <td className="font-medium text-gray-900">{d.name}</td>
+                    <td className="text-gray-500">{d.managing_office || '-'}</td>
+                    <td>{d.is_active !== false ? <span className="text-emerald-700 font-bold text-xs">Active</span> : <span className="text-slate-400 text-xs">Inactive</span>}</td>
+                    <td className="text-right space-x-3 whitespace-nowrap">
+                      <button type="button" onClick={() => startEdit(d)} className="text-xs font-bold text-indigo-600 hover:underline">Manage</button>
+                      <button type="button" onClick={() => void toggleActive(d)} className="text-xs font-bold text-blue-600 hover:underline">
+                        {d.is_active !== false ? 'Deactivate' : 'Activate'}
+                      </button>
+                    </td>
+                  </>
+                )}
               </tr>
             ))}
             {depts.length === 0 && (
@@ -180,8 +231,10 @@ function DepartmentTab() {
 function DesignationTab() {
   const [desgs, setDesgs] = useState<Desg[]>([]);
   const [name, setName] = useState('');
-  const [payLevel, setPayLevel] = useState('');
   const [catCode, setCatCode] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editCatCode, setEditCatCode] = useState('');
 
   const load = async () => {
     const { data } = await designationsApi.list({ include_inactive: true });
@@ -201,65 +254,114 @@ function DesignationTab() {
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name) return;
-    await designationsApi.create({ name, grade_pay_level: payLevel || null, category_code: catCode || null });
-    setName(''); setPayLevel(''); setCatCode('');
+    await designationsApi.create({ name, category_code: catCode || null });
+    setName(''); setCatCode('');
     load();
+  };
+
+  const startEdit = (desg: Desg) => {
+    setEditingId(desg.id);
+    setEditName(desg.name);
+    setEditCatCode(desg.category_code || '');
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditName('');
+    setEditCatCode('');
+  };
+
+  const saveEdit = async (desg: Desg) => {
+    if (!editName.trim()) return;
+    try {
+      await designationsApi.update(desg.id, {
+        name: editName.trim(),
+        category_code: editCatCode.trim() || null,
+      });
+      cancelEdit();
+      load();
+    } catch {
+      alert('Could not save designation changes.');
+    }
   };
 
   return (
     <div className="space-y-6">
-      <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+      <div className="p-4 rounded-lg border" style={{ background: 'var(--color-surface-alt)', borderColor: 'var(--color-border)' }}>
         <h3 className="text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wider">Add New Designation</h3>
         <form onSubmit={create} className="flex flex-wrap gap-3 items-end">
           <div className="flex-[2] min-w-[200px]">
             <label className="block text-xs font-medium text-gray-600 mb-1">Designation Name *</label>
-            <input id="desg-name" placeholder="Assistant Professor" value={name} onChange={(e) => setName(e.target.value)} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" required />
+            <input id="desg-name" placeholder="Assistant Professor" value={name} onChange={(e) => setName(e.target.value)} className="form-input" required />
           </div>
-          <div className="flex-1 min-w-[120px]">
-            <label className="block text-xs font-medium text-gray-600 mb-1">Pay Level</label>
-            <input id="desg-pay" placeholder="Level 10" value={payLevel} onChange={(e) => setPayLevel(e.target.value)} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" />
-          </div>
-          <div className="flex-1 min-w-[120px]">
+          <div className="flex-1 min-w-[140px]">
             <label className="block text-xs font-medium text-gray-600 mb-1">Category Code</label>
-            <input id="desg-cat" placeholder="FACULTY" value={catCode} onChange={(e) => setCatCode(e.target.value)} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" />
+            <select id="desg-cat" value={catCode} onChange={(e) => setCatCode(e.target.value)} className="form-select">
+              <option value="">Select…</option>
+              {CATEGORY_CODES.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
           </div>
-          <button type="submit" className="bg-blue-600 text-white px-5 py-2 rounded-md hover:bg-blue-700 text-sm font-medium transition shadow-sm h-[38px]">Add</button>
+          <button type="submit" className="btn-primary h-[38px]">Add</button>
         </form>
       </div>
 
-      <div className="border border-gray-200 rounded-lg overflow-hidden">
-        <table className="min-w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200 text-gray-500 uppercase tracking-wider text-xs">
+      <div className="border rounded-lg overflow-hidden" style={{ borderColor: 'var(--color-border)' }}>
+        <table className="min-w-full text-sm data-table">
+          <thead>
             <tr>
-              <th className="px-6 py-3 text-left font-medium">Designation Name</th>
-              <th className="px-6 py-3 text-left font-medium">Pay Level</th>
-              <th className="px-6 py-3 text-left font-medium">Category Code</th>
-              <th className="px-6 py-3 text-left font-medium">Status</th>
-              <th></th>
+              <th>Designation Name</th>
+              <th>Category Code</th>
+              <th>Status</th>
+              <th className="text-right">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody>
             {desgs.map((d) => (
-              <tr key={d.id} className={`hover:bg-gray-50 transition ${d.is_active === false ? 'opacity-60' : ''}`}>
-                <td className="px-6 py-4 font-medium text-gray-900">{d.name}</td>
-                <td className="px-6 py-4 text-gray-500">{d.grade_pay_level || '-'}</td>
-                <td className="px-6 py-4 text-gray-500">
-                  {d.category_code ? (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800">
-                      {d.category_code}
-                    </span>
-                  ) : '-'}
-                </td>
-                <td className="px-6 py-4">{d.is_active !== false ? <span className="text-emerald-700 font-bold text-xs">Active</span> : <span className="text-slate-400 text-xs">Inactive</span>}</td>
-                <td className="px-6 py-4">
-                  <button type="button" onClick={() => void toggleActive(d)} className="text-xs font-bold text-blue-600 hover:underline">
-                    {d.is_active !== false ? 'Deactivate' : 'Activate'}
-                  </button>
-                </td>
+              <tr key={d.id} className={d.is_active === false ? 'opacity-60' : ''}>
+                {editingId === d.id ? (
+                  <>
+                    <td>
+                      <input value={editName} onChange={(e) => setEditName(e.target.value)} className="form-input py-1.5 text-sm" />
+                    </td>
+                    <td>
+                      <select value={editCatCode} onChange={(e) => setEditCatCode(e.target.value)} className="form-select py-1.5 text-sm">
+                        <option value="">—</option>
+                        {CATEGORY_CODES.map((c) => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>{d.is_active !== false ? <span className="text-emerald-700 font-bold text-xs">Active</span> : <span className="text-slate-400 text-xs">Inactive</span>}</td>
+                    <td className="text-right space-x-2 whitespace-nowrap">
+                      <button type="button" onClick={() => void saveEdit(d)} className="text-xs font-bold text-emerald-700 hover:underline">Save</button>
+                      <button type="button" onClick={cancelEdit} className="text-xs font-bold text-slate-500 hover:underline">Cancel</button>
+                    </td>
+                  </>
+                ) : (
+                  <>
+                    <td className="font-medium text-gray-900">{d.name}</td>
+                    <td className="text-gray-500">
+                      {d.category_code ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800">
+                          {d.category_code}
+                        </span>
+                      ) : '-'}
+                    </td>
+                    <td>{d.is_active !== false ? <span className="text-emerald-700 font-bold text-xs">Active</span> : <span className="text-slate-400 text-xs">Inactive</span>}</td>
+                    <td className="text-right space-x-3 whitespace-nowrap">
+                      <button type="button" onClick={() => startEdit(d)} className="text-xs font-bold text-indigo-600 hover:underline">Manage</button>
+                      <button type="button" onClick={() => void toggleActive(d)} className="text-xs font-bold text-blue-600 hover:underline">
+                        {d.is_active !== false ? 'Deactivate' : 'Activate'}
+                      </button>
+                    </td>
+                  </>
+                )}
               </tr>
             ))}
             {desgs.length === 0 && (
-              <tr><td colSpan={5} className="px-6 py-12 text-center text-gray-400">No designations configured.</td></tr>
+              <tr><td colSpan={4} className="px-6 py-12 text-center text-gray-400">No designations configured.</td></tr>
             )}
           </tbody>
         </table>

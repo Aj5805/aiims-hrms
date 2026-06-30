@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     ZOHO_EMAIL: str = ""
     ZOHO_APP_PASSWORD: str = ""
     EMAIL_SENDING_ENABLED: bool = False
+    ANNUAL_CREDIT_SCHEDULER_ENABLED: bool = True
 
     RATE_LIMIT_AUTH: str = "5/minute"
     RATE_LIMIT_GENERAL: str = "100/minute"
@@ -42,6 +43,9 @@ class Settings(BaseSettings):
     BACKUP_DIR: str = "backups"
 
     BCRYPT_ROUNDS: int = 12
+
+    # Off during early development; enable before pilot/go-live.
+    FORCE_PASSWORD_CHANGE_ON_LOGIN: bool = False
 
     @field_validator("APP_ENV")
     @classmethod

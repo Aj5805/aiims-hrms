@@ -7,6 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.jwt import decode_token
+from app.core.config import settings
 from app.core.database import get_db
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -55,7 +56,11 @@ async def get_current_user(
         if iat < (float(user_row.valid_from_epoch) - 1.0):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalidated by password change")
 
-    if user_row.must_change_password:
+    if (
+        settings.FORCE_PASSWORD_CHANGE_ON_LOGIN
+        and user_row.must_change_password
+        and not payload.get("impersonated_by")
+    ):
         allowed_paths = {"/api/v1/auth/change-my-password", "/api/v1/auth/logout", "/api/v1/auth/me"}
         if request.url.path not in allowed_paths:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="PASSWORD_CHANGE_REQUIRED")

@@ -518,13 +518,28 @@ export function YearEndProcessingPage() {
         </div>
 
         <div className="rounded-xl border border-emerald-200 bg-white p-6 shadow-sm">
-          <h3 className="text-lg font-semibold text-slate-900">Annual Credit</h3>
+          <h3 className="text-lg font-semibold text-slate-900">Calendar Credit (Jan / Jul)</h3>
           <p className="mt-2 text-sm text-slate-600">
-            Applies calendar-year credits for all entitled leave types (regular staff EL/HPL/CL and resident ANNUAL_RES). Join-year staff receive pro-rata credit. Skips rows that already have credit.
+            Runs leave credits for the current calendar half. EL uses half-yearly frequency (15 days in January, 15 in July). HPL and other annual types credit once in January. Skips rows already credited for that half.
           </p>
-          <button onClick={() => void runAnnualCredit()} className="mt-4 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">
-            Execute Annual Credit
-          </button>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button onClick={() => void runAnnualCredit()} className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">
+              Run Jan Credit (H1)
+            </button>
+            <button
+              onClick={async () => {
+                try {
+                  const { data } = await balApi.annualCredit({ year_start: '2027-07-01', leave_year: 2027, credit_period: 2 });
+                  setMessage(`Jul credit complete. ${data.rows_affected} balance rows processed.`);
+                } catch (err: unknown) {
+                  setMessage((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Jul credit failed');
+                }
+              }}
+              className="rounded-md border border-emerald-600 px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50"
+            >
+              Run Jul Credit (H2)
+            </button>
+          </div>
         </div>
       </div>
 

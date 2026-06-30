@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useLocation, Navigate } from 'react-router-dom';
+import { useLocation, Navigate, useNavigate } from 'react-router-dom';
 import { adminApi, authApi, usersApi } from '../api/endpoints';
 import { entitlementRulesApi, leaveTypesApi } from '../api/phase3_endpoints';
 import { PageHeader } from '../components/PageHeader';
@@ -10,9 +10,9 @@ type LeaveTypeOption = { id: string; code: string; name: string; scheme?: string
 type UserOption = { id: string; username: string; role: string; is_active?: boolean; must_change_password?: boolean; employee_id?: string | null; last_login?: string | null; emp_code?: string | null; name?: string | null; department_name?: string | null; designation_name?: string | null; };
 type AuditLogItem = { id: string; entity_type?: string | null; entity_id?: string | null; actor_id?: string | null; action?: string | null; created_at?: string | null };
 type HealthDashboard = { queue_depth?: number; recent_errors_24h?: number; db_pool_size?: number; db_pool_checked_in?: number; last_backup?: string | null; error_rate?: number | null };
-type EntitlementRule = { id: string; category_code: string; leave_type_code: string; year_ref?: string | null; days_per_year?: number | null; prorata_rate?: number | null; year1_days?: number | null; year2_plus_days?: number | null; max_at_a_stretch?: number | null; max_in_tenure?: number | null; carry_forward?: boolean };
+type EntitlementRule = { id: string; category_code: string; leave_type_code: string; year_ref?: string | null; credit_frequency?: string | null; days_per_year?: number | null; prorata_rate?: number | null; year1_days?: number | null; year2_plus_days?: number | null; max_at_a_stretch?: number | null; max_in_tenure?: number | null; carry_forward?: boolean };
 
-type PolicyRowDraft = { annualCredit: string; maxAtATime: string; maxInTenure: string; maxAccumulation: string };
+type PolicyRowDraft = { annualCredit: string; creditFrequency: string; maxAtATime: string; maxInTenure: string; maxAccumulation: string };
 type AdminModuleId = 'dashboard' | 'policy' | 'users' | 'audit';
 const VALID_MODULES = new Set<AdminModuleId>(['dashboard', 'policy', 'users', 'audit']);
 const POLICY_CATEGORY_CODES = ['FACULTY', 'NURSING', 'ADMIN', 'JR_ACAD', 'SR_ACAD', 'JR_NA', 'SR_NA'] as const;
@@ -61,6 +61,7 @@ function MetricCard({ label, value, tone = 'default' }: { label: string; value: 
 
 export function AdminDashboardPage() {
   const location = useLocation();
+  const navigate = useNavigate();
   const startImpersonation = useAuthStore((s) => s.startImpersonation);
   const role = useAuthStore((s) => s.user?.role);
   const adminToken = useAuthStore((s) => s.adminToken);
@@ -87,6 +88,9 @@ export function AdminDashboardPage() {
   const [policyDrafts, setPolicyDrafts] = useState<Record<string, PolicyRowDraft>>({});
   const [savingPolicyKey, setSavingPolicyKey] = useState('');
   const [message, setMessage] = useState('');
+  const [loadError, setLoadError] = useState('');
+  const [usersLoadError, setUsersLoadError] = useState('');
+  const [usersLoading, setUsersLoading] = useState(false);
   const [forceLogoutUserId, setForceLogoutUserId] = useState('');
   const [userSearchTerm, setUserSearchTerm] = useState('');
 
@@ -100,23 +104,61 @@ export function AdminDashboardPage() {
     setAuditRows(data || []);
   };
 
+  const loadUsers = async () => {
+    setUsersLoading(true);
+    setUsersLoadError('');
+    try {
+      const { data } = await usersApi.list();
+      setUsers(data || []);
+    } catch (e: unknown) {
+      setUsers([]);
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setUsersLoadError(
+        typeof detail === 'string'
+          ? detail
+          : 'Could not load users. Ensure database migrations are applied (`alembic upgrade head`) and you are logged in as ADMIN.',
+      );
+    } finally {
+      setUsersLoading(false);
+    }
+  };
+
   useEffect(() => {
     const bootstrap = async () => {
-      const [dashboardResponse, usersResponse, leaveTypesResponse, entitlementRulesResponse] = await Promise.all([
+      setLoadError('');
+      const results = await Promise.allSettled([
         adminApi.healthDashboard(),
         usersApi.list(),
-        leaveTypesApi.list(),
+        leaveTypesApi.list({ include_inactive: true }),
         entitlementRulesApi.list(),
+        adminApi.auditLog({ skip: 0, limit: 50 }),
       ]);
-      setDashboard(dashboardResponse.data || {});
-      setUsers(usersResponse.data || []);
-      setLeaveTypes(leaveTypesResponse.data || []);
-      setEntitlementRules(entitlementRulesResponse.data || []);
-      const { data } = await adminApi.auditLog({ skip: 0, limit: 50 });
-      setAuditRows(data || []);
+      const [dashboardResult, usersResult, leaveTypesResult, rulesResult, auditResult] = results;
+      if (dashboardResult.status === 'fulfilled') setDashboard(dashboardResult.value.data || {});
+      if (usersResult.status === 'fulfilled') {
+        setUsers(usersResult.value.data || []);
+        setUsersLoadError('');
+      } else {
+        setUsersLoadError('Could not load users. Run `cd backend && alembic upgrade head`, then refresh this page.');
+      }
+      if (leaveTypesResult.status === 'fulfilled') {
+        setLeaveTypes(leaveTypesResult.value.data || []);
+      } else {
+        setLoadError('Could not load leave types. Check that the backend is running and leave types are seeded (`python seeds/run.py`).');
+      }
+      if (rulesResult.status === 'fulfilled') {
+        setEntitlementRules(rulesResult.value.data || []);
+      } else if (leaveTypesResult.status === 'fulfilled') {
+        setLoadError((prev) => prev || 'Could not load entitlement rules. Run seeds 003 and 004 to populate the policy matrix.');
+      }
+      if (auditResult.status === 'fulfilled') setAuditRows(auditResult.value.data || []);
     };
     void bootstrap();
   }, []);
+
+  useEffect(() => {
+    if (activeModule === 'users') void loadUsers();
+  }, [activeModule]);
 
   const runForceLogout = async () => {
     if (!forceLogoutUserId) {
@@ -132,7 +174,7 @@ export function AdminDashboardPage() {
     try {
       const { data } = await authApi.impersonate(userId);
       startImpersonation(data.access_token, data.user);
-      window.location.href = '/';
+      navigate('/', { replace: true });
     } catch (e: any) {
       setMessage(e.response?.data?.detail || 'Failed to impersonate user');
     }
@@ -162,6 +204,11 @@ export function AdminDashboardPage() {
     );
   }, [users, userSearchTerm]);
 
+  const impersonatableUsers = useMemo(
+    () => filteredUsers.filter((u) => u.is_active !== false && u.role !== 'ADMIN'),
+    [filteredUsers],
+  );
+
   const entitlementRuleMap = useMemo(() => {
     const entries: Array<[string, EntitlementRule]> = entitlementRules.map((rule) => [`${rule.category_code}::${rule.leave_type_code}`, rule]);
     return new Map<string, EntitlementRule>(entries);
@@ -169,6 +216,7 @@ export function AdminDashboardPage() {
 
   const ensurePolicyDraft = (leaveType: LeaveTypeOption, rule?: EntitlementRule): PolicyRowDraft => ({
     annualCredit: String(rule?.days_per_year ?? rule?.year1_days ?? ''),
+    creditFrequency: rule?.credit_frequency || 'ANNUAL',
     maxAtATime: String(rule?.max_at_a_stretch ?? ''),
     maxInTenure: String(rule?.max_in_tenure ?? ''),
     maxAccumulation: String(leaveType.max_accumulation ?? ''),
@@ -185,7 +233,7 @@ export function AdminDashboardPage() {
     setPolicyDrafts((current) => {
       const leaveType = leaveTypes.find((item) => `${activePolicyCategory}::${item.code}` === draftKey);
       const rule = entitlementRuleMap.get(draftKey);
-      const fallback = leaveType ? ensurePolicyDraft(leaveType, rule) : { annualCredit: '', maxAtATime: '', maxInTenure: '', maxAccumulation: '' };
+      const fallback = leaveType ? ensurePolicyDraft(leaveType, rule) : { annualCredit: '', creditFrequency: 'ANNUAL', maxAtATime: '', maxInTenure: '', maxAccumulation: '' };
       return { ...current, [draftKey]: updater(current[draftKey] || fallback) };
     });
   };
@@ -210,6 +258,7 @@ export function AdminDashboardPage() {
     try {
       await entitlementRulesApi.update(rule.id, {
         days_per_year: parseOptionalNumber(draft.annualCredit),
+        credit_frequency: draft.creditFrequency,
         max_at_a_stretch: parseOptionalNumber(draft.maxAtATime),
         max_in_tenure: parseOptionalNumber(draft.maxInTenure),
       });
@@ -294,6 +343,14 @@ export function AdminDashboardPage() {
 
             {activeModule === 'policy' && (
               <div className="space-y-6">
+                {loadError && (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{loadError}</div>
+                )}
+                {leaveTypes.length === 0 && !loadError && (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                    No leave types found. Run <code className="text-xs bg-white px-1 py-0.5 rounded">cd backend && python seeds/run.py</code> to load leave types and entitlement rules, then refresh this page.
+                  </div>
+                )}
                 <div className="flex flex-wrap gap-2 mb-6 p-2 bg-slate-50 rounded-2xl inline-flex border border-slate-200">
                   {POLICY_CATEGORY_CODES.map((category) => (
                     <button
@@ -313,7 +370,8 @@ export function AdminDashboardPage() {
                     <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider text-xs">
                       <tr>
                         <th className="px-6 py-4 border-b-2 border-slate-200">Leave Type</th>
-                        <th className="px-6 py-4 border-b-2 border-slate-200">Annual Credit</th>
+                        <th className="px-6 py-4 border-b-2 border-slate-200">Days / Year</th>
+                        <th className="px-6 py-4 border-b-2 border-slate-200">Credit Frequency</th>
                         <th className="px-6 py-4 border-b-2 border-slate-200">Max At A Time</th>
                         <th className="px-6 py-4 border-b-2 border-slate-200">Max In Tenure</th>
                         <th className="px-6 py-4 border-b-2 border-slate-200">Max Accumulation</th>
@@ -335,6 +393,17 @@ export function AdminDashboardPage() {
                               onChange={(e) => updatePolicyDraft(`${activePolicyCategory}::${row.code}`, (current) => ({ ...current, annualCredit: e.target.value }))}
                               className="w-24 rounded-lg border-2 border-slate-200 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 font-medium"
                             />
+                          </td>
+                          <td className="px-6 py-4">
+                            <select
+                              value={(policyDrafts[`${activePolicyCategory}::${row.code}`] || ensurePolicyDraft(leaveTypes.find(item => item.code === row.code)!, entitlementRuleMap.get(`${activePolicyCategory}::${row.code}`))).creditFrequency}
+                              onChange={(e) => updatePolicyDraft(`${activePolicyCategory}::${row.code}`, (current) => ({ ...current, creditFrequency: e.target.value }))}
+                              className="rounded-lg border-2 border-slate-200 px-2 py-2 text-xs focus:border-indigo-500 font-medium min-w-[9rem]"
+                            >
+                              <option value="ANNUAL">Annual</option>
+                              <option value="HALF_YEARLY">Half-yearly</option>
+                              <option value="MONTHLY">Monthly</option>
+                            </select>
                           </td>
                           <td className="px-6 py-4">
                             <input
@@ -384,6 +453,19 @@ export function AdminDashboardPage() {
 
             {activeModule === 'users' && (
               <div className="space-y-6">
+                {usersLoadError && (
+                  <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 flex items-center justify-between gap-3">
+                    <span>{usersLoadError}</span>
+                    <button type="button" onClick={() => void loadUsers()} className="shrink-0 text-xs font-bold underline">Retry</button>
+                  </div>
+                )}
+
+                <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-4 text-sm text-indigo-900">
+                  <span className="font-bold">{impersonatableUsers.length}</span> account(s) available for Login As
+                  {usersLoading ? ' — loading…' : userSearchTerm.trim() ? ` (filtered from ${users.length} total)` : ` of ${users.length} total users`}.
+                  Only active non-admin accounts can be impersonated.
+                </div>
+
                 <details className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <summary className="cursor-pointer text-sm font-bold text-slate-700">
                     System roles reference ({SYSTEM_ROLES.length} roles)
@@ -424,7 +506,13 @@ export function AdminDashboardPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {filteredUsers.map((user) => (
+                        {usersLoading && (
+                          <tr><td colSpan={6} className="px-6 py-10 text-center text-slate-500">Loading users…</td></tr>
+                        )}
+                        {!usersLoading && filteredUsers.length === 0 && (
+                          <tr><td colSpan={6} className="px-6 py-10 text-center text-slate-500">No users found{userSearchTerm.trim() ? ' for this search' : ''}.</td></tr>
+                        )}
+                        {!usersLoading && filteredUsers.map((user) => (
                           <tr key={user.id} className="hover:bg-slate-50 transition-colors">
                             <td className="px-6 py-4">
                               <div className="font-bold text-slate-900">{user.username}</div>

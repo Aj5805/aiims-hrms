@@ -21,7 +21,13 @@ async def list_configs(
     _: dict = Depends(require_role(*_MASTER_VIEWER_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(text("SELECT * FROM workflow_configs ORDER BY config_name"))
+    result = await db.execute(text("""
+        SELECT wc.*, c.code AS category_code, lt.code AS leave_type_code
+        FROM workflow_configs wc
+        LEFT JOIN employee_categories c ON wc.category_id = c.id
+        LEFT JOIN leave_types lt ON wc.leave_type_id = lt.id
+        ORDER BY wc.config_name
+    """))
     configs = []
     for r in result.fetchall():
         cfg = dict(r._mapping)
@@ -66,13 +72,17 @@ async def update_config(
     _: dict = Depends(require_role("ADMIN", "ESTABLISHMENT_OFFICER")),
     db: AsyncSession = Depends(get_db),
 ):
-    editable = ["config_name", "min_days", "max_days", "is_active"]
+    editable = ["config_name", "category_id", "leave_type_id", "min_days", "max_days", "is_active"]
     updates = {k: v for k, v in body.items() if k in editable}
-    if updates:
-        set_c = ", ".join(f"{k} = :{k}" for k in updates)
-        updates["id"] = config_id
-        await db.execute(text(f"UPDATE workflow_configs SET {set_c}, version = version + 1 WHERE id = :id"), updates)
-        await db.commit()
+    if not updates:
+        raise HTTPException(status_code=400, detail="No editable fields")
+    set_c = ", ".join(f"{k} = :{k}" for k in updates)
+    updates["id"] = config_id
+    await db.execute(
+        text(f"UPDATE workflow_configs SET {set_c}, version = version + 1, updated_at = NOW() WHERE id = :id"),
+        updates,
+    )
+    await db.commit()
     return {"message": "Updated"}
 
 

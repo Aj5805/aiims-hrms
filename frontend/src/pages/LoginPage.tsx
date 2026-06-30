@@ -30,11 +30,7 @@ export default function LoginPage() {
 
       localStorage.setItem('access_token', data.access_token);
       setAuth(data.access_token, data.user);
-      if (data.user.must_change_password) {
-        navigate('/change-password');
-      } else {
-        navigate('/');
-      }
+      navigate('/');
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||

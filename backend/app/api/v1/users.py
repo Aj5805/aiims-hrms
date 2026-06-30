@@ -43,7 +43,7 @@ async def create_user(
     normalized_role = "ESTABLISHMENT_OFFICER" if role == "ESTABLISHMENT" else role
     password = body.get("password") or username
     employee_id = body.get("employee_id")
-    must_change_password = body.get("must_change_password", True)
+    must_change_password = body.get("must_change_password", False)
     parent_nodal_user_id = body.get("parent_nodal_user_id")
 
     if role == "NODAL_OFFICE" and parent_nodal_user_id:

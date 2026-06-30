@@ -1,4 +1,6 @@
 import axios from 'axios';
+import { useAuthStore } from '../stores';
+import { isImpersonatingSession } from '../utils/authSession';
 
 const api = axios.create({
   baseURL: '/api/v1',
@@ -24,7 +26,11 @@ api.interceptors.response.use(
       localStorage.removeItem('access_token');
       localStorage.removeItem('auth-storage');
       window.location.href = '/login';
-    } else if (err.response?.status === 403 && err.response?.data?.detail === 'PASSWORD_CHANGE_REQUIRED') {
+    } else if (
+      err.response?.status === 403
+      && err.response?.data?.detail === 'PASSWORD_CHANGE_REQUIRED'
+      && !isImpersonatingSession(useAuthStore.getState().adminToken)
+    ) {
       window.location.href = '/change-password';
     } else if (err.response?.status === 503 && err.response?.data?.code === 'MAINTENANCE_MODE') {
       window.location.href = '/maintenance';

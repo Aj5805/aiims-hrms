@@ -16,6 +16,11 @@ interface Designation {
   grade_pay_level?: string | null;
 }
 
+interface StaffGroupOption {
+  code: string;
+  label: string;
+}
+
 interface AddStaffFormProps {
   onSaved: () => void;
   onCancel: () => void;
@@ -129,10 +134,14 @@ export default function AddStaffForm({ onSaved, onCancel }: AddStaffFormProps) {
   const userRole = useAuthStore((s) => s.user?.role);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [designations, setDesignations] = useState<Designation[]>([]);
+  const [staffGroups, setStaffGroups] = useState<StaffGroupOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [form, setForm] = useState(EMPTY_FORM);
+  const [manualEmpCode, setManualEmpCode] = useState(false);
+  const [previewCode, setPreviewCode] = useState('');
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   const set = (key: keyof typeof EMPTY_FORM, value: string | boolean) =>
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -142,12 +151,14 @@ export default function AddStaffForm({ onSaved, onCancel }: AddStaffFormProps) {
 
     const fetchData = async () => {
       try {
-        const [deptRes, desigRes] = await Promise.all([
+        const [deptRes, desigRes, groupsRes] = await Promise.all([
           departmentsApi.list(),
           designationsApi.list(),
+          employeesApi.staffGroups(),
         ]);
         setDepartments(deptRes.data || []);
         setDesignations(desigRes.data || []);
+        setStaffGroups(groupsRes.data || []);
       } catch (err: unknown) {
         const data = (err as { response?: { data?: { detail?: unknown } } })?.response?.data;
         const detail = formatApiError(data?.detail);
@@ -161,13 +172,66 @@ export default function AddStaffForm({ onSaved, onCancel }: AddStaffFormProps) {
 
   const selectedDesig = designations.find((d) => d.name === form.designation_name);
 
-  const handleDesignationChange = (name: string) => {
+  const refreshStaffGroupSuggestion = async (
+    designationName: string,
+    departmentCode: string,
+    categoryCode?: string,
+  ) => {
+    if (!designationName || !departmentCode) return;
+    try {
+      const { data } = await employeesApi.suggestStaffGroup({
+        designation_name: designationName,
+        department_code: departmentCode,
+        category_code: categoryCode,
+      });
+      if (data?.staff_group) {
+        setForm((prev) => ({ ...prev, staff_group: data.staff_group }));
+      }
+    } catch {
+      // suggestion is optional
+    }
+  };
+
+  const refreshPreviewCode = async () => {
+    if (manualEmpCode) return;
+    setPreviewLoading(true);
+    try {
+      const { data } = await employeesApi.nextStaffNumber();
+      const next = data?.next_emp_code || '';
+      setPreviewCode(next);
+      setForm((prev) => ({ ...prev, emp_code: next }));
+    } catch {
+      setPreviewCode('');
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (manualEmpCode) return;
+    void refreshPreviewCode();
+  }, [manualEmpCode]);
+
+  const handleDesignationChange = async (name: string) => {
     const desig = designations.find((d) => d.name === name);
     setForm((prev) => ({
       ...prev,
       designation_name: name,
-      pay_level: desig?.grade_pay_level || prev.pay_level,
     }));
+    if (desig && form.department_code) {
+      await refreshStaffGroupSuggestion(name, form.department_code, desig.category_code);
+    }
+  };
+
+  const handleDepartmentChange = async (code: string) => {
+    setForm((prev) => ({ ...prev, department_code: code }));
+    if (form.designation_name && code) {
+      await refreshStaffGroupSuggestion(
+        form.designation_name,
+        code,
+        selectedDesig?.category_code,
+      );
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -181,14 +245,23 @@ export default function AddStaffForm({ onSaved, onCancel }: AddStaffFormProps) {
       setSaving(false);
       return;
     }
+    if (!form.staff_group) {
+      setError('Please select a staff group for employee number allotment');
+      setSaving(false);
+      return;
+    }
 
     try {
-      await employeesApi.create({
+      const payload: Record<string, unknown> = {
         ...emptyToNull(form),
         category_code,
         has_institutional_email: form.has_institutional_email,
         is_physically_handicapped: form.is_physically_handicapped,
-      });
+      };
+      if (!manualEmpCode) {
+        delete payload.emp_code;
+      }
+      await employeesApi.create(payload);
       onSaved();
     } catch (err: unknown) {
       const data = (err as { response?: { data?: { detail?: unknown } } })?.response?.data;
@@ -212,7 +285,7 @@ export default function AddStaffForm({ onSaved, onCancel }: AddStaffFormProps) {
       )}
 
       <p className="text-xs text-slate-500 mb-3 leading-relaxed">
-        Tab through fields left-to-right. Designation sets leave scheme. Login is auto-created from employee code.
+        Staff numbers are unique 7-digit codes starting at 1000001. Staff group classifies the role and can change later; the number stays the same.
       </p>
 
       <form onSubmit={handleSubmit}>
@@ -317,11 +390,48 @@ export default function AddStaffForm({ onSaved, onCancel }: AddStaffFormProps) {
           </Field>
 
           <Section title="Employment" />
-          <Field label="Employee Code" required cols={3}>
-            <input required value={form.emp_code} onChange={(e) => set('emp_code', e.target.value)} className={codeCls} />
+          <Field label="Staff Group" required cols={4}>
+            <select
+              required
+              value={form.staff_group}
+              onChange={(e) => set('staff_group', e.target.value)}
+              className={inputCls}
+            >
+              <option value="">Select staff group…</option>
+              {staffGroups.map((g) => (
+                <option key={g.code} value={g.code}>
+                  {g.label}
+                </option>
+              ))}
+            </select>
+            <p className="mt-0.5 text-[11px] text-slate-500">
+              For classification and leave rules — does not change the staff number.
+            </p>
           </Field>
-          <Field label="Staff Group" cols={3}>
-            <input value={form.staff_group} onChange={(e) => set('staff_group', e.target.value)} className={inputCls} placeholder="Faculty, Nursing…" />
+          <Field label="Staff Number" required cols={4}>
+            <input
+              required
+              readOnly={!manualEmpCode}
+              value={manualEmpCode ? form.emp_code : (previewCode || form.emp_code)}
+              onChange={(e) => set('emp_code', e.target.value)}
+              className={codeCls}
+              placeholder={previewLoading ? 'Loading…' : 'Auto-assigned'}
+            />
+            <label className="mt-1 flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={manualEmpCode}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setManualEmpCode(checked);
+                  if (!checked) {
+                    void refreshPreviewCode();
+                  }
+                }}
+                className="h-3.5 w-3.5 text-indigo-600 border-slate-300 rounded"
+              />
+              <span className="text-[11px] text-slate-500">Enter code manually (legacy / migration)</span>
+            </label>
           </Field>
           <Field label="Grade" cols={2}>
             <input value={form.grade} onChange={(e) => set('grade', e.target.value)} className={inputCls} />
@@ -333,7 +443,7 @@ export default function AddStaffForm({ onSaved, onCancel }: AddStaffFormProps) {
             <input required type="date" value={form.doj} onChange={(e) => set('doj', e.target.value)} className={inputCls} />
           </Field>
           <Field label="Department" required cols={6}>
-            <select required value={form.department_code} onChange={(e) => set('department_code', e.target.value)} className={inputCls}>
+            <select required value={form.department_code} onChange={(e) => void handleDepartmentChange(e.target.value)} className={inputCls}>
               <option value="">Select…</option>
               {departments.map((d) => (
                 <option key={d.id} value={d.code}>{d.name} ({d.code})</option>
@@ -341,7 +451,7 @@ export default function AddStaffForm({ onSaved, onCancel }: AddStaffFormProps) {
             </select>
           </Field>
           <Field label="Designation" required cols={6}>
-            <select required value={form.designation_name} onChange={(e) => handleDesignationChange(e.target.value)} className={inputCls}>
+            <select required value={form.designation_name} onChange={(e) => void handleDesignationChange(e.target.value)} className={inputCls}>
               <option value="">Select…</option>
               {designations.map((d) => (
                 <option key={d.id} value={d.name}>{d.name}</option>
@@ -350,7 +460,6 @@ export default function AddStaffForm({ onSaved, onCancel }: AddStaffFormProps) {
             {selectedDesig && (
               <p className="mt-0.5 text-[11px] text-indigo-600 font-medium">
                 {selectedDesig.category_code}
-                {selectedDesig.grade_pay_level ? ` · Level ${selectedDesig.grade_pay_level}` : ''}
               </p>
             )}
           </Field>

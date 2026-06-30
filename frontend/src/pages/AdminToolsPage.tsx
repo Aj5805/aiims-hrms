@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, Navigate } from 'react-router-dom';
+import { useParams, Navigate, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores';
 import { usersApi, authApi, adminApi, broadcastsApi } from '../api/endpoints';
 import { PageHeader } from '../components/PageHeader';
@@ -20,6 +20,7 @@ function formatDateTime(value?: string | null): string {
 
 export default function AdminToolsPage() {
   const { tool } = useParams<{ tool: string }>();
+  const navigate = useNavigate();
   const activeTab = tool || 'impersonate';
 
   const role = useAuthStore((s) => s.user?.role);
@@ -108,9 +109,7 @@ export default function AdminToolsPage() {
     try {
       const res = await authApi.impersonate(userId);
       startImpersonation(res.data.access_token, res.data.user);
-      setTimeout(() => {
-        window.location.href = '/';
-      }, 100);
+      navigate('/', { replace: true });
     } catch (err) {
       alert('Failed to impersonate user.');
     }

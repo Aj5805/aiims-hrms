@@ -230,8 +230,28 @@ async def main() -> None:
         assert_true(admin_2027_el is not None, "EL 2027 row exists after annual credit")
         assert_true(admin_2027_hpl is not None, "HPL 2027 row exists after annual credit")
         assert_equal(float(admin_2027_el["opening_balance"]), 290.0, "EL opening carried from prior closing")
-        assert_equal(float(admin_2027_el["credited"]), 30.0, "EL annual credit amount")
-        assert_equal(float(admin_2027_el["closing_balance"]), 320.0, "EL closing after annual credit")
+        assert_equal(float(admin_2027_el["credited"]), 15.0, "EL H1 half-yearly credit amount")
+        assert_equal(float(admin_2027_el["closing_balance"]), 305.0, "EL closing after H1 credit")
+
+        annual_h2 = await client.post(
+            "/api/v1/leave-balances/credit/annual",
+            json={"year_start": "2027-07-01", "leave_year": 2027, "credit_period": 2},
+            headers=headers,
+        )
+        await expect_status(annual_h2, 200, "annual credit H2 2027")
+
+        admin_2027_el = query_one(
+            """
+            SELECT opening_balance, credited, closing_balance
+            FROM leave_balances lb
+            JOIN employees e ON e.id = lb.employee_id
+            JOIN leave_types lt ON lt.id = lb.leave_type_id
+            WHERE e.emp_code = 'HRMS401' AND lt.code = 'EL' AND lb.leave_year = 2027
+            """,
+            {},
+        )
+        assert_equal(float(admin_2027_el["credited"]), 30.0, "EL full year after H2 credit")
+        assert_equal(float(admin_2027_el["closing_balance"]), 320.0, "EL closing after full year credit")
         assert_equal(float(admin_2027_hpl["opening_balance"]), 40.0, "HPL opening carried from prior closing")
         assert_equal(float(admin_2027_hpl["credited"]), 20.0, "HPL annual credit amount")
         assert_equal(float(admin_2027_hpl["closing_balance"]), 60.0, "HPL closing after annual credit")

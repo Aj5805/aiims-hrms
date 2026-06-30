@@ -2,7 +2,8 @@
 
 from datetime import date, datetime
 from typing import Optional
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 def validate_password_complexity(value: str) -> str:
@@ -51,7 +52,7 @@ class SelfPasswordChangeRequest(BaseModel):
 # â”€â”€ Employees â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class EmployeeBase(BaseModel):
-    emp_code: str = Field(max_length=20)
+    emp_code: Optional[str] = Field(None, max_length=20)
     name: str = Field(max_length=200)
     gender: str = Field(pattern="^(MALE|FEMALE|OTHER)$")
     dob: Optional[date] = None
@@ -93,7 +94,35 @@ class EmployeeBase(BaseModel):
 
 
 class EmployeeCreate(EmployeeBase):
-    pass
+    staff_group: str = Field(..., max_length=50)
+
+    @field_validator("staff_group")
+    @classmethod
+    def staff_group_not_blank(cls, v: str) -> str:
+        code = (v or "").strip()
+        if not code:
+            raise ValueError("staff_group is required for auto staff number allotment")
+        return code
+
+    @model_validator(mode="after")
+    def require_code_or_group(self):
+        if not (self.emp_code or "").strip() and not (self.staff_group or "").strip():
+            raise ValueError("Provide staff_group for auto allotment or an explicit emp_code")
+        return self
+
+
+class StaffGroupInfo(BaseModel):
+    code: str
+    label: str
+
+
+class StaffNumberPreview(BaseModel):
+    next_emp_code: str
+
+
+class StaffGroupSuggestion(BaseModel):
+    staff_group: str | None
+    label: str | None = None
 
 
 class EmployeeUpdate(BaseModel):

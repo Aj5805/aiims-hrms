@@ -26,7 +26,7 @@ from app.core.config import settings
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
-REPORT_ROLES = ("ESTABLISHMENT_OFFICER", "REGISTRAR", "DIRECTOR", "NODAL_OFFICER", "NODAL_OFFICE")
+REPORT_ROLES = ("ADMIN", "ESTABLISHMENT_OFFICER", "REGISTRAR", "DIRECTOR", "NODAL_OFFICER", "NODAL_OFFICE")
 PAYROLL_EXPORT_ROLES = ("ESTABLISHMENT_OFFICER", "REGISTRAR", "DIRECTOR")
 
 # Placeholder until AIIMS Finance / NIC provides the actual column contract.

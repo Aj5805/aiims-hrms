@@ -19,19 +19,47 @@ interface Employee {
   user_id?: string;
 }
 
+type EmployeeTab = 'directory' | 'onboard' | 'lifecycle';
+
+const TAB_LABELS: Record<EmployeeTab, string> = {
+  directory: 'Directory',
+  onboard: 'Onboard',
+  lifecycle: 'Lifecycle',
+};
+
+const LIFECYCLE_ACTIONS = [
+  { value: 'resign', label: 'Resign / deactivate', activeOnly: true },
+  { value: 'rejoin', label: 'Rejoin / reactivate', activeOnly: false },
+  { value: 'promote', label: 'Promote (change designation)', activeOnly: true },
+  { value: 'demote', label: 'Demote (change designation)', activeOnly: true },
+  { value: 'assign_hod', label: 'Assign as HOD', activeOnly: true },
+] as const;
+
 export default function EmployeeListPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab = (searchParams.get('tab') as 'directory' | 'onboard') || 'directory';
-  const setActiveTab = (tab: 'directory' | 'onboard') => setSearchParams({ tab });
+  const rawTab = searchParams.get('tab');
+  const activeTab: EmployeeTab =
+    rawTab && rawTab in TAB_LABELS ? (rawTab as EmployeeTab) : 'directory';
+  const setActiveTab = (tab: EmployeeTab) => setSearchParams({ tab });
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
   const canEdit = ['ADMIN', 'ESTABLISHMENT_OFFICER', 'REGISTRAR', 'NODAL_OFFICER'].includes(user?.role ?? '');
   const canOnboard = canEdit;
 
-  const runLifecycle = async (emp: Employee, action: string, extra?: Record<string, unknown>) => {
+  const [lifecycleEmpId, setLifecycleEmpId] = useState('');
+  const [lifecycleAction, setLifecycleAction] = useState('');
+  const [lifecycleBusy, setLifecycleBusy] = useState(false);
+
+  useEffect(() => {
+    if (rawTab === 'bulk') {
+      setSearchParams({ tab: 'directory' }, { replace: true });
+    }
+  }, [rawTab, setSearchParams]);
+
+  const runLifecycle = async (emp: Employee, action: string) => {
     try {
       if (action === 'promote' || action === 'demote') {
         const { data: desgs } = await designationsApi.list();
@@ -42,14 +70,12 @@ export default function EmployeeListPage() {
       } else if (action === 'resign') {
         if (!window.confirm(`Mark ${emp.name} as resigned? Their login will be deactivated.`)) return;
         await employeesApi.lifecycle(emp.id, { action });
-      } else if (action === 'rejoin') {
-        await employeesApi.lifecycle(emp.id, { action });
       } else if (action === 'assign_hod') {
         if (!emp.user_id) { alert('Employee has no login account.'); return; }
         if (!window.confirm(`Assign ${emp.name} as HOD?`)) return;
         await employeesApi.lifecycle(emp.id, { action });
       } else {
-        await employeesApi.lifecycle(emp.id, { action, ...extra });
+        await employeesApi.lifecycle(emp.id, { action });
       }
       alert('Done.');
       fetchEmployees();
@@ -72,51 +98,61 @@ export default function EmployeeListPage() {
 
   useEffect(() => {
     if (!user) { navigate('/login'); return; }
-    if (activeTab === 'directory') {
+    if (activeTab === 'directory' || activeTab === 'lifecycle') {
       fetchEmployees();
     }
   }, [search, activeTab]);
 
-  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const selectedLifecycleEmp = employees.find((e) => e.id === lifecycleEmpId);
+  const visibleTabs = (Object.keys(TAB_LABELS) as EmployeeTab[]).filter((tab) => {
+    if (tab === 'onboard' && !canOnboard) return false;
+    if (tab === 'lifecycle' && !canEdit) return false;
+    return true;
+  });
+
+  const runSelectedLifecycle = async () => {
+    if (!selectedLifecycleEmp || !lifecycleAction) return;
+    setLifecycleBusy(true);
     try {
-      const { data } = await employeesApi.importCsv(file);
-      alert(`Import done: ${data.success_count} success, ${data.error_count} errors`);
-      fetchEmployees();
-    } catch {
-      alert('Import failed');
+      await runLifecycle(selectedLifecycleEmp, lifecycleAction);
+      setLifecycleEmpId('');
+      setLifecycleAction('');
+    } finally {
+      setLifecycleBusy(false);
     }
   };
 
+  const breadcrumbLabel =
+    activeTab === 'directory' ? 'Employee Directory' :
+    activeTab === 'onboard' ? 'Onboard Employee' :
+    'Employee Lifecycle';
+
   return (
     <div className="page">
-      <PageHeader 
-        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'HR Operations' }, { label: activeTab === 'directory' ? 'Employees Directory' : 'Onboard Employee' }]}
-        title={activeTab === 'directory' ? "Staff Directory" : "Onboard New Staff"}
-        description={activeTab === 'directory' ? "View and manage staff directory." : "Onboard a new employee into the system."}
+      <PageHeader
+        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'HR Operations' }, { label: breadcrumbLabel }]}
+        title={breadcrumbLabel}
+        description={
+          activeTab === 'directory' ? 'View staff directory (read-only).' :
+          activeTab === 'onboard' ? 'Onboard a new employee into the system.' :
+          'Resign, rejoin, promote, demote, or assign HOD for one employee at a time.'
+        }
       />
-      <div className="flex gap-1 p-1 bg-slate-100 rounded-lg w-fit mb-3">
-        <button
-          type="button"
-          onClick={() => setActiveTab('directory')}
-          className={`px-3 py-1.5 text-xs font-semibold rounded-md transition ${activeTab === 'directory' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
-        >
-          Directory
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('onboard')}
-          className={`px-3 py-1.5 text-xs font-semibold rounded-md transition ${activeTab === 'onboard' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
-          disabled={!canOnboard}
-          style={!canOnboard ? { display: 'none' } : undefined}
-        >
-          Onboard
-        </button>
+      <div className="flex flex-wrap gap-1 p-1 bg-slate-100 rounded-lg w-fit mb-3">
+        {visibleTabs.map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => setActiveTab(tab)}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-md transition ${activeTab === tab ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+          >
+            {TAB_LABELS[tab]}
+          </button>
+        ))}
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className={activeTab === 'onboard' ? 'p-4 sm:p-6' : 'p-4'}>
+      <div className="card overflow-hidden">
+        <div className="p-4 sm:p-6">
           {activeTab === 'directory' && (
             <div>
               <div className="flex flex-wrap gap-2 items-center justify-between mb-3">
@@ -127,13 +163,6 @@ export default function EmployeeListPage() {
                   onChange={(e) => setSearch(e.target.value)}
                   className="form-input w-full md:w-72 py-1.5 text-xs"
                 />
-
-                {!['NODAL_OFFICER', 'NODAL_OFFICE'].includes(user?.role ?? '') && (
-                  <label className="btn-sm bg-emerald-600 text-white hover:bg-emerald-700 cursor-pointer rounded-md px-3 py-1.5 text-xs font-semibold">
-                    Import CSV
-                    <input type="file" accept=".csv" onChange={handleImport} className="hidden" />
-                  </label>
-                )}
               </div>
 
               {loading ? (
@@ -152,7 +181,6 @@ export default function EmployeeListPage() {
                         <th>Category</th>
                         <th>Email</th>
                         <th>Status</th>
-                        {canEdit && <th>Actions</th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -171,28 +199,10 @@ export default function EmployeeListPage() {
                               {emp.is_active ? 'Active' : 'Inactive'}
                             </span>
                           </td>
-                          {canEdit && (
-                            <td className="whitespace-nowrap">
-                              <div className="flex flex-wrap gap-1">
-                                {emp.is_active ? (
-                                  <>
-                                    <button type="button" className="text-[10px] font-bold text-amber-700 hover:underline" onClick={() => void runLifecycle(emp, 'resign')}>Resign</button>
-                                    <button type="button" className="text-[10px] font-bold text-blue-700 hover:underline" onClick={() => void runLifecycle(emp, 'promote')}>Promote</button>
-                                    <button type="button" className="text-[10px] font-bold text-slate-600 hover:underline" onClick={() => void runLifecycle(emp, 'demote')}>Demote</button>
-                                    {user?.role !== 'NODAL_OFFICE' && (
-                                      <button type="button" className="text-[10px] font-bold text-indigo-700 hover:underline" onClick={() => void runLifecycle(emp, 'assign_hod')}>Make HOD</button>
-                                    )}
-                                  </>
-                                ) : (
-                                  <button type="button" className="text-[10px] font-bold text-emerald-700 hover:underline" onClick={() => void runLifecycle(emp, 'rejoin')}>Rejoin</button>
-                                )}
-                              </div>
-                            </td>
-                          )}
                         </tr>
                       ))}
                       {employees.length === 0 && (
-                        <tr><td colSpan={canEdit ? 10 : 9} className="py-8 text-center text-slate-400 text-xs">No employees found.</td></tr>
+                        <tr><td colSpan={9} className="py-8 text-center text-slate-400 text-xs">No employees found.</td></tr>
                       )}
                     </tbody>
                   </table>
@@ -210,6 +220,58 @@ export default function EmployeeListPage() {
               }}
               onCancel={() => setActiveTab('directory')}
             />
+          )}
+
+          {activeTab === 'lifecycle' && canEdit && (
+            <div className="max-w-xl space-y-4">
+              <p className="text-sm text-slate-600">Select one employee and the action to perform.</p>
+              <div>
+                <label className="form-label">Employee</label>
+                <select
+                  value={lifecycleEmpId}
+                  onChange={(e) => { setLifecycleEmpId(e.target.value); setLifecycleAction(''); }}
+                  className="form-select"
+                >
+                  <option value="">Select employee…</option>
+                  {employees.map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.emp_code} — {emp.name} ({emp.is_active ? 'Active' : 'Inactive'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {selectedLifecycleEmp && (
+                <div className="text-xs text-slate-500 bg-slate-50 rounded-lg p-3 border border-slate-200">
+                  {selectedLifecycleEmp.designation_name} · {selectedLifecycleEmp.department_name}
+                </div>
+              )}
+              <div>
+                <label className="form-label">Action</label>
+                <select
+                  value={lifecycleAction}
+                  onChange={(e) => setLifecycleAction(e.target.value)}
+                  className="form-select"
+                  disabled={!selectedLifecycleEmp}
+                >
+                  <option value="">Select action…</option>
+                  {LIFECYCLE_ACTIONS.filter((a) => {
+                    if (!selectedLifecycleEmp) return true;
+                    if (a.value === 'assign_hod' && user?.role === 'NODAL_OFFICE') return false;
+                    return a.activeOnly ? selectedLifecycleEmp.is_active : !selectedLifecycleEmp.is_active;
+                  }).map((a) => (
+                    <option key={a.value} value={a.value}>{a.label}</option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="button"
+                disabled={!selectedLifecycleEmp || !lifecycleAction || lifecycleBusy}
+                onClick={() => void runSelectedLifecycle()}
+                className="btn-primary disabled:opacity-50"
+              >
+                {lifecycleBusy ? 'Processing…' : 'Run action'}
+              </button>
+            </div>
           )}
         </div>
       </div>

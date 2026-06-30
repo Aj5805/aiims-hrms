@@ -68,7 +68,7 @@ async def update_leave_type(
     _: dict = Depends(require_role("ADMIN", "ESTABLISHMENT_OFFICER")),
     db: AsyncSession = Depends(get_db),
 ):
-    editable = ["name", "is_accumulating", "max_accumulation", "requires_mc",
+    editable = ["name", "scheme", "is_accumulating", "max_accumulation", "requires_mc",
                 "min_days_for_mc", "count_holidays", "is_half_day_allowed",
                 "carry_forward", "encashable", "validation_rules", "is_active"]
     updates = {k: v for k, v in body.items() if k in editable}

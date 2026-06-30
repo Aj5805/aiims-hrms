@@ -2,7 +2,7 @@
 
 > **Agents:** Read this file at the start of every session. Update it after meaningful work (features, fixes, decisions, validation). Keep it concise — current state only, not a full changelog. Detailed history stays in `HANDOFF.md`.
 
-**Last updated:** 2026-06-30 (leave transaction hardening — balance, validation, cancel/modify, forms, scheduler)
+**Last updated:** 2026-07-01 (CCS/DoPT Casual Leave rules in validation + Apply UX)
 
 ---
 
@@ -52,7 +52,7 @@ docs/                   architecture, security, go-live runbook
 scripts/db_sync.py      cross-platform DB snapshot sync
 ```
 
-**Navigation:** Hub & Spoke — landing dashboards with hover-dropdown sub-nav in `App.tsx`. **Masters** (`/masters`) is the single hub for departments, designations, leave types, entitlements, holidays, and workflows. **Admin Console** (`/admin`) covers operations only: dashboard, leave policy matrix, users & roles, audit & health. **Admin Tools** dropdown: maintenance, broadcasts, workflow diagnostics, bulk roles.
+**Navigation:** Hub & Spoke — landing dashboards with **hover-dropdown** sub-nav in `App.tsx` (all roles, including Admin). **Masters** (`/masters`) is the single hub for departments, designations, leave types, entitlements, holidays, and workflows. **Admin Console** (`/admin`) covers operations only: dashboard, leave policy matrix, users & roles, audit & health. **Admin Tools**: maintenance, broadcasts, workflow(s), bulk roles.
 
 ---
 
@@ -111,7 +111,19 @@ scripts/db_sync.py      cross-platform DB snapshot sync
 
 ## Current State
 
-**Built so far (foundation):** Auth, role-based navigation, leave apply/approve flow (incl. nodal routing), leave balances (basic), admin console, impersonation, reports shell, hub dashboards, test seed data.
+**Built so far (foundation):** Auth, role-based navigation, leave apply/approve flow (incl. nodal routing), leave balances (basic), admin console, impersonation, reports shell, hub dashboards.
+
+**Masters UI:** Departments/designations — inline edit + activate/deactivate. **Leave Types** — create/edit collapsed by default; validation rules as toggles (no raw JSON). **Entitlements** — credit frequency per rule (EL = half-yearly, 15+15). **Holidays** — closed/RH filter (closed default), add form collapsed; RH = any 2 per staff per year. **Workflows** — edit config matching rules + approval steps.
+
+**Sample data:** Purge via `cd backend && .venv\Scripts\python.exe scripts/purge_test_data.py --reseed` (keeps departments/designations). **Avoid** `purge_all_test_data.py` without re-running seeds 009+010.
+
+**HR Operations:** Bulk CSV import **removed** from nav and UI — onboard one employee at a time only.
+
+**Latest (2026-07-01):** **CCS/DoPT Casual Leave** — CL may attach to weekends/holidays (not debited); 8-day calendar absence cap; sandwich ban with EL/HPL; half-day CL → next-day regular leave exception; Apply UX guidance + span preview; seed `014_cl_dopt_rules`. Tests + frontend build ✓.
+
+**Latest (2026-06-30):** Staff numbers are **one global 7-digit series starting at `1000001`** (`1000002`, … up to `1999999`). Leading `1` is fixed; staff group is classification only (can change on promote). Numbers **never reused**. **Rejoin** = same person, same number; **promote/demote** = same number, group/designation updated; **new hire** = next number only.
+
+**Prior fix (2026-06-30):** Sidebar submenu flyouts align correctly during impersonation.
 
 **Not built yet (current priority):** Full **transaction logic** for the four core areas below — correct, reliable rules that govern how data moves and stays consistent.
 
@@ -126,6 +138,7 @@ scripts/db_sync.py      cross-platform DB snapshot sync
 | Status | What exists | What transaction logic is still needed |
 |---|---|---|
 | Shell | Add employee form, CSV bulk import, auto-create login (username = emp code, temp password) | Full registration workflow: validation rules, approval before account goes live, linking user role (STAFF/HOD) at registration time, transfers between departments, deactivation/rejoin, password policy on first login |
+| **Done (2026-06-30)** | **Auto staff number allotment** — global series `1000001`–`1999999`; staff group is classification only; numbers never reused | — |
 | Shell | Admin can create standalone users (`users.py`) | Clear rule: when is a user created with vs without an employee record; NODAL_OFFICER role missing from admin user-create |
 | Gap | — | Self-registration (if needed for AIIMS), document upload at join, probation period flags |
 
@@ -138,8 +151,9 @@ scripts/db_sync.py      cross-platform DB snapshot sync
 | **Staff registration fields** | Verified 2026-06-29 — see **Staff Registration Field Spec** below |
 | **Department list** | In DB 2026-06-29 — 57 departments (`backend/seeds/data/aiims_departments.py`, seed `010`) |
 | **Designation list** | In DB 2026-06-29 — 39 designations (`backend/seeds/data/aiims_designations.py`, seed `009`) |
+| **2026 holiday calendar** | In DB 2026-07-01 — 18 gazetted + 29 restricted (`backend/seeds/data/aiims_holidays_2026.py`, seed `013`) from AIIMS Bibinagar OO/2025/472 + amendments |
 
-**Load into DB:** `cd backend && python seeds/run.py` (seeds 009 + 010 are idempotent). **Ran locally 2026-06-29** — 57 departments + 39 designations confirmed in PostgreSQL.
+**Load into DB:** `cd backend && python seeds/run.py` (seeds are idempotent). **Ran locally 2026-06-29** — 57 departments + 39 designations confirmed in PostgreSQL. **Ran locally 2026-07-01** — 47 holidays for 2026 confirmed.
 
 #### Staff Registration Field Spec (owner list — verified & cleaned)
 
@@ -219,7 +233,8 @@ All-caps names normalised for display (e.g. NURSING → Nursing, PULMONARY MEDIC
 | **Done (2026-06-30)** | **Atomic final approval** — balance lock, fund check, deduct + ledger + APPROVED in one commit; idempotent recall | Sanction PDF polish |
 | **Done (2026-06-30)** | **Multi-stage balance check** — pending applications reserved at apply, forward, approve, modify | — |
 | **Done (2026-06-30)** | **Cancel/modify approved leave** — change-request workflow restores or adjusts balance on final approval | — |
-| **Done (2026-06-30)** | **Validation engine** — CL prefix/suffix (holidays + weekends) from config, MC requirement, min notice (EL), max stretch, workflow min/max days | Leave combination bans |
+| **Done (2026-06-30)** | **Validation engine** — MC requirement, min notice (EL), max stretch, workflow min/max days | **Done (2026-07-01)** CL DoPT rules: allow holiday/weekend attachment, 8-day absence span, EL/HPL sandwich ban, half-day emergency continuation |
+| **Done (2026-06-30)** | **CL prefix/suffix** from config (legacy block flags for non-CL types) | — |
 | **Done (2026-06-30)** | **AIIMS Bibinagar form catalogue** — `GET /leave-form-templates` + Apply screen links by category/leave type | Host PDFs in-repo if institute URLs change |
 | **Done (2026-06-30)** | **Jan-1 annual credit scheduler** (optional, `ANNUAL_CREDIT_SCHEDULER_ENABLED`); manual button still available | — |
 | Partial | Carry-forward (EL cap 300); one annual credit run (1 Jan) for CCS + residents | Year-end closing automation |
@@ -250,9 +265,9 @@ Step 5: Year-end / special   → Closing, encashment, LOP, comp-off (as AIIMS re
 
 **Built so far (foundation):** Auth, role-based navigation, leave apply/approve flow (incl. nodal routing), leave balances (basic), admin console, impersonation, reports shell, hub dashboards, test seed data.
 
-**Latest work (2026-06-30):** Leave transaction hardening — pending-balance checks at all approval stages; cancel/modify approved leave; config-driven validation (CL prefix/suffix, MC, EL notice); AIIMS Bibinagar form template API + Apply UI; Jan-1 annual credit scheduler. Migration `d4e5f6a7b8c9`. Seed `005_validation_rules_update`. Frontend `npm run build` ✓.
+**Latest work (2026-06-30):** Nav & UX fixes — dedicated **Leave Forms** catalogue (`/leave-forms`); **Login As User** in Admin Console → Users & Roles; employee directory read-only with separate **Lifecycle** and **Bulk Import** menus; policy matrix resilient loading + empty-state guidance; **ADMIN** added to report access (frontend + backend). Frontend `npm run build` ✓.
 
-**Prior (2026-06-30):** Role-requirements gap build (see alignment section). Frontend `npm run build` ✓.
+**Prior (2026-06-30):** Leave transaction hardening — pending-balance checks at all approval stages; cancel/modify approved leave; config-driven validation; AIIMS Bibinagar form template API + Apply UI; Jan-1 annual credit scheduler. Migration `d4e5f6a7b8c9`. Seed `005_validation_rules_update`.
 
 **Git:** Uncommitted — leave hardening slice + prior role alignment.
 
@@ -351,9 +366,9 @@ Use this ladder. **Default = keep building; fix only when a trigger fires.**
 
 **Run locally:** `cd backend && alembic upgrade head` (applies `d4e5f6a7b8c9` leave-application extensions). `python seeds/run.py` (includes `005_validation_rules_update`). Restart backend + frontend.
 
-**Smoke test:** Apply two overlapping CL requests — second should fail on balance. Approve leave → request cancellation → final approve → balance restored. Apply page shows Bibinagar form links + live balance projection. Approval inbox shows effective balance.
+**Smoke test:** Apply CL spanning a weekend — only working days debited; projection shows calendar absence span. CL Fri + EL Mon (with existing approved CL) should reject sandwich. Half-day CL then EL next day (with prior CL on record) should allow. Run `python seeds/run.py` for seed `014_cl_dopt_rules` on existing DBs.
 
-**Next Action:** Year-end closing / encashment rules when owner supplies policy; optional document upload on apply.
+**Next Action:** If Login As or policy matrix look empty, run `cd backend && alembic upgrade head` (applies pending migrations including `parent_nodal_user_id`). Then refresh Admin Console → Users & Roles.
 
 
 ---

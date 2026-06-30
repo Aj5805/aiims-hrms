@@ -2,11 +2,46 @@
 
 ## Current State
 
-**Stage:** Early active development — **Step 1 Masters complete in local DB.** 57 departments and 39 designations loaded via seeds 009–010; staff registration field spec in `PROJECT_CONTEXT.md` (not yet in `employees` schema). Test seed data (007, 008, demo) still present alongside real masters.
+**Stage:** Early active development — masters in DB; staff registration fields on `employees` + onboard form; auto staff numbering live.
 
-**Next:** Implement Phase 1 staff registration fields in DB/API/form (mobile, address, Aadhaar, PAN, etc.).
+**Next:** Continue core transaction logic (registration hardening, leave rules).
 
 **Memory:** `PROJECT_CONTEXT.md` is the live handoff (auto-loaded by agents). This file holds session history.
+
+---
+
+## Session Summary (2026-06-30 — impersonation nav, staff numbering)
+
+### Done
+
+1. **Impersonation submenu alignment** — Sidebar flyouts portal to `document.body` and anchor to the hovered item; desktop sidebar uses `transform-none` so fixed positioning works when the amber impersonation banner is visible.
+
+2. **Auto staff number allotment** — Owner-requested feature for onboarding:
+   - Eight **staff groups** (admin, faculty, nursingofficer, seniorNursingofficer, collegeOfNursing, SR, JR, PG) stored on the employee record for classification and leave rules.
+   - **Global 7-digit series** starting at **`1000001`** (not group-prefixed — owner confirmed staff may switch groups without changing number).
+   - `staff_number_sequences` table + migrations `e5f6a7b8c9d0`, `f6a7b8c9d0e1`; seed `011`.
+   - APIs: `/employees/staff-groups`, `/employees/suggest-staff-group`, `/employees/next-staff-number`.
+   - Onboard form: staff group dropdown (auto-suggested), preview of next number, optional manual override for legacy imports.
+   - **Promote/demote** lifecycle now updates `staff_group` from new designation; **emp_code unchanged**.
+
+3. **Owner-confirmed lifecycle policy** (documented in `PROJECT_CONTEXT.md`):
+   - **Promote / demote** → keep same staff number; update designation + staff group.
+   - **Resign** → keep number, mark inactive; number never reused.
+   - **Rejoin (same person)** → reactivate same record and number.
+   - **Brand-new hire** → next number in global series only.
+
+4. **Impersonation password gate** (prior same day) — Login As User no longer forces password change; session persisted synchronously.
+
+### Validation
+
+- `pytest tests/unit/test_staff_number.py` ✓
+- `npm run build` ✓
+- Alembic migrations applied locally through `f6a7b8c9d0e1`
+
+### Not done
+
+- CSV bulk import does not yet auto-allot staff numbers (still requires `emp_code` column).
+- Owner has not supplied alternate prefix if `1` series should differ by campus/year.
 
 ---
 

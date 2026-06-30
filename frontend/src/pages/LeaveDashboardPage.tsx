@@ -277,6 +277,12 @@ export default function LeaveDashboardPage() {
           My Applications
         </Link>
         <Link
+          to="/leave-forms"
+          className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition-colors"
+        >
+          Leave Forms
+        </Link>
+        <Link
           to="/leave-account"
           id="profile-account-btn"
           className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition-colors"

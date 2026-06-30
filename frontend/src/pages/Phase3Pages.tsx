@@ -1,75 +1,16 @@
 import { useState, useEffect } from 'react';
 import type { FormEvent, ChangeEvent } from 'react';
 import {
-  leaveTypesApi,
   entitlementRulesApi,
   holidayApi,
-  workflowApi,
   balancesApi,
 } from '../api/phase3_endpoints';
+import { LeaveTypesPanel } from './LeaveTypesPanel';
+import { WorkflowPanel } from './WorkflowPanel';
 import { PageHeader } from '../components/PageHeader';
 
-// ── Leave Types ────────────────────────────────────────────────────────────
-
-export function LeaveTypesPanel() {
-  const [items, setItems] = useState<Record<string, unknown>[]>([]);
-  const load = async () => {
-    const { data } = await leaveTypesApi.list({ include_inactive: true });
-    setItems(data);
-  };
-  useEffect(() => { load(); }, []);
-
-  const toggleActive = async (lt: Record<string, unknown>) => {
-    await leaveTypesApi.update(lt.id as string, { is_active: !lt.is_active });
-    load();
-  };
-
-  return (
-    <div className="overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Code</th>
-              <th>Name</th>
-              <th>Scheme</th>
-              <th className="text-center">Half-Day</th>
-              <th className="text-center">MC Req.</th>
-              <th className="text-center">Carry Fwd</th>
-              <th className="text-center">Encashable</th>
-              <th>Status</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((lt) => (
-              <tr key={lt.id as string} className={lt.is_active === false ? 'opacity-60' : ''}>
-                <td className="font-mono font-medium">{lt.code as string}</td>
-                <td>{lt.name as string}</td>
-                <td>
-                  <span className="badge badge-blue">{lt.scheme as string}</span>
-                </td>
-                <td className="text-center">{lt.is_half_day_allowed ? '✓' : '—'}</td>
-                <td className="text-center">{lt.requires_mc ? '✓' : '—'}</td>
-                <td className="text-center">{lt.carry_forward ? '✓' : '—'}</td>
-                <td className="text-center">{lt.encashable ? '✓' : '—'}</td>
-                <td>{lt.is_active !== false ? <span className="text-emerald-700 font-bold text-xs">Active</span> : <span className="text-slate-400 text-xs">Inactive</span>}</td>
-                <td>
-                  <button type="button" onClick={() => void toggleActive(lt)} className="text-xs font-bold text-blue-600 hover:underline">
-                    {lt.is_active !== false ? 'Deactivate' : 'Activate'}
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {items.length === 0 && (
-              <tr><td colSpan={9} className="py-10 text-center text-slate-400">No leave types configured.</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
+export { LeaveTypesPanel } from './LeaveTypesPanel';
+export { WorkflowPanel } from './WorkflowPanel';
 
 export function LeaveTypesPage() {
   return (
@@ -88,46 +29,102 @@ export function LeaveTypesPage() {
 
 // ── Entitlement Rules ──────────────────────────────────────────────────────
 
+const CREDIT_FREQUENCY_OPTIONS = [
+  { value: 'ANNUAL', label: 'Annual (once per year)' },
+  { value: 'HALF_YEARLY', label: 'Half-yearly (each calendar half)' },
+  { value: 'MONTHLY', label: 'Monthly (prorata)' },
+] as const;
+
 export function EntitlementRulesPanel() {
   const [items, setItems] = useState<Record<string, unknown>[]>([]);
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [message, setMessage] = useState('');
+
   const load = async () => {
     const { data } = await entitlementRulesApi.list();
     setItems(data);
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { void load(); }, []);
+
+  const categories = [...new Set(items.map((r) => r.category_code as string))].sort();
+  const filtered = categoryFilter
+    ? items.filter((r) => r.category_code === categoryFilter)
+    : items;
+
+  const saveFrequency = async (ruleId: string, credit_frequency: string) => {
+    try {
+      await entitlementRulesApi.update(ruleId, { credit_frequency });
+      setMessage('Credit frequency saved.');
+      await load();
+      setTimeout(() => setMessage(''), 2500);
+    } catch {
+      setMessage('Could not save credit frequency.');
+    }
+  };
 
   return (
-    <div className="overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Category</th>
-              <th>Leave Type</th>
-              <th>Year Ref</th>
-              <th className="text-center">Days/Yr</th>
-              <th className="text-center">Per Month</th>
-              <th className="text-center">Max/Stretch</th>
-              <th className="text-center">Max/Tenure</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((r) => (
-              <tr key={r.id as string}>
-                <td className="font-mono text-xs">{r.category_code as string}</td>
-                <td className="font-mono text-xs">{r.leave_type_code as string}</td>
-                <td className="text-xs">{r.year_ref != null ? String(r.year_ref) : '—'}</td>
-                <td className="text-right">{r.days_per_year != null ? String(r.days_per_year) : '—'}</td>
-                <td className="text-right">{r.prorata_rate != null ? String(r.prorata_rate) : '—'}</td>
-                <td className="text-right">{r.max_at_a_stretch != null ? String(r.max_at_a_stretch) : '—'}</td>
-                <td className="text-right">{r.max_in_tenure != null ? String(r.max_in_tenure) : '—'}</td>
+    <div className="space-y-4">
+      {message && (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-700">{message}</div>
+      )}
+      <p className="text-sm text-slate-600">
+        Defines how leave is credited to balances. Example: <strong>EL</strong> is typically{' '}
+        <strong>half-yearly</strong> — 15 days at the start of January and 15 days at the start of July (30 days per calendar year).
+      </p>
+      <div className="flex flex-wrap gap-3 items-center">
+        <label className="text-sm text-slate-600">Category</label>
+        <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="form-select w-44">
+          <option value="">All categories</option>
+          {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </div>
+      <div className="overflow-hidden border border-gray-200 rounded-lg">
+        <div className="overflow-x-auto">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Leave Type</th>
+                <th>Credit Frequency</th>
+                <th className="text-center">Days/Yr</th>
+                <th className="text-center">Per Month</th>
+                <th className="text-center">Max/Stretch</th>
+                <th className="text-center">Max/Tenure</th>
               </tr>
-            ))}
-            {items.length === 0 && (
-              <tr><td colSpan={7} className="py-10 text-center text-slate-400">No entitlement rules configured.</td></tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {filtered.map((r) => (
+                <tr key={r.id as string}>
+                  <td className="font-mono text-xs">{r.category_code as string}</td>
+                  <td className="font-mono text-xs">{r.leave_type_code as string}</td>
+                  <td>
+                    <select
+                      value={(r.credit_frequency as string) || 'ANNUAL'}
+                      onChange={(e) => void saveFrequency(r.id as string, e.target.value)}
+                      className="form-select text-xs py-1.5 min-w-[10rem]"
+                    >
+                      {CREDIT_FREQUENCY_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                    {(r.credit_frequency as string) === 'HALF_YEARLY' && r.days_per_year != null && (
+                      <div className="text-[11px] text-slate-500 mt-1">
+                        {Number(r.days_per_year) / 2} days per half
+                      </div>
+                    )}
+                  </td>
+                  <td className="text-right">{r.days_per_year != null ? String(r.days_per_year) : '—'}</td>
+                  <td className="text-right">{r.prorata_rate != null ? String(r.prorata_rate) : '—'}</td>
+                  <td className="text-right">{r.max_at_a_stretch != null ? String(r.max_at_a_stretch) : '—'}</td>
+                  <td className="text-right">{r.max_in_tenure != null ? String(r.max_in_tenure) : '—'}</td>
+                </tr>
+              ))}
+              {filtered.length === 0 && (
+                <tr><td colSpan={7} className="py-10 text-center text-slate-400">No entitlement rules configured.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
@@ -150,9 +147,19 @@ export function EntitlementRulesPage() {
 
 // ── Holiday Master ─────────────────────────────────────────────────────────
 
+type HolidayTypeFilter = 'GAZETTED' | 'RESTRICTED' | 'ALL';
+
+function holidayTypeLabel(type: string): string {
+  if (type === 'GAZETTED') return 'Closed';
+  if (type === 'RESTRICTED') return 'Restricted (RH)';
+  return type;
+}
+
 export function HolidayPanel() {
   const [items, setItems] = useState<Record<string, unknown>[]>([]);
   const [year, setYear] = useState(new Date().getFullYear());
+  const [typeFilter, setTypeFilter] = useState<HolidayTypeFilter>('GAZETTED');
+  const [showAddForm, setShowAddForm] = useState(false);
   const [name, setName] = useState('');
   const [date, setDate] = useState('');
   const [type, setType] = useState('GAZETTED');
@@ -161,12 +168,17 @@ export function HolidayPanel() {
     const { data } = await holidayApi.list(year);
     setItems(data);
   };
-  useEffect(() => { load(); }, [year]);
+  useEffect(() => { void load(); }, [year]);
+
+  const visibleItems = typeFilter === 'ALL'
+    ? items
+    : items.filter((h) => h.holiday_type === typeFilter);
 
   const add = async (e: FormEvent) => {
     e.preventDefault();
     await holidayApi.create({ year, holiday_date: date, holiday_name: name, holiday_type: type });
     setName(''); setDate('');
+    setShowAddForm(false);
     load();
   };
 
@@ -176,34 +188,72 @@ export function HolidayPanel() {
     load();
   };
 
+  const closedCount = items.filter((h) => h.holiday_type === 'GAZETTED').length;
+  const rhCount = items.filter((h) => h.holiday_type === 'RESTRICTED').length;
+
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <select
-          value={year}
-          onChange={(e) => setYear(+e.target.value)}
-          className="form-select w-28"
-        >
-          {[2025, 2026, 2027, 2028].map((y) => <option key={y}>{y}</option>)}
-        </select>
+      <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 space-y-1">
+        <p><strong>Closed holidays</strong> — institute is closed; applies to all staff.</p>
+        <p><strong>Restricted holidays (RH)</strong> — each employee may avail <strong>any two</strong> from the RH list in a calendar year (subject to approval).</p>
       </div>
-      <form onSubmit={add} className="flex flex-wrap gap-3 items-end bg-gray-50 p-4 rounded-lg border border-gray-200">
-        <div className="flex-1 min-w-32">
-          <label className="form-label">Date</label>
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="form-input" required />
+
+      <div className="flex flex-wrap gap-3 items-center justify-between">
+        <div className="flex flex-wrap gap-2">
+          {([
+            ['GAZETTED', `Closed (${closedCount})`],
+            ['RESTRICTED', `Restricted (${rhCount})`],
+            ['ALL', `All (${items.length})`],
+          ] as const).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setTypeFilter(value)}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition ${
+                typeFilter === value
+                  ? 'bg-slate-900 text-white border-slate-900'
+                  : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
-        <div className="flex-[3] min-w-48">
-          <label className="form-label">Holiday Name</label>
-          <input placeholder="e.g. Republic Day" value={name} onChange={(e) => setName(e.target.value)} className="form-input" required />
-        </div>
-        <div className="flex-1 min-w-36">
-          <label className="form-label">Type</label>
-          <select value={type} onChange={(e) => setType(e.target.value)} className="form-select">
-            <option>GAZETTED</option><option>RESTRICTED</option><option>OPTIONAL</option>
+        <div className="flex flex-wrap gap-2 items-center">
+          <select
+            value={year}
+            onChange={(e) => setYear(+e.target.value)}
+            className="form-select w-28"
+          >
+            {[2025, 2026, 2027, 2028].map((y) => <option key={y}>{y}</option>)}
           </select>
+          <button type="button" onClick={() => setShowAddForm((v) => !v)} className="btn-primary btn-sm">
+            {showAddForm ? 'Cancel' : '+ Add Holiday'}
+          </button>
         </div>
-        <button type="submit" className="btn-primary btn-sm self-end mb-0.5">Add Holiday</button>
-      </form>
+      </div>
+
+      {showAddForm && (
+        <form onSubmit={add} className="flex flex-wrap gap-3 items-end bg-gray-50 p-4 rounded-lg border border-gray-200">
+          <div className="flex-1 min-w-32">
+            <label className="form-label">Date</label>
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="form-input" required />
+          </div>
+          <div className="flex-[3] min-w-48">
+            <label className="form-label">Holiday Name</label>
+            <input placeholder="e.g. Republic Day" value={name} onChange={(e) => setName(e.target.value)} className="form-input" required />
+          </div>
+          <div className="flex-1 min-w-36">
+            <label className="form-label">Type</label>
+            <select value={type} onChange={(e) => setType(e.target.value)} className="form-select">
+              <option value="GAZETTED">Closed</option>
+              <option value="RESTRICTED">Restricted (RH)</option>
+            </select>
+          </div>
+          <button type="submit" className="btn-primary btn-sm self-end mb-0.5">Save Holiday</button>
+        </form>
+      )}
+
       <div className="overflow-hidden border border-gray-200 rounded-lg">
         <table className="data-table">
           <thead>
@@ -216,12 +266,14 @@ export function HolidayPanel() {
             </tr>
           </thead>
           <tbody>
-            {items.map((h) => (
+            {visibleItems.map((h) => (
               <tr key={h.id as string}>
                 <td className="font-mono">{h.holiday_date as string}</td>
                 <td>{h.holiday_name as string}</td>
                 <td>
-                  <span className="badge badge-amber">{h.holiday_type as string}</span>
+                  <span className={`badge ${h.holiday_type === 'GAZETTED' ? 'badge-blue' : 'badge-amber'}`}>
+                    {holidayTypeLabel(h.holiday_type as string)}
+                  </span>
                 </td>
                 <td className="text-slate-500">{h.applicable_to as string}</td>
                 <td className="text-right">
@@ -229,8 +281,8 @@ export function HolidayPanel() {
                 </td>
               </tr>
             ))}
-            {items.length === 0 && (
-              <tr><td colSpan={5} className="py-10 text-center text-slate-400">No holidays for {year}</td></tr>
+            {visibleItems.length === 0 && (
+              <tr><td colSpan={5} className="py-10 text-center text-slate-400">No {typeFilter === 'ALL' ? '' : holidayTypeLabel(typeFilter).toLowerCase()} holidays for {year}</td></tr>
             )}
           </tbody>
         </table>
@@ -254,102 +306,6 @@ export function HolidayPage() {
 }
 
 // ── Workflow Configurator ──────────────────────────────────────────────────
-
-export function WorkflowPanel() {
-  const [configs, setConfigs] = useState<Record<string, unknown>[]>([]);
-  const [simResult, setSimResult] = useState<Record<string, unknown> | null>(null);
-  const [name, setName] = useState('');
-
-  const load = async () => {
-    const { data } = await workflowApi.list();
-    setConfigs(data);
-  };
-  useEffect(() => { load(); }, []);
-
-  const createCfg = async () => {
-    if (!name.trim()) return;
-    await workflowApi.create({ config_name: name });
-    setName('');
-    load();
-  };
-
-  const simulate = async () => {
-    const cat = (document.getElementById('sim-cat') as HTMLInputElement).value;
-    const lt = (document.getElementById('sim-lt') as HTMLInputElement).value;
-    const days = +(document.getElementById('sim-days') as HTMLInputElement).value || 1;
-    const { data } = await workflowApi.simulate({ category_code: cat, leave_type_code: lt, days });
-    setSimResult(data);
-  };
-
-  return (
-    <div className="space-y-4">
-      <div className="flex gap-3">
-        <input
-          id="wf-new-name"
-          placeholder="New workflow config name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className="form-input flex-1"
-        />
-        <button onClick={createCfg} className="btn-primary">Create</button>
-      </div>
-      <div className="grid gap-5 md:grid-cols-2">
-        <div className="border border-slate-200 rounded-lg p-5">
-          <h3 className="text-sm font-semibold text-slate-800 mb-4">Existing Workflow Chains</h3>
-          {configs.map((c) => (
-            <details key={c.id as string} className="mb-2 border border-slate-200 rounded-lg group">
-              <summary className="px-4 py-3 cursor-pointer font-medium text-sm flex justify-between items-center group-open:border-b border-slate-100">
-                <span>{c.config_name as string}</span>
-                <span className="text-slate-400 text-xs">{(c.steps as unknown[])?.length || 0} steps</span>
-              </summary>
-              <div className="px-4 py-3 text-xs space-y-2">
-                {((c.steps as Record<string, unknown>[]) || []).map((s) => (
-                  <div key={s.id as string} className="flex gap-3 text-slate-600 items-center">
-                    <span className="w-5 h-5 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center font-mono text-xs shrink-0">{s.step_order as number}</span>
-                    <span className="font-medium flex-1">{s.approver_role as string}</span>
-                    <span className="text-slate-400">{s.sla_hours as number}h</span>
-                    {Boolean(s.is_final_authority) && <span className="badge badge-green text-[10px]">Final</span>}
-                  </div>
-                ))}
-              </div>
-            </details>
-          ))}
-          {configs.length === 0 && <p className="text-slate-400 text-sm">No workflows configured.</p>}
-        </div>
-        <div className="border border-slate-200 rounded-lg p-5">
-          <h3 className="text-sm font-semibold text-slate-800 mb-4">Simulate Routing</h3>
-          <div className="grid grid-cols-3 gap-2 mb-3">
-            <input id="sim-cat" placeholder="Category" className="form-input" />
-            <input id="sim-lt" placeholder="Leave Type" className="form-input" />
-            <input id="sim-days" type="number" defaultValue={3} min={1} className="form-input" />
-          </div>
-          <button id="simulate-btn" onClick={simulate} className="btn-secondary w-full">Run Simulation</button>
-          {simResult && (
-            <div className="mt-4 text-sm border-t border-slate-100 pt-4">
-              {simResult.matched ? (
-                <div>
-                  <p className="text-emerald-700 font-semibold mb-3">
-                    Matched: {(simResult.config as Record<string, unknown>).config_name as string}
-                  </p>
-                  <div className="space-y-2">
-                    {((simResult.config as Record<string, unknown>).steps as Record<string, unknown>[])?.map((s) => (
-                      <div key={s.id as string} className="flex gap-3 text-slate-600">
-                        <span className="font-mono text-slate-400">Step {s.step_order as number}</span>
-                        <span className="font-medium">{s.approver_role as string}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <p className="text-red-600">No workflow matched for the given inputs.</p>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export function WorkflowPage() {
   return (

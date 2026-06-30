@@ -20,9 +20,20 @@ from app.schemas import (
     EmployeeCreate,
     EmployeeResponse,
     EmployeeUpdate,
+    StaffGroupInfo,
+    StaffGroupSuggestion,
+    StaffNumberPreview,
 )
 from app.services.leave_balance_bootstrap import bootstrap_leave_balances
 from app.services.leave_rules import fetch_eligible_leave_types
+from app.services.staff_number import (
+    StaffNumberError,
+    allocate_staff_number,
+    preview_next_staff_number,
+    resolve_staff_group,
+    validate_staff_group,
+)
+from app.data.staff_number_groups import STAFF_NUMBER_GROUPS
 
 router = APIRouter(prefix="/employees", tags=["employees"])
 
@@ -145,6 +156,62 @@ async def list_employees(
     return [_row_to_response(r) for r in rows]
 
 
+@router.get("/staff-groups", response_model=list[StaffGroupInfo])
+async def list_staff_groups(
+    _: dict = Depends(require_role(*_EDITOR_ROLES)),
+):
+    return [
+        StaffGroupInfo(code=code, label=spec["label"])
+        for code, spec in STAFF_NUMBER_GROUPS.items()
+    ]
+
+
+@router.get("/suggest-staff-group", response_model=StaffGroupSuggestion)
+async def suggest_staff_group(
+    designation_name: str = Query(..., min_length=1),
+    department_code: str = Query(..., min_length=1),
+    category_code: str | None = Query(None),
+    _: dict = Depends(require_role(*_EDITOR_ROLES)),
+    db: AsyncSession = Depends(get_db),
+):
+    if not category_code:
+        des = await db.execute(
+            text(
+                """
+                SELECT c.code FROM designations d
+                JOIN employee_categories c ON d.category_id = c.id
+                WHERE d.name = :n
+                """
+            ),
+            {"n": designation_name},
+        )
+        row = des.fetchone()
+        category_code = row[0] if row else None
+
+    suggested = resolve_staff_group(
+        designation_name=designation_name,
+        category_code=category_code,
+        department_code=department_code,
+    )
+    if not suggested:
+        return StaffGroupSuggestion(staff_group=None, label=None)
+    spec = STAFF_NUMBER_GROUPS.get(suggested)
+    return StaffGroupSuggestion(staff_group=suggested, label=spec["label"] if spec else None)
+
+
+@router.get("/next-staff-number", response_model=StaffNumberPreview)
+async def next_staff_number(
+    staff_group: str | None = Query(None),
+    _: dict = Depends(require_role(*_EDITOR_ROLES)),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        next_code = await preview_next_staff_number(db, staff_group)
+    except StaffNumberError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return StaffNumberPreview(next_emp_code=next_code)
+
+
 def _assert_employee_access(scope: dict, employee_id: str, own_emp_id: str | None) -> None:
     if scope["scope"] != "all" and employee_id != own_emp_id and employee_id not in (scope["employee_ids"] or []):
         raise HTTPException(status_code=403, detail="Not authorized to view this employee")
@@ -241,7 +308,19 @@ async def create_employee(
     if not des_row:
         raise HTTPException(status_code=400, detail=f"Unknown designation: {body.designation_name}")
 
-    pay_level = body.pay_level or des_row.grade_pay_level
+    try:
+        staff_group = validate_staff_group(body.staff_group)
+    except StaffNumberError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    emp_code = (body.emp_code or "").strip()
+    if not emp_code:
+        try:
+            emp_code = await allocate_staff_number(db, staff_group)
+        except StaffNumberError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    pay_level = body.pay_level
 
     eid = str(uuid.uuid4())
     try:
@@ -264,7 +343,7 @@ async def create_employee(
                      :pan, :aadhaar, :nps, :pfms, :grade, :pay_level)
             """),
             {
-                "id": eid, "ec": body.emp_code, "nm": body.name, "g": body.gender,
+                "id": eid, "ec": emp_code, "nm": body.name, "g": body.gender,
                 "dob": body.dob, "doj": body.doj,
                 "cat": str(cat_row[0]), "dept": str(dept_row[0]), "des": str(des_row[0]),
                 "em": body.email, "hie": body.has_institutional_email, "pe": body.personal_email,
@@ -274,7 +353,7 @@ async def create_employee(
                 "mobile": body.mobile, "alt_mobile": body.alt_mobile,
                 "qual": body.last_qualification, "doj_act": body.doj_actual,
                 "dol": body.dol_last_working, "incr": body.next_increment_date,
-                "staff_grp": body.staff_group, "ph": body.is_physically_handicapped,
+                "staff_grp": staff_group, "ph": body.is_physically_handicapped,
                 "flat": body.type_of_flat, "caste": body.caste_category,
                 "religion": body.religion, "bank_acct": body.bank_account_no,
                 "bank_name": body.bank_name, "ifsc": body.ifsc_code,
@@ -284,19 +363,19 @@ async def create_employee(
         )
     except IntegrityError:
         await db.rollback()
-        raise HTTPException(status_code=409, detail=f"Employee with emp_code '{body.emp_code}' already exists")
+        raise HTTPException(status_code=409, detail=f"Employee with emp_code '{emp_code}' already exists")
 
     existing_user = await db.execute(
         text("SELECT id FROM users WHERE username = :un OR employee_id = :eid"),
-        {"un": body.emp_code, "eid": eid},
+        {"un": emp_code, "eid": eid},
     )
     if not existing_user.fetchone():
         await db.execute(
             text("""
                 INSERT INTO users (id, username, password_hash, employee_id, role, is_active, must_change_password)
-                VALUES (uuid_generate_v4(), :un, :ph, :eid, 'STAFF', true, true)
+                VALUES (uuid_generate_v4(), :un, :ph, :eid, 'STAFF', true, false)
             """),
-            {"un": body.emp_code, "ph": hash_password(body.emp_code), "eid": eid},
+            {"un": emp_code, "ph": hash_password(emp_code), "eid": eid},
         )
 
     await bootstrap_leave_balances(
@@ -409,12 +488,25 @@ async def employee_lifecycle(
         new_desg = body.get("designation_name")
         if not new_desg:
             raise HTTPException(status_code=400, detail="designation_name required for promote/demote")
-        des = await db.execute(text("SELECT id FROM designations WHERE name = :n"), {"n": new_desg})
+        des = await db.execute(
+            text(
+                """
+                SELECT des.id, c.code AS category_code, d.code AS department_code
+                FROM designations des
+                JOIN employee_categories c ON des.category_id = c.id
+                JOIN employees e ON e.id = :eid
+                JOIN departments d ON e.department_id = d.id
+                WHERE des.name = :n
+                """
+            ),
+            {"n": new_desg, "eid": employee_id},
+        )
         des_row = des.fetchone()
         if not des_row:
             raise HTTPException(status_code=400, detail=f"Unknown designation: {new_desg}")
-        updates: dict = {"desg_id": str(des_row[0]), "eid": employee_id}
+        updates: dict = {"desg_id": str(des_row.id), "eid": employee_id}
         set_parts = ["designation_id = :desg_id"]
+        dept_code = body.get("department_code") or des_row.department_code
         if body.get("department_code"):
             dept = await db.execute(text("SELECT id FROM departments WHERE code = :c"), {"c": body["department_code"]})
             dept_row = dept.fetchone()
@@ -422,6 +514,15 @@ async def employee_lifecycle(
                 raise HTTPException(status_code=400, detail="Unknown department")
             updates["dept_id"] = str(dept_row[0])
             set_parts.append("department_id = :dept_id")
+            dept_code = body["department_code"]
+        new_group = resolve_staff_group(
+            designation_name=new_desg,
+            category_code=des_row.category_code,
+            department_code=dept_code,
+        )
+        if new_group:
+            updates["staff_group"] = new_group
+            set_parts.append("staff_group = :staff_group")
         if body.get("pay_level"):
             updates["pay_level"] = body["pay_level"]
             set_parts.append("pay_level = :pay_level")
@@ -532,7 +633,7 @@ async def import_csv(
                         await db.execute(
                             text("""
                                 INSERT INTO users (id, username, password_hash, employee_id, role, is_active, must_change_password)
-                                VALUES (uuid_generate_v4(), :un, :ph, :eid, 'STAFF', true, true)
+                                VALUES (uuid_generate_v4(), :un, :ph, :eid, 'STAFF', true, false)
                             """),
                             {"un": emp_code, "ph": hash_password(emp_code), "eid": eid},
                         )

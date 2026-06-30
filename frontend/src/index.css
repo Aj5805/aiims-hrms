@@ -6,11 +6,12 @@
 
 /* ─── Design Tokens ─────────────────────────────────────────────────────── */
 :root {
-  /* Colors — all pages use slate palette exclusively */
-  --color-bg:           #f1f5f9;   /* slate-100 */
-  --color-surface:      #ffffff;
-  --color-border:       #e2e8f0;   /* slate-200 */
-  --color-border-muted: #f1f5f9;   /* slate-100 */
+  /* Colors — soft slate palette (avoid harsh pure white) */
+  --color-bg:           #e4eaf0;   /* muted blue-gray page wash */
+  --color-surface:      #f3f6f9;   /* card / panel — off-white */
+  --color-surface-alt:  #eef2f6;   /* header strip, nested panels */
+  --color-border:       #d5dee8;   /* slate-200 softened */
+  --color-border-muted: #e8edf2;
   --color-text-primary: #0f172a;   /* slate-900 */
   --color-text-body:    #334155;   /* slate-700 */
   --color-text-muted:   #64748b;   /* slate-500 */
@@ -66,7 +67,9 @@ body {
 
   /* ── Cards ── */
   .card {
-    @apply bg-white rounded-xl border border-slate-200 shadow-sm;
+    @apply rounded-xl border shadow-sm;
+    background: var(--color-surface);
+    border-color: var(--color-border);
   }
   .card-header {
     @apply px-5 py-3 border-b border-slate-100 flex items-center justify-between gap-3 shrink-0;
@@ -111,9 +114,11 @@ body {
     @apply block text-xs font-semibold text-slate-600 mb-1 leading-tight;
   }
   .dense-field-input {
-    @apply w-full bg-white border border-slate-300 rounded-md px-2.5 py-1.5 text-[13px] leading-snug
+    @apply w-full border rounded-md px-2.5 py-1.5 text-[13px] leading-snug
            text-slate-900 placeholder-slate-400 outline-none transition
            focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100/80;
+    background: var(--color-surface-alt);
+    border-color: var(--color-border);
   }
   .dense-field-input--code {
     @apply dense-field-input font-mono tracking-wide tabular-nums;
@@ -124,10 +129,12 @@ body {
     @apply block text-xs font-semibold text-slate-600 mb-1 uppercase tracking-wide;
   }
   .form-input {
-    @apply w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm
+    @apply w-full border rounded-lg px-3 py-2 text-sm
            text-slate-800 placeholder-slate-400
            outline-none transition
            focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100;
+    background: var(--color-surface-alt);
+    border-color: var(--color-border);
   }
   .form-select {
     @apply form-input cursor-pointer;
@@ -143,7 +150,9 @@ body {
     @apply btn bg-indigo-600 text-white hover:bg-indigo-700 focus:ring-indigo-500 shadow-sm;
   }
   .btn-secondary {
-    @apply btn bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 focus:ring-slate-400;
+    @apply btn text-slate-700 border hover:bg-slate-100/80 focus:ring-slate-400;
+    background: var(--color-surface-alt);
+    border-color: var(--color-border);
   }
   .btn-danger {
     @apply btn bg-red-600 text-white hover:bg-red-700 focus:ring-red-500 shadow-sm;

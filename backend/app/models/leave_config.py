@@ -57,6 +57,12 @@ class LeaveEntitlementRule(Base):
     category_id = Column(UUID(as_uuid=True), ForeignKey("employee_categories.id"), nullable=False)
     leave_type_id = Column(UUID(as_uuid=True), ForeignKey("leave_types.id"), nullable=False)
     year_ref = Column(String(20), nullable=False, comment="CALENDAR | TENURE | JOINING_DATE")
+    credit_frequency = Column(
+        String(20),
+        nullable=False,
+        default="ANNUAL",
+        comment="ANNUAL | HALF_YEARLY | MONTHLY",
+    )
     days_per_year = Column(Numeric(5, 2), nullable=True)
     prorata_rate = Column(Numeric(4, 2), nullable=True, comment="days per month (residency: 2.5)")
     year1_days = Column(Numeric(5, 2), nullable=True, comment="JR Acad: 30, yr2/3: 36")

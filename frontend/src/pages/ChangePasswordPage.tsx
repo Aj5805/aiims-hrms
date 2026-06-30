@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authApi } from '../api/endpoints';
 import { useAuthStore } from '../stores';
+import { isImpersonatingSession } from '../utils/authSession';
 
 export default function ChangePasswordPage() {
   const [currentPassword, setCurrentPassword] = useState('');
@@ -9,8 +10,19 @@ export default function ChangePasswordPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { user, setAuth } = useAuthStore();
+  const { user, adminToken, setAuth, dismissPasswordChange } = useAuthStore();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (isImpersonatingSession(adminToken)) {
+      navigate('/', { replace: true });
+    }
+  }, [adminToken, navigate]);
+
+  const handleSkip = () => {
+    dismissPasswordChange();
+    navigate('/', { replace: true });
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,13 +53,28 @@ export default function ChangePasswordPage() {
     }
   };
 
+  const isForcedPrompt = Boolean(user?.must_change_password) && !isImpersonatingSession(adminToken);
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#F0F4F8]">
+    <div className="min-h-screen flex items-center justify-center bg-[#F0F4F8] p-4">
       <div className="bg-white rounded-lg shadow-lg p-8 w-full max-w-md border-t-4 border-orange-500">
-        <h1 className="text-2xl font-bold text-gray-800 mb-1">Update Password</h1>
+        <div className="flex items-start justify-between gap-3 mb-1">
+          <h1 className="text-2xl font-bold text-gray-800">Update Password</h1>
+          {isForcedPrompt && (
+            <button
+              type="button"
+              onClick={handleSkip}
+              className="text-slate-400 hover:text-slate-600 text-xl leading-none"
+              title="Continue without changing"
+              aria-label="Close"
+            >
+              ×
+            </button>
+          )}
+        </div>
         <p className="text-gray-500 mb-6 text-sm">
-          {user?.must_change_password 
-            ? 'Your account requires a password change before proceeding.' 
+          {isForcedPrompt
+            ? 'You may update your password now, or continue and change it later from your profile.'
             : 'Change your current password.'}
         </p>
         
@@ -100,6 +127,16 @@ export default function ChangePasswordPage() {
             {loading ? 'Updating...' : 'Update Password'}
           </button>
         </form>
+
+        {isForcedPrompt && (
+          <button
+            type="button"
+            onClick={handleSkip}
+            className="w-full mt-3 py-2 text-sm font-medium text-slate-600 hover:text-slate-900"
+          >
+            Continue without changing
+          </button>
+        )}
       </div>
     </div>
   );

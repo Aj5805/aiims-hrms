@@ -45,12 +45,13 @@ async def create_rule(
     rid = str(uuid.uuid4())
     await db.execute(text("""
         INSERT INTO leave_entitlement_rules
-            (id, category_id, leave_type_id, year_ref, days_per_year, prorata_rate,
+            (id, category_id, leave_type_id, year_ref, credit_frequency, days_per_year, prorata_rate,
              year1_days, year2_plus_days, max_at_a_stretch, max_in_tenure, carry_forward, special_rules)
-        VALUES (:id, :cid, :lid, :yr, :dpy, :pr, :y1, :y2, :ms, :mt, :cf, :sr::jsonb)
+        VALUES (:id, :cid, :lid, :yr, :cfreq, :dpy, :pr, :y1, :y2, :ms, :mt, :cf, :sr::jsonb)
     """), {
         "id": rid, "cid": str(c_row[0]), "lid": str(lt_row[0]),
         "yr": body.get("year_ref", "CALENDAR"),
+        "cfreq": body.get("credit_frequency", "ANNUAL"),
         "dpy": body.get("days_per_year"), "pr": body.get("prorata_rate"),
         "y1": body.get("year1_days"), "y2": body.get("year2_plus_days"),
         "ms": body.get("max_at_a_stretch"), "mt": body.get("max_in_tenure"),
@@ -68,7 +69,7 @@ async def update_rule(
     db: AsyncSession = Depends(get_db),
 ):
     editable = ["days_per_year", "prorata_rate", "year1_days", "year2_plus_days",
-                "max_at_a_stretch", "max_in_tenure", "carry_forward"]
+                "max_at_a_stretch", "max_in_tenure", "carry_forward", "credit_frequency"]
     updates = {k: v for k, v in body.items() if k in editable}
     if not updates:
         raise HTTPException(status_code=400, detail="No editable fields")

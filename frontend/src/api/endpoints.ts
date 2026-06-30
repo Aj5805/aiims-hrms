@@ -18,6 +18,10 @@ export const employeesApi = {
   list: (params: Record<string, string | boolean>) =>
     api.get('/employees', { params }),
   get: (id: string) => api.get(`/employees/${id}`),
+  staffGroups: () => api.get('/employees/staff-groups'),
+  suggestStaffGroup: (params: { designation_name: string; department_code: string; category_code?: string }) =>
+    api.get('/employees/suggest-staff-group', { params }),
+  nextStaffNumber: () => api.get('/employees/next-staff-number'),
   eligibleLeaveTypes: (id: string) => api.get(`/employees/${id}/eligible-leave-types`),
   bootstrapLeaveBalances: (id: string) => api.post(`/employees/${id}/bootstrap-leave-balances`),
   create: (data: Record<string, unknown>) => api.post('/employees', data),

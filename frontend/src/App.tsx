@@ -1,14 +1,16 @@
 import { Routes, Route, Link, useNavigate, useLocation, Navigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { ReactNode } from 'react';
 import { useAuthStore } from './stores';
+import { isImpersonatingSession } from './utils/authSession';
 import LoginPage from './pages/LoginPage';
 import AdminLoginPage from './pages/AdminLoginPage';
 import EmployeeListPage from './pages/EmployeeListPage';
 import MastersPage from './pages/MastersPage';
 import { OpeningBalancePage } from './pages/Phase3Pages';
 import { MastersRedirect } from './components/MastersRedirect';
-import { ApplyLeavePage, MyApplicationsPage, ApprovalInboxPage } from './pages/Phase4Pages';
+import { ApplyLeavePage, MyApplicationsPage, ApprovalInboxPage, LeaveFormsPage } from './pages/Phase4Pages';
 import { MyLeaveAccountPage, YearEndProcessingPage } from './pages/Phase5Pages';
 import { NotificationBell, ReportsPage } from './pages/Phase678Pages';
 import { AdminDashboardPage } from './pages/AdminDashboardPage';
@@ -28,7 +30,7 @@ import { PageHeader } from './components/PageHeader';
 import AdminToolsPage from './pages/AdminToolsPage';
 import { MaintenancePage } from './pages/MaintenancePage';
 import { BroadcastBanner } from './components/BroadcastBanner';
-const REPORT_ROLES = ['ESTABLISHMENT_OFFICER', 'REGISTRAR', 'DIRECTOR', 'NODAL_OFFICER', 'NODAL_OFFICE'] as const;
+const REPORT_ROLES = ['ADMIN', 'ESTABLISHMENT_OFFICER', 'REGISTRAR', 'DIRECTOR', 'NODAL_OFFICER', 'NODAL_OFFICE'] as const;
 const ADMIN_ROLES = ['ADMIN'] as const;
 const CONFIG_ROLES = ['ADMIN', 'ESTABLISHMENT_OFFICER', 'REGISTRAR'] as const;
 const EMPLOYEE_MASTER_ROLES = ['ADMIN', 'ESTABLISHMENT_OFFICER', 'REGISTRAR', 'DIRECTOR', 'NODAL_OFFICER', 'NODAL_OFFICE'] as const;
@@ -37,6 +39,10 @@ const TEAM_VIEW_ROLES = ['HOD', 'NODAL_OFFICER', 'ADMIN', 'ESTABLISHMENT_OFFICER
 
 function hasRole(role: string | undefined, allowed: readonly string[]) {
   return !!role && allowed.includes(role);
+}
+
+function canEditHrLifecycle(role: string | undefined) {
+  return !!role && ['ADMIN', 'ESTABLISHMENT_OFFICER', 'REGISTRAR', 'NODAL_OFFICER'].includes(role);
 }
 
 function UnderConstructionPage({ title, breadcrumbs }: { title: string, breadcrumbs: { label: string, to?: string }[] }) {
@@ -57,27 +63,84 @@ function UnderConstructionPage({ title, breadcrumbs }: { title: string, breadcru
   );
 }
 
-function NavDropdown({ title, landingPath, items }: { title: string, landingPath?: string, items: { label: string, path: string }[] }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [top, setTop] = useState(0);
+type NavItem = { label: string; path: string };
 
-  const handleMouseEnter = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (window.innerWidth >= 768) {
-      const rect = e.currentTarget.getBoundingClientRect();
-      setTop(rect.top);
-      setIsOpen(true);
-    }
+function NavDropdown({ title, landingPath, items }: { title: string, landingPath?: string, items: NavItem[] }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [flyoutPos, setFlyoutPos] = useState<{ top: number; left: number } | null>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout>>();
+
+  const updateFlyoutPosition = useCallback(() => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    setFlyoutPos({ top: rect.top, left: rect.right });
+  }, []);
+
+  const cancelClose = () => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
   };
+
+  const scheduleClose = () => {
+    cancelClose();
+    closeTimerRef.current = setTimeout(() => setIsOpen(false), 120);
+  };
+
+  const openFlyout = () => {
+    if (window.innerWidth < 768) return;
+    cancelClose();
+    updateFlyoutPosition();
+    setIsOpen(true);
+  };
+
+  useEffect(() => {
+    return () => cancelClose();
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onReposition = () => updateFlyoutPosition();
+    window.addEventListener('resize', onReposition);
+    window.addEventListener('scroll', onReposition, true);
+    return () => {
+      window.removeEventListener('resize', onReposition);
+      window.removeEventListener('scroll', onReposition, true);
+    };
+  }, [isOpen, updateFlyoutPosition]);
+
+  const flyoutPanel = isOpen && flyoutPos ? (
+    <div
+      className="fixed z-[60]"
+      style={{ top: flyoutPos.top, left: flyoutPos.left }}
+      onMouseEnter={cancelClose}
+      onMouseLeave={scheduleClose}
+    >
+      <div className="absolute inset-y-0 right-full w-3 bg-transparent" />
+      <div className="relative bg-slate-900 border border-slate-700 shadow-2xl rounded-xl py-2 w-52">
+        {items.map(item => (
+          <Link
+            key={item.path}
+            to={item.path}
+            className="block px-4 py-2.5 text-sm text-slate-300 hover:bg-slate-800 hover:text-white transition-colors whitespace-nowrap"
+            onClick={() => setIsOpen(false)}
+          >
+            {item.label}
+          </Link>
+        ))}
+      </div>
+    </div>
+  ) : null;
 
   return (
     <>
       {/* Desktop Flyout */}
       <div
+        ref={triggerRef}
         className="hidden md:block"
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={() => setIsOpen(false)}
+        onMouseEnter={openFlyout}
+        onMouseLeave={scheduleClose}
       >
-        <div className="flex items-center justify-between px-3 py-2.5 text-sm font-medium text-slate-300 cursor-pointer hover:bg-slate-800 hover:text-white rounded-md transition-colors">
+        <div className="flex items-center justify-between px-3 py-2.5 text-sm font-medium text-slate-300 cursor-pointer hover:bg-slate-800 hover:text-white rounded-md transition-colors whitespace-nowrap">
           {landingPath ? (
             <Link to={landingPath} className="flex-1 truncate">{title}</Link>
           ) : (
@@ -85,32 +148,12 @@ function NavDropdown({ title, landingPath, items }: { title: string, landingPath
           )}
           <svg className="w-3 h-3 ml-1 opacity-50 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" /></svg>
         </div>
-
-        {isOpen && (
-          <div className="fixed z-50" style={{ top: top, left: '14rem' }}>
-            {/* Invisible hover bridge */}
-            <div className="absolute inset-y-0 right-full w-4 bg-transparent" />
-            <div className="bg-slate-900 border border-slate-700 shadow-2xl rounded-xl py-2 w-52 animate-in fade-in slide-in-from-left-1 duration-150">
-              {/* Invisible hover bridge */}
-              <div className="absolute inset-y-0 right-full w-4 bg-transparent" />
-              {items.map(item => (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  className="block px-4 py-2.5 text-sm text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
-                  onClick={() => setIsOpen(false)}
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </div>
-          </div>
-        )}
+        {flyoutPanel && createPortal(flyoutPanel, document.body)}
       </div>
 
       {/* Mobile Accordion */}
       <details className="md:hidden group [&_summary::-webkit-details-marker]:hidden">
-        <summary className="flex items-center justify-between px-3 py-2.5 text-sm font-medium text-slate-300 cursor-pointer hover:bg-slate-800 hover:text-white rounded-md transition-colors list-none">
+        <summary className="flex items-center justify-between px-3 py-2.5 text-sm font-medium text-slate-300 cursor-pointer hover:bg-slate-800 hover:text-white rounded-md transition-colors list-none whitespace-nowrap">
           {landingPath ? (
             <Link to={landingPath} className="flex-1 truncate" onClick={(e) => e.stopPropagation()}>{title}</Link>
           ) : (
@@ -159,6 +202,7 @@ function Layout({ children }: { children: ReactNode }) {
   const clearAuth = useAuthStore((s) => s.clearAuth);
   const adminToken = useAuthStore((s) => s.adminToken);
   const adminUser = useAuthStore((s) => s.adminUser);
+  const passwordChangeDismissed = useAuthStore((s) => s.passwordChangeDismissed);
   const stopImpersonation = useAuthStore((s) => s.stopImpersonation);
   const navigate = useNavigate();
   const location = useLocation();
@@ -167,10 +211,15 @@ function Layout({ children }: { children: ReactNode }) {
   const showNotificationBell = !!user && !user.must_change_password && location.pathname !== '/change-password';
 
   useEffect(() => {
-    if (user?.must_change_password && location.pathname !== '/change-password') {
+    const impersonating = isImpersonatingSession(adminToken);
+    const forced =
+      user?.must_change_password
+      && !passwordChangeDismissed
+      && !impersonating;
+    if (forced && location.pathname !== '/change-password') {
       navigate('/change-password', { replace: true });
     }
-  }, [user, location.pathname, navigate]);
+  }, [user, passwordChangeDismissed, adminToken, location.pathname, navigate]);
 
   useEffect(() => {
     setIsSidebarOpen(false);
@@ -189,7 +238,7 @@ function Layout({ children }: { children: ReactNode }) {
   const isAdminRoute = location.pathname.startsWith('/admin');
 
   return (
-    <div className="flex h-screen bg-slate-100 overflow-hidden flex-col">
+    <div className="flex h-screen overflow-hidden flex-col" style={{ background: 'var(--color-bg)' }}>
       <BroadcastBanner />
       
       {/* Impersonation Banner */}
@@ -204,9 +253,7 @@ function Layout({ children }: { children: ReactNode }) {
           <button
             onClick={() => {
               stopImpersonation();
-              setTimeout(() => {
-                window.location.href = '/admin';
-              }, 100);
+              navigate('/admin', { replace: true });
             }}
             className="bg-amber-950 text-amber-400 hover:bg-amber-900 px-4 py-1.5 rounded-md text-sm font-bold uppercase tracking-wider transition-colors shadow-sm flex items-center gap-2"
           >
@@ -228,7 +275,7 @@ function Layout({ children }: { children: ReactNode }) {
       )}
 
       {/* Sidebar */}
-      <aside className={`fixed inset-y-0 left-0 z-30 w-56 bg-slate-900 border-r border-slate-800 flex flex-col transition-transform duration-300 ease-in-out md:static md:translate-x-0 shadow-xl ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`fixed inset-y-0 left-0 z-30 w-56 bg-slate-900 border-r border-slate-800 flex flex-col transition-transform duration-300 ease-in-out md:static md:transform-none shadow-xl ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         {/* Logo Area */}
         <div className="h-14 flex items-center px-5 border-b border-slate-800 shrink-0">
           <Link to="/" className="text-sm font-bold text-white tracking-tight truncate">
@@ -253,6 +300,7 @@ function Layout({ children }: { children: ReactNode }) {
                   ]} />
                   <NavDropdown title="Leave & Attendance" landingPath="/leave-dashboard" items={[
                     { label: 'Apply for Leave', path: '/apply' },
+                    { label: 'Leave Forms', path: '/leave-forms' },
                     { label: 'My Applications', path: '/my-apps' },
                     { label: 'Leave Ledger', path: '/leave-account' },
                     { label: 'Holiday Calendar', path: '/holidays-calendar' },
@@ -296,9 +344,9 @@ function Layout({ children }: { children: ReactNode }) {
 
               {hasRole(role, ADMIN_ROLES) && role === 'ADMIN' && (
                 <NavDropdown title="Admin Console" landingPath="/admin" items={[
-                  { label: 'Dashboard', path: '/admin' },
                   { label: 'Leave Policy Matrix', path: '/admin?module=policy' },
                   { label: 'Users & Roles', path: '/admin?module=users' },
+                  { label: 'Login As User', path: '/admin?module=users' },
                   { label: 'Audit & Health', path: '/admin?module=audit' },
                 ]} />
               )}
@@ -307,6 +355,10 @@ function Layout({ children }: { children: ReactNode }) {
                 <NavDropdown title="HR Operations" items={[
                   { label: 'Employee Directory', path: '/employees?tab=directory' },
                   { label: 'Onboard Employee', path: '/employees?tab=onboard' },
+                  ...(canEditHrLifecycle(role) ? [
+                    { label: 'Employee Lifecycle', path: '/employees?tab=lifecycle' },
+                  ] : []),
+                  { label: 'Leave Forms', path: '/leave-forms' },
                   ...(hasRole(role, REPORT_ROLES) ? [{ label: 'Balance Overview', path: '/balance-overview' }] : []),
                 ]} />
               )}
@@ -364,7 +416,7 @@ function Layout({ children }: { children: ReactNode }) {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Top Header */}
-        <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-5 shrink-0 z-10 sticky top-0 shadow-sm">
+        <header className="h-14 border-b flex items-center justify-between px-5 shrink-0 z-10 sticky top-0 shadow-sm" style={{ background: 'var(--color-surface-alt)', borderColor: 'var(--color-border)' }}>
           <div className="flex items-center gap-3">
             <button onClick={() => setIsSidebarOpen(true)} className="text-slate-500 hover:text-slate-800 md:hidden transition-colors">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
@@ -430,6 +482,7 @@ export default function App() {
             <Route path="/employees" element={<RoleRoute allowedRoles={EMPLOYEE_MASTER_ROLES} fallback="Access restricted."><EmployeeListPage /></RoleRoute>} />
             <Route path="/masters" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Masters access is limited to ADMIN, ESTABLISHMENT_OFFICER, and REGISTRAR."><MastersPage /></RoleRoute>} />
             <Route path="/apply" element={<ApplyLeavePage />} />
+            <Route path="/leave-forms" element={<LeaveFormsPage />} />
             <Route path="/my-apps" element={<MyApplicationsPage />} />
             <Route path="/approver-dashboard" element={<RoleRoute allowedRoles={APPROVER_ROLES} fallback="Only approvers have an Approver Dashboard."><ApproverDashboardPage /></RoleRoute>} />
             <Route path="/hod" element={<RoleRoute allowedRoles={APPROVER_ROLES} fallback="Only approvers have a Nodal Dashboard."><HodDashboardPage /></RoleRoute>} />
@@ -440,7 +493,7 @@ export default function App() {
             <Route path="/forecast" element={<RoleRoute allowedRoles={TEAM_VIEW_ROLES} fallback="Forecast is for HOD and Nodal Officer roles."><ForecastingPage /></RoleRoute>} />
             <Route path="/balance-overview" element={<RoleRoute allowedRoles={REPORT_ROLES} fallback="Balance overview requires report access."><BalanceOverviewPage /></RoleRoute>} />
             <Route path="/year-end" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Year-End processing is limited to ADMIN and ESTABLISHMENT_OFFICER."><YearEndProcessingPage /></RoleRoute>} />
-            <Route path="/reports" element={<RoleRoute allowedRoles={REPORT_ROLES} fallback="Reports are limited to ESTABLISHMENT_OFFICER, REGISTRAR, and DIRECTOR."><ReportsPage /></RoleRoute>} />
+            <Route path="/reports" element={<RoleRoute allowedRoles={REPORT_ROLES} fallback="Reports require HR or admin access."><ReportsPage /></RoleRoute>} />
             <Route path="/admin" element={<RoleRoute allowedRoles={ADMIN_ROLES} fallback="Admin dashboard access is limited to ADMIN."><AdminDashboardPage /></RoleRoute>} />
             <Route path="/admin/tools/:tool" element={<RoleRoute allowedRoles={ADMIN_ROLES} fallback="Admin dashboard access is limited to ADMIN."><AdminToolsPage /></RoleRoute>} />
             <Route path="/leave-types" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Masters access is limited to ADMIN, ESTABLISHMENT_OFFICER, and REGISTRAR."><MastersRedirect tab="leave-types" /></RoleRoute>} />
