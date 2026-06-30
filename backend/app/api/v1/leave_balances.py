@@ -3,7 +3,7 @@
 import io
 import json
 import uuid
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
 from openpyxl import load_workbook
@@ -17,6 +17,12 @@ from app.core.upload_validation import validate_import_upload
 from app.services.leave_annual_credit import run_annual_credit
 from app.services.leave_ledger import record_leave_ledger
 from app.services.leave_transaction import get_effective_available_balance, get_pending_committed_days
+from app.services.leave_validation import (
+    _parse_rules,
+    build_cl_projection_extras,
+    count_leave_days,
+    load_holidays_in_range,
+)
 
 router = APIRouter(prefix="/leave-balances", tags=["leave-balances"])
 
@@ -389,7 +395,10 @@ async def project_balance(
     if cached_projection is not None:
         return {**cached_projection, "cache_ttl_seconds": 300, "cached": True}
 
-    lt = await db.execute(text("SELECT id FROM leave_types WHERE code = :c"), {"c": leave_type_code})
+    lt = await db.execute(
+        text("SELECT id, count_holidays, validation_rules FROM leave_types WHERE code = :c"),
+        {"c": leave_type_code},
+    )
     lt_row = lt.fetchone()
     if not lt_row:
         raise HTTPException(status_code=400, detail=f"Unknown leave type: {leave_type_code}")
@@ -397,14 +406,14 @@ async def project_balance(
     lt_id = str(lt_row[0])
     fd = date.fromisoformat(from_date)
     td = date.fromisoformat(to_date)
-    holidays_result = await db.execute(
-        text("SELECT holiday_date FROM holiday_master WHERE holiday_date BETWEEN :f AND :t"),
-        {"f": fd, "t": td},
-    )
-    holiday_dates = {r[0] for r in holidays_result.fetchall()}
+    pad_start = fd - timedelta(days=14)
+    pad_end = td + timedelta(days=14)
+    holiday_dates = await load_holidays_in_range(db, pad_start, pad_end)
+    holiday_dates.update(await load_holidays_in_range(db, fd, td))
+    count_holidays = bool(lt_row[1])
+    days = count_leave_days(fd, td, holiday_dates, count_holidays=count_holidays, is_half_day=False)
     current = await get_effective_available_balance(db, employee_id, lt_id, fd)
     pending = await get_pending_committed_days(db, employee_id, lt_id, fd.year)
-    days = _working_days(fd, td, holiday_dates)
     payload = {
         "current_balance": current + pending,
         "pending_commitments": pending,
@@ -412,6 +421,9 @@ async def project_balance(
         "requested_days": days,
         "projected_balance": max(0, current - days),
     }
+    if leave_type_code.upper() == "CL":
+        validation_rules = _parse_rules(lt_row[2])
+        payload.update(build_cl_projection_extras(fd, td, holiday_dates, days, validation_rules))
     cache_set(cache_key, payload)
     return {**payload, "cache_ttl_seconds": 300, "cached": False}
 
@@ -425,8 +437,21 @@ async def annual_credit_run(
     """Calendar-year credit for all staff — CCS (EL, HPL, CL) and residents (ANNUAL_RES)."""
     year_start = date.fromisoformat(body["year_start"])
     leave_year = body["leave_year"]
-    rows_affected = await run_annual_credit(db, leave_year=leave_year, year_start=year_start)
-    return {"message": f"Annual credit run complete for {leave_year}", "rows_affected": rows_affected}
+    credit_period = int(body.get("credit_period", 1))
+    if credit_period not in (1, 2):
+        raise HTTPException(status_code=400, detail="credit_period must be 1 (Jan) or 2 (Jul)")
+    rows_affected = await run_annual_credit(
+        db,
+        leave_year=leave_year,
+        year_start=year_start,
+        credit_period=credit_period,
+    )
+    half_label = "Jan–Jun" if credit_period == 1 else "Jul–Dec"
+    return {
+        "message": f"Leave credit run complete for {leave_year} ({half_label})",
+        "rows_affected": rows_affected,
+        "credit_period": credit_period,
+    }
 
 
 @router.post("/carryforward")

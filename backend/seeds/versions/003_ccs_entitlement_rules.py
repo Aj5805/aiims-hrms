@@ -9,7 +9,7 @@ CCS_CATEGORIES = ("FACULTY", "NURSING", "ADMIN")
 _CCS_LEAVE_RULES = [
     ("EL", "CALENDAR", 30, 2.5, None, None, None, None, True, None),
     ("HPL", "CALENDAR", 20, 1.67, None, None, None, None, False, None),
-    ("CL", "CALENDAR", 8, None, None, None, 5, None, False, None),
+    ("CL", "CALENDAR", 8, None, None, None, 8, None, False, None),
     ("ML", "CALENDAR", 180, None, None, None, None, None, False, None),
     ("PL", "CALENDAR", 15, None, None, None, None, None, False, None),
     ("CCL", "CALENDAR", 730, None, None, None, None, None, False, None),

@@ -181,6 +181,7 @@ async def submit_application(
     reason = body["reason"]
     address = body.get("address_during_leave", "")
     mc_attached = bool(body.get("mc_attached", False))
+    emergency_regular_combo = bool(body.get("emergency_regular_combo", False))
 
     await _authorize_employee(scope, current_user, emp_id, db)
 
@@ -219,6 +220,7 @@ async def submit_application(
         is_half_day=is_half_day,
         mc_attached=mc_attached,
         application_kind="NEW",
+        emergency_regular_combo=emergency_regular_combo,
     )
 
     wf_id = await _resolve_workflow(db, emp_dict["cat_code"], leave_type_code)
@@ -289,6 +291,7 @@ async def submit_change_request(
     reason = body["reason"]
     address = body.get("address_during_leave", "")
     mc_attached = bool(body.get("mc_attached", False))
+    emergency_regular_combo = bool(body.get("emergency_regular_combo", False))
 
     if request_kind not in ("CANCELLATION", "MODIFICATION"):
         raise HTTPException(status_code=400, detail="request_kind must be CANCELLATION or MODIFICATION")
@@ -349,6 +352,8 @@ async def submit_change_request(
             mc_attached=mc_attached,
             application_kind="MODIFICATION",
             parent_applied_days=float(parent_row.applied_days),
+            emergency_regular_combo=emergency_regular_combo,
+            exclude_application_ids=[parent_id],
         )
         delta = applied_days - float(parent_row.applied_days)
         if delta > 0:

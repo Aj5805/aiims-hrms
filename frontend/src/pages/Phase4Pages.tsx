@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import api from '../api/client';
 import { leaveAppApi, approvalsApi, leaveFormTemplatesApi } from '../api/phase4_endpoints';
 import { employeesApi } from '../api/endpoints';
@@ -6,7 +7,126 @@ import { useAuthStore } from '../stores';
 import { PageHeader } from '../components/PageHeader';
 
 type LeaveTypeRow = Record<string, unknown>;
-type FormTemplate = { id: string; title: string; url: string; format: string; notes?: string };
+type FormTemplate = {
+  id: string;
+  title: string;
+  url: string;
+  format: string;
+  notes?: string;
+  categories?: string[];
+  leave_types?: string[];
+  purposes?: string[];
+  employee_groups?: string[];
+};
+
+const FORM_PURPOSES = ['APPLY', 'MEDICAL', 'ACADEMIC', 'DEPARTURE', 'REJOIN', 'MODIFICATION', 'CANCELLATION'] as const;
+const FORM_CATEGORIES = ['FACULTY', 'NURSING', 'ADMIN', 'JR_ACAD', 'SR_ACAD', 'JR_NON_ACAD', 'SR_NON_ACAD'] as const;
+
+export function LeaveFormsPage() {
+  const [templates, setTemplates] = useState<FormTemplate[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [purposeFilter, setPurposeFilter] = useState('');
+  const [search, setSearch] = useState('');
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      try {
+        const { data } = await leaveFormTemplatesApi.list();
+        setTemplates(data.templates || []);
+      } catch {
+        setTemplates([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    void load();
+  }, []);
+
+  const filtered = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return templates.filter((t) => {
+      if (categoryFilter && !(t.categories || []).includes(categoryFilter)) return false;
+      if (purposeFilter && !(t.purposes || []).includes(purposeFilter)) return false;
+      if (term && !t.title.toLowerCase().includes(term) && !(t.notes || '').toLowerCase().includes(term)) return false;
+      return true;
+    });
+  }, [templates, categoryFilter, purposeFilter, search]);
+
+  return (
+    <div className="page">
+      <PageHeader
+        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Leave & Attendance', to: '/leave-dashboard' }, { label: 'Leave Forms' }]}
+        title="Leave Application Forms"
+        description="Official AIIMS Bibinagar proformas — download, fill, then submit via Apply for Leave for workflow tracking."
+      />
+
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-4 space-y-3">
+        <p className="text-sm text-slate-600">
+          These institutional forms are the reference for leave applications. Staff should use the form matching their category and leave type before submitting in the system.
+        </p>
+        <div className="flex flex-wrap gap-3 items-end">
+          <div>
+            <label className="form-label text-xs">Category</label>
+            <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="form-select text-sm py-1.5">
+              <option value="">All categories</option>
+              {FORM_CATEGORIES.map((c) => <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="form-label text-xs">Purpose</label>
+            <select value={purposeFilter} onChange={(e) => setPurposeFilter(e.target.value)} className="form-select text-sm py-1.5">
+              <option value="">All purposes</option>
+              {FORM_PURPOSES.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </div>
+          <div className="flex-1 min-w-[200px]">
+            <label className="form-label text-xs">Search</label>
+            <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Form title or notes…" className="form-input text-sm py-1.5" />
+          </div>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="py-12 text-center text-slate-500 text-sm">Loading forms…</div>
+      ) : filtered.length === 0 ? (
+        <div className="card card-body text-sm text-slate-500">No forms match your filters.</div>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2">
+          {filtered.map((t) => (
+            <div key={t.id} className="card card-body text-sm space-y-2">
+              <div className="font-semibold text-slate-800">{t.title}</div>
+              {t.notes && <p className="text-slate-500 text-xs">{t.notes}</p>}
+              <div className="flex flex-wrap gap-1">
+                {(t.categories || []).map((c) => (
+                  <span key={c} className="badge badge-slate text-[10px]">{c}</span>
+                ))}
+                {(t.leave_types || []).map((lt) => (
+                  <span key={lt} className="badge badge-blue text-[10px]">{lt}</span>
+                ))}
+                {(t.purposes || []).map((p) => (
+                  <span key={p} className="badge badge-amber text-[10px]">{p}</span>
+                ))}
+              </div>
+              <div className="pt-1">
+                {t.format === 'IN_APP' ? (
+                  <span className="text-indigo-600 font-medium">Use My Applications in the portal</span>
+                ) : t.url ? (
+                  <a href={t.url} target="_blank" rel="noreferrer" className="text-indigo-600 font-medium hover:underline">
+                    Download {t.format || 'form'} →
+                  </a>
+                ) : (
+                  <span className="text-slate-400">Form link pending</span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function ApplyLeavePage() {
   const user = useAuthStore((state) => state.user);
@@ -18,15 +138,19 @@ export function ApplyLeavePage() {
     reason: '',
     address_during_leave: '',
     is_half_day: false,
+    half_day_session: 'AN' as 'FN' | 'AN',
     mc_attached: false,
+    emergency_regular_combo: false,
   });
   const [msg, setMsg] = useState('');
   const [leaveTypes, setLeaveTypes] = useState<LeaveTypeRow[]>([]);
   const [formTemplates, setFormTemplates] = useState<FormTemplate[]>([]);
-  const [projection, setProjection] = useState<Record<string, number> | null>(null);
+  const [projection, setProjection] = useState<Record<string, unknown> | null>(null);
   const [loadingLeaveTypes, setLoadingLeaveTypes] = useState(true);
 
   const selectedType = leaveTypes.find((lt) => lt.code === form.leave_type_code);
+  const isCl = form.leave_type_code === 'CL';
+  const isRegularLeave = ['EL', 'HPL', 'COMMUTED', 'EOL'].includes(form.leave_type_code);
   const mcRequired = Boolean(
     selectedType?.requires_mc && selectedType?.min_days_for_mc != null
   );
@@ -111,7 +235,14 @@ export function ApplyLeavePage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const { data } = await leaveAppApi.submit(form);
+      const payload: Record<string, unknown> = { ...form };
+      if (!form.is_half_day) {
+        delete payload.half_day_session;
+      }
+      if (form.emergency_regular_combo && !form.reason.includes('[Emergency continuation]')) {
+        payload.reason = `[Emergency continuation] ${form.reason}`;
+      }
+      const { data } = await leaveAppApi.submit(payload);
       setMsg(`Submitted! App #: ${data.app_number}, Days: ${data.applied_days}`);
     } catch (err: unknown) {
       setMsg((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed');
@@ -126,10 +257,13 @@ export function ApplyLeavePage() {
       />
       {msg && <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-lg mb-4 text-sm max-w-3xl">{msg}</div>}
 
-      {formTemplates.length > 0 && (
-        <div className="card card-body max-w-3xl mb-4 text-sm">
-          <h3 className="font-semibold text-slate-800 mb-2">Official application forms (AIIMS Bibinagar)</h3>
-          <p className="text-slate-500 mb-2">Download and fill the institutional proforma for your category, then submit here for workflow tracking.</p>
+      <div className="card card-body max-w-3xl mb-4 text-sm">
+        <h3 className="font-semibold text-slate-800 mb-2">Official application forms (AIIMS Bibinagar)</h3>
+        <p className="text-slate-500 mb-2">
+          Download and fill the institutional proforma for your category, then submit here for workflow tracking.{' '}
+          <Link to="/leave-forms" className="text-indigo-600 font-medium hover:underline">Browse all leave forms →</Link>
+        </p>
+        {formTemplates.length > 0 ? (
           <ul className="space-y-1">
             {formTemplates.map((t) => (
               <li key={t.id}>
@@ -142,8 +276,10 @@ export function ApplyLeavePage() {
               </li>
             ))}
           </ul>
-        </div>
-      )}
+        ) : (
+          <p className="text-slate-400 text-xs">No specific form for this leave type — see the full catalogue for related proformas.</p>
+        )}
+      </div>
 
       <form onSubmit={submit} className="card card-body space-y-4 max-w-3xl">
         {(user?.role === 'ADMIN' || user?.role === 'ESTABLISHMENT_OFFICER') && (
@@ -160,7 +296,7 @@ export function ApplyLeavePage() {
 
         <div>
           <label className="form-label">Leave Type *</label>
-          <select value={form.leave_type_code} onChange={(e) => setForm({ ...form, leave_type_code: e.target.value })} className="form-select">
+          <select value={form.leave_type_code} onChange={(e) => setForm({ ...form, leave_type_code: e.target.value, emergency_regular_combo: false })} className="form-select">
             {loadingLeaveTypes && <option value="">Loading...</option>}
             {!loadingLeaveTypes && leaveTypes.length === 0 && <option value="">No leave types available</option>}
             {leaveTypes.map((lt) => (
@@ -168,6 +304,18 @@ export function ApplyLeavePage() {
             ))}
           </select>
         </div>
+
+        {isCl && (
+          <div className="rounded-lg border border-indigo-100 bg-indigo-50/60 p-3 text-sm text-slate-700 space-y-1">
+            <p className="font-medium text-indigo-900">Casual Leave (DoPT rules)</p>
+            <ul className="list-disc list-inside text-xs text-slate-600 space-y-0.5">
+              <li>Weekends, public holidays, and restricted holidays before/after CL are <strong>not debited</strong> from your balance.</li>
+              <li>Total absence (including attached non-working days) should not exceed 8 calendar days at one time.</li>
+              <li>CL cannot be combined with EL/HPL across weekends or holidays only (sandwich rule).</li>
+              <li>Exception: half-day CL followed by EL/HPL from the next day when illness/emergency — note this in your reason.</li>
+            </ul>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -181,17 +329,36 @@ export function ApplyLeavePage() {
         </div>
 
         {projection && (
-          <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm text-slate-700">
-            <span className="font-medium">Balance check:</span>{' '}
-            {projection.requested_days} day(s) requested ·{' '}
-            {projection.effective_balance} available after pending ·{' '}
-            projected {projection.projected_balance} remaining
-            {(projection.pending_commitments ?? 0) > 0 && (
-              <span className="text-amber-700"> ({projection.pending_commitments} days in other pending applications)</span>
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm text-slate-700 space-y-1">
+            <div>
+              <span className="font-medium">Balance check:</span>{' '}
+              {String(projection.requested_days)} day(s) debited ·{' '}
+              {String(projection.effective_balance)} available after pending ·{' '}
+              projected {String(projection.projected_balance)} remaining
+              {Number(projection.pending_commitments ?? 0) > 0 && (
+                <span className="text-amber-700"> ({String(projection.pending_commitments)} days in other pending applications)</span>
+              )}
+            </div>
+            {isCl && projection.absence_span_days != null && (
+              <div className="text-xs text-slate-600">
+                Calendar absence span: {String(projection.absence_span_days)} day(s)
+                {typeof projection.absence_span_start === 'string' && typeof projection.absence_span_end === 'string' && (
+                  <span> ({projection.absence_span_start} → {projection.absence_span_end})</span>
+                )}
+                {projection.max_absence_span != null && (
+                  <span> · limit {String(projection.max_absence_span)} days</span>
+                )}
+              </div>
+            )}
+            {Array.isArray(projection.warnings) && projection.warnings.length > 0 && (
+              <div className="text-xs text-amber-800 font-medium">
+                {(projection.warnings as string[]).join(' ')}
+              </div>
             )}
           </div>
         )}
 
+        <div className="flex flex-col gap-3">
         <div className="flex items-center gap-2">
           <input
             type="checkbox"
@@ -203,6 +370,40 @@ export function ApplyLeavePage() {
           />
           <label htmlFor="half-day" className="text-sm font-medium text-slate-700">Apply for Half Day</label>
         </div>
+
+        {form.is_half_day && (
+          <div className="max-w-xs">
+            <label className="form-label">Half-day session</label>
+            <select
+              value={form.half_day_session}
+              onChange={(e) => setForm({ ...form, half_day_session: e.target.value as 'FN' | 'AN' })}
+              className="form-select"
+            >
+              <option value="FN">Forenoon (FN)</option>
+              <option value="AN">Afternoon (AN)</option>
+            </select>
+          </div>
+        )}
+        </div>
+
+        {(isRegularLeave || (isCl && form.is_half_day)) && (
+          <div className="rounded-lg border border-amber-100 bg-amber-50/50 p-3">
+            <label className="flex items-start gap-2 text-sm text-slate-700 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.emergency_regular_combo}
+                onChange={(e) => setForm({ ...form, emergency_regular_combo: e.target.checked })}
+                className="mt-0.5 h-4 w-4 rounded border-slate-300"
+              />
+              <span>
+                <span className="font-medium">Emergency continuation on regular leave</span>
+                <span className="block text-xs text-slate-500 mt-0.5">
+                  Check only when half-day CL (afternoon) is followed by EL/HPL from the next calendar day due to sudden illness or emergency. Approver will verify.
+                </span>
+              </span>
+            </label>
+          </div>
+        )}
 
         {mcRequired && (
           <div className="flex items-center gap-2">

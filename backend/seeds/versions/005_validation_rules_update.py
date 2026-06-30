@@ -7,7 +7,7 @@ def run(session):
     updates = [
         (
             "CL",
-            '{"no_prefix_suffix_holidays": true, "no_prefix_suffix_weekends": true, "no_combination": true, "max_per_stretch": 5}',
+            '{"no_combination": true, "incompatible_types": ["EL", "HPL", "COMMUTED", "EOL"], "max_absence_span": 8, "max_per_stretch": 8}',
         ),
         ("EL", '{"min_notice_days": 3}'),
         ("ANNUAL_RES", '{"min_notice_days": 3}'),

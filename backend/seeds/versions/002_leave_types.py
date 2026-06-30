@@ -6,7 +6,7 @@ LEAVE_TYPES = [
     ("EL",        "Earned Leave",              "CCS",       True,  300,  False, None, True,  False, True,  None),
     ("HPL",       "Half Pay Leave",            "CCS",       False, None, True,  3,    True,  False, False, None),
     ("CL",        "Casual Leave",              "CCS",       False, None, False, None, False, True,  False,
-     '{"no_prefix_suffix_holidays": true, "no_combination": true, "max_per_stretch": 5}'),
+     '{"no_combination": true, "incompatible_types": ["EL", "HPL", "COMMUTED", "EOL"], "max_absence_span": 8, "max_per_stretch": 8}'),
     ("ML",        "Maternity Leave",           "BOTH",      False, None, True,  1,    True,  False, False, None),
     ("PL",        "Paternity Leave",           "BOTH",      False, None, False, None, True,  False, False, None),
     ("CCL",       "Child Care Leave",          "CCS",       False, None, False, None, True,  False, False, None),

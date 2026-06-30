@@ -10,6 +10,10 @@ from fastapi import HTTPException
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+CL_CODE = "CL"
+DEFAULT_CL_INCOMPATIBLE = frozenset({"EL", "HPL", "COMMUTED", "EOL"})
+DEFAULT_MAX_ABSENCE_SPAN = 8
+
 
 def _parse_rules(raw: Any) -> dict:
     if not raw:
@@ -20,6 +24,10 @@ def _parse_rules(raw: Any) -> dict:
         return json.loads(raw)
     except (TypeError, json.JSONDecodeError):
         return {}
+
+
+def is_non_working_day(d: date, holidays: set[date]) -> bool:
+    return d.weekday() >= 5 or d in holidays
 
 
 def count_leave_days(
@@ -44,14 +52,47 @@ def count_leave_days(
     return float(total)
 
 
-async def load_holidays_in_range(
-    db: AsyncSession, start: date, end: date
-) -> set[date]:
-    result = await db.execute(
-        text("SELECT holiday_date FROM holiday_master WHERE holiday_date BETWEEN :f AND :t"),
-        {"f": start, "t": end},
-    )
-    return {row[0] for row in result.fetchall()}
+def expand_absence_span(
+    from_date: date,
+    to_date: date,
+    holidays: set[date],
+) -> tuple[date, date, int]:
+    """DoPT CL rule: calendar absence including attached weekends/holidays."""
+    start = from_date
+    while True:
+        prev = start - timedelta(days=1)
+        if is_non_working_day(prev, holidays):
+            start = prev
+        else:
+            break
+
+    end = to_date
+    while True:
+        nxt = end + timedelta(days=1)
+        if is_non_working_day(nxt, holidays):
+            end = nxt
+        else:
+            break
+
+    return start, end, (end - start).days + 1
+
+
+def check_max_absence_span(
+    from_date: date,
+    to_date: date,
+    holidays: set[date],
+    validation_rules: dict,
+) -> str | None:
+    max_span = validation_rules.get("max_absence_span")
+    if max_span is None:
+        return None
+    _, _, span_days = expand_absence_span(from_date, to_date, holidays)
+    if span_days > int(max_span):
+        return (
+            f"Total absence from duty (including attached weekends and holidays) "
+            f"is {span_days} days; maximum allowed is {max_span} days at one time"
+        )
+    return None
 
 
 def check_prefix_suffix(
@@ -60,7 +101,7 @@ def check_prefix_suffix(
     holidays: set[date],
     validation_rules: dict,
 ) -> str | None:
-    """CCS-style rule: block leave adjacent to holidays/weekends when configured."""
+    """Block leave adjacent to holidays/weekends when configured (not used for CL under DoPT)."""
     block_holidays = validation_rules.get("no_prefix_suffix_holidays", False)
     block_weekends = validation_rules.get("no_prefix_suffix_weekends", block_holidays)
 
@@ -85,6 +126,200 @@ def check_prefix_suffix(
     return None
 
 
+def _gap_days_between(earlier_end: date, later_start: date) -> list[date]:
+    if later_start <= earlier_end:
+        return []
+    gap: list[date] = []
+    d = earlier_end + timedelta(days=1)
+    while d < later_start:
+        gap.append(d)
+        d += timedelta(days=1)
+    return gap
+
+
+def _incompatible_types(validation_rules: dict, leave_type_code: str) -> frozenset[str]:
+    configured = validation_rules.get("incompatible_types")
+    if isinstance(configured, list) and configured:
+        return frozenset(str(c).upper() for c in configured)
+    if validation_rules.get("no_combination") or leave_type_code == CL_CODE:
+        return DEFAULT_CL_INCOMPATIBLE
+    return frozenset()
+
+
+def _types_form_sandwich(
+    code_a: str,
+    code_b: str,
+    incompatible: frozenset[str],
+) -> bool:
+    code_a = code_a.upper()
+    code_b = code_b.upper()
+    if code_a == CL_CODE and code_b in incompatible:
+        return True
+    if code_b == CL_CODE and code_a in incompatible:
+        return True
+    return False
+
+
+async def load_holidays_in_range(
+    db: AsyncSession, start: date, end: date
+) -> set[date]:
+    result = await db.execute(
+        text("SELECT holiday_date FROM holiday_master WHERE holiday_date BETWEEN :f AND :t"),
+        {"f": start, "t": end},
+    )
+    return {row[0] for row in result.fetchall()}
+
+
+async def fetch_nearby_applications(
+    db: AsyncSession,
+    employee_id: str,
+    from_date: date,
+    to_date: date,
+    *,
+    exclude_application_ids: list[str] | None = None,
+    window_days: int = 60,
+) -> list[dict]:
+    exclude_application_ids = exclude_application_ids or []
+    lookback = from_date - timedelta(days=window_days)
+    lookahead = to_date + timedelta(days=window_days)
+    query = """
+        SELECT a.id, a.from_date, a.to_date, a.is_half_day, a.half_day_session, lt.code AS leave_type_code
+        FROM leave_applications a
+        JOIN leave_types lt ON a.leave_type_id = lt.id
+        WHERE a.employee_id = :eid
+          AND a.status IN ('SUBMITTED', 'UNDER_REVIEW', 'APPROVED')
+          AND a.from_date <= :lookahead
+          AND a.to_date >= :lookback
+    """
+    params: dict = {"eid": employee_id, "lookback": lookback, "lookahead": lookahead}
+    if exclude_application_ids:
+        query += " AND a.id != ALL(:exclude)"
+        params["exclude"] = exclude_application_ids
+
+    result = await db.execute(text(query), params)
+    return [dict(row._mapping) for row in result.fetchall()]
+
+
+async def _half_day_cl_on_date(
+    db: AsyncSession,
+    employee_id: str,
+    on_date: date,
+    *,
+    exclude_application_ids: list[str] | None = None,
+) -> bool:
+    exclude_application_ids = exclude_application_ids or []
+    query = """
+        SELECT 1
+        FROM leave_applications a
+        JOIN leave_types lt ON a.leave_type_id = lt.id
+        WHERE a.employee_id = :eid
+          AND lt.code = :cl
+          AND a.is_half_day = true
+          AND a.from_date = :dt AND a.to_date = :dt
+          AND a.status IN ('SUBMITTED', 'UNDER_REVIEW', 'APPROVED')
+    """
+    params: dict = {"eid": employee_id, "cl": CL_CODE, "dt": on_date}
+    if exclude_application_ids:
+        query += " AND a.id != ALL(:exclude)"
+        params["exclude"] = exclude_application_ids
+    query += " LIMIT 1"
+    result = await db.execute(text(query), params)
+    return result.fetchone() is not None
+
+
+def check_sandwich_with_existing(
+    *,
+    new_code: str,
+    new_from: date,
+    new_to: date,
+    existing: dict,
+    holidays: set[date],
+    incompatible: frozenset[str],
+    allow_emergency_continuation: bool,
+) -> str | None:
+    ex_code = str(existing["leave_type_code"]).upper()
+    if not _types_form_sandwich(new_code, ex_code, incompatible):
+        return None
+
+    ex_from = existing["from_date"]
+    ex_to = existing["to_date"]
+
+    # Existing leave ends before new one starts.
+    if ex_to < new_from:
+        gap = _gap_days_between(ex_to, new_from)
+        if gap and all(is_non_working_day(d, holidays) for d in gap):
+            if allow_emergency_continuation and new_code != CL_CODE and ex_code == CL_CODE:
+                return None
+            return (
+                f"Cannot combine {CL_CODE} with {ex_code} across weekends/holidays only "
+                f"(sandwich rule). The only exception is half-day {CL_CODE} followed by "
+                f"regular leave from the next calendar day (emergency/illness)."
+            )
+
+    # New leave ends before existing one starts.
+    if new_to < ex_from:
+        gap = _gap_days_between(new_to, ex_from)
+        if gap and all(is_non_working_day(d, holidays) for d in gap):
+            if allow_emergency_continuation and new_code == CL_CODE and ex_code != CL_CODE:
+                return None
+            return (
+                f"Cannot combine {CL_CODE} with {ex_code} across weekends/holidays only "
+                f"(sandwich rule)."
+            )
+
+    return None
+
+
+async def check_leave_combination(
+    db: AsyncSession,
+    *,
+    employee_id: str,
+    leave_type_code: str,
+    from_date: date,
+    to_date: date,
+    holidays: set[date],
+    validation_rules: dict,
+    emergency_regular_combo: bool = False,
+    exclude_application_ids: list[str] | None = None,
+) -> str | None:
+    code = leave_type_code.upper()
+    if code == CL_CODE:
+        incompatible = _incompatible_types(validation_rules, CL_CODE)
+    elif code in DEFAULT_CL_INCOMPATIBLE:
+        incompatible = DEFAULT_CL_INCOMPATIBLE
+    else:
+        return None
+
+    prior_half_day_cl = await _half_day_cl_on_date(
+        db,
+        employee_id,
+        from_date - timedelta(days=1),
+        exclude_application_ids=exclude_application_ids,
+    )
+    allow_emergency = prior_half_day_cl and code in DEFAULT_CL_INCOMPATIBLE
+
+    nearby = await fetch_nearby_applications(
+        db,
+        employee_id,
+        from_date,
+        to_date,
+        exclude_application_ids=exclude_application_ids,
+    )
+    for existing in nearby:
+        err = check_sandwich_with_existing(
+            new_code=code,
+            new_from=from_date,
+            new_to=to_date,
+            existing=existing,
+            holidays=holidays,
+            incompatible=incompatible,
+            allow_emergency_continuation=allow_emergency,
+        )
+        if err:
+            return err
+    return None
+
+
 async def fetch_entitlement_for_type(
     db: AsyncSession, employee_id: str, leave_type_id: str
 ) -> dict | None:
@@ -102,6 +337,34 @@ async def fetch_entitlement_for_type(
     return dict(row._mapping) if row else None
 
 
+def build_cl_projection_extras(
+    from_date: date,
+    to_date: date,
+    holidays: set[date],
+    applied_days: float,
+    validation_rules: dict,
+) -> dict:
+    span_start, span_end, span_days = expand_absence_span(from_date, to_date, holidays)
+    max_span = validation_rules.get("max_absence_span", DEFAULT_MAX_ABSENCE_SPAN)
+    warnings: list[str] = []
+    if span_days > int(max_span):
+        warnings.append(
+            f"Total absence span is {span_days} days (max {max_span} including weekends/holidays)."
+        )
+    return {
+        "cl_debited_days": applied_days,
+        "absence_span_start": span_start.isoformat(),
+        "absence_span_end": span_end.isoformat(),
+        "absence_span_days": span_days,
+        "max_absence_span": int(max_span),
+        "warnings": warnings,
+        "cl_rules_hint": (
+            "Weekends and holidays attached to CL are not debited from your balance. "
+            "CL cannot be sandwiched with EL/HPL across holidays or weekends only."
+        ),
+    }
+
+
 async def validate_leave_application(
     db: AsyncSession,
     *,
@@ -113,16 +376,19 @@ async def validate_leave_application(
     mc_attached: bool,
     application_kind: str = "NEW",
     parent_applied_days: float | None = None,
+    emergency_regular_combo: bool = False,
+    exclude_application_ids: list[str] | None = None,
 ) -> float:
     """Run institutional validation rules. Returns computed applied_days."""
     if from_date > to_date:
         raise HTTPException(status_code=400, detail="from_date must be <= to_date")
 
+    leave_type_code = str(leave_type.get("code", "")).upper()
     validation_rules = _parse_rules(leave_type.get("validation_rules"))
     count_holidays = bool(leave_type.get("count_holidays"))
 
-    pad_start = from_date - timedelta(days=1)
-    pad_end = to_date + timedelta(days=1)
+    pad_start = from_date - timedelta(days=14)
+    pad_end = to_date + timedelta(days=14)
     holidays = await load_holidays_in_range(db, pad_start, pad_end)
     holidays.update(await load_holidays_in_range(db, from_date, to_date))
 
@@ -140,6 +406,25 @@ async def validate_leave_application(
     prefix_suffix_error = check_prefix_suffix(from_date, to_date, holidays, validation_rules)
     if prefix_suffix_error:
         raise HTTPException(status_code=400, detail=prefix_suffix_error)
+
+    if leave_type_code == CL_CODE or validation_rules.get("max_absence_span"):
+        span_error = check_max_absence_span(from_date, to_date, holidays, validation_rules)
+        if span_error:
+            raise HTTPException(status_code=400, detail=span_error)
+
+    combo_error = await check_leave_combination(
+        db,
+        employee_id=employee_id,
+        leave_type_code=leave_type_code,
+        from_date=from_date,
+        to_date=to_date,
+        holidays=holidays,
+        validation_rules=validation_rules,
+        emergency_regular_combo=emergency_regular_combo,
+        exclude_application_ids=exclude_application_ids,
+    )
+    if combo_error:
+        raise HTTPException(status_code=400, detail=combo_error)
 
     max_stretch = validation_rules.get("max_per_stretch")
     entitlement = await fetch_entitlement_for_type(db, employee_id, str(leave_type["id"]))
