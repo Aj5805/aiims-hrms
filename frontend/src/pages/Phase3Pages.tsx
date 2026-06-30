@@ -14,10 +14,15 @@ import { PageHeader } from '../components/PageHeader';
 export function LeaveTypesPanel() {
   const [items, setItems] = useState<Record<string, unknown>[]>([]);
   const load = async () => {
-    const { data } = await leaveTypesApi.list();
+    const { data } = await leaveTypesApi.list({ include_inactive: true });
     setItems(data);
   };
   useEffect(() => { load(); }, []);
+
+  const toggleActive = async (lt: Record<string, unknown>) => {
+    await leaveTypesApi.update(lt.id as string, { is_active: !lt.is_active });
+    load();
+  };
 
   return (
     <div className="overflow-hidden">
@@ -32,11 +37,13 @@ export function LeaveTypesPanel() {
               <th className="text-center">MC Req.</th>
               <th className="text-center">Carry Fwd</th>
               <th className="text-center">Encashable</th>
+              <th>Status</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
             {items.map((lt) => (
-              <tr key={lt.id as string}>
+              <tr key={lt.id as string} className={lt.is_active === false ? 'opacity-60' : ''}>
                 <td className="font-mono font-medium">{lt.code as string}</td>
                 <td>{lt.name as string}</td>
                 <td>
@@ -46,10 +53,16 @@ export function LeaveTypesPanel() {
                 <td className="text-center">{lt.requires_mc ? '✓' : '—'}</td>
                 <td className="text-center">{lt.carry_forward ? '✓' : '—'}</td>
                 <td className="text-center">{lt.encashable ? '✓' : '—'}</td>
+                <td>{lt.is_active !== false ? <span className="text-emerald-700 font-bold text-xs">Active</span> : <span className="text-slate-400 text-xs">Inactive</span>}</td>
+                <td>
+                  <button type="button" onClick={() => void toggleActive(lt)} className="text-xs font-bold text-blue-600 hover:underline">
+                    {lt.is_active !== false ? 'Deactivate' : 'Activate'}
+                  </button>
+                </td>
               </tr>
             ))}
             {items.length === 0 && (
-              <tr><td colSpan={7} className="py-10 text-center text-slate-400">No leave types configured.</td></tr>
+              <tr><td colSpan={9} className="py-10 text-center text-slate-400">No leave types configured.</td></tr>
             )}
           </tbody>
         </table>

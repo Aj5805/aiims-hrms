@@ -22,6 +22,7 @@ import PerformanceDashboardPage from './pages/PerformanceDashboardPage';
 import HomeDashboardPage from './pages/HomeDashboardPage';
 import HodDashboardPage from './pages/HodDashboardPage';
 import ApproverDashboardPage from './pages/ApproverDashboardPage';
+import { LoginActivityPage, ForecastingPage, BalanceOverviewPage, TeamLeavePage } from './pages/RoleFeaturePages';
 import { authApi } from './api/endpoints';
 import { PageHeader } from './components/PageHeader';
 import AdminToolsPage from './pages/AdminToolsPage';
@@ -32,6 +33,7 @@ const ADMIN_ROLES = ['ADMIN'] as const;
 const CONFIG_ROLES = ['ADMIN', 'ESTABLISHMENT_OFFICER', 'REGISTRAR'] as const;
 const EMPLOYEE_MASTER_ROLES = ['ADMIN', 'ESTABLISHMENT_OFFICER', 'REGISTRAR', 'DIRECTOR', 'NODAL_OFFICER', 'NODAL_OFFICE'] as const;
 const APPROVER_ROLES = ['ADMIN', 'ESTABLISHMENT_OFFICER', 'REGISTRAR', 'DIRECTOR', 'HOD', 'DEAN_ACADEMIC', 'NODAL_OFFICER'] as const;
+const TEAM_VIEW_ROLES = ['HOD', 'NODAL_OFFICER', 'ADMIN', 'ESTABLISHMENT_OFFICER'] as const;
 
 function hasRole(role: string | undefined, allowed: readonly string[]) {
   return !!role && allowed.includes(role);
@@ -246,6 +248,7 @@ function Layout({ children }: { children: ReactNode }) {
                 <>
                   <NavDropdown title="My Profile" landingPath="/profile-dashboard" items={[
                     { label: 'e-Service Book', path: '/profile' },
+                    { label: 'Login Activity', path: '/login-activity' },
                     { label: 'Family & Dependents', path: '/dependents' }
                   ]} />
                   <NavDropdown title="Leave & Attendance" landingPath="/leave-dashboard" items={[
@@ -279,6 +282,10 @@ function Layout({ children }: { children: ReactNode }) {
                 <NavDropdown title="Nodal Desk" landingPath="/hod" items={[
                   { label: 'HOD Dashboard', path: '/hod' },
                   { label: 'Approval Inbox', path: '/approvals' },
+                  ...(hasRole(role, TEAM_VIEW_ROLES) ? [
+                    { label: 'Team Balances', path: '/team-leave' },
+                    { label: 'Availability Forecast', path: '/forecast' },
+                  ] : []),
                   { label: 'Team Calendar', path: '/team-calendar' },
                   { label: 'Delegation', path: '/delegation' }
                 ]} />
@@ -300,6 +307,7 @@ function Layout({ children }: { children: ReactNode }) {
                 <NavDropdown title="HR Operations" items={[
                   { label: 'Employee Directory', path: '/employees?tab=directory' },
                   { label: 'Onboard Employee', path: '/employees?tab=onboard' },
+                  ...(hasRole(role, REPORT_ROLES) ? [{ label: 'Balance Overview', path: '/balance-overview' }] : []),
                 ]} />
               )}
 
@@ -307,6 +315,8 @@ function Layout({ children }: { children: ReactNode }) {
                 <NavDropdown title="Masters" landingPath="/masters" items={[
                   { label: 'Departments', path: '/masters?tab=dept' },
                   { label: 'Designations', path: '/masters?tab=desg' },
+                  { label: 'Nodal Assignments', path: '/masters?tab=assignments' },
+                  { label: 'HOD Assignments', path: '/masters?tab=hod-assignments' },
                   { label: 'Leave Types', path: '/masters?tab=leave-types' },
                   { label: 'Entitlements', path: '/masters?tab=entitlements' },
                   { label: 'Holidays', path: '/masters?tab=holidays' },
@@ -425,6 +435,10 @@ export default function App() {
             <Route path="/hod" element={<RoleRoute allowedRoles={APPROVER_ROLES} fallback="Only approvers have a Nodal Dashboard."><HodDashboardPage /></RoleRoute>} />
             <Route path="/approvals" element={<RoleRoute allowedRoles={APPROVER_ROLES} fallback="Only approvers have an Inbox."><ApprovalInboxPage /></RoleRoute>} />
             <Route path="/leave-account" element={<MyLeaveAccountPage />} />
+            <Route path="/login-activity" element={<LoginActivityPage />} />
+            <Route path="/team-leave" element={<RoleRoute allowedRoles={TEAM_VIEW_ROLES} fallback="Team balances are for HOD and Nodal Officer roles."><TeamLeavePage /></RoleRoute>} />
+            <Route path="/forecast" element={<RoleRoute allowedRoles={TEAM_VIEW_ROLES} fallback="Forecast is for HOD and Nodal Officer roles."><ForecastingPage /></RoleRoute>} />
+            <Route path="/balance-overview" element={<RoleRoute allowedRoles={REPORT_ROLES} fallback="Balance overview requires report access."><BalanceOverviewPage /></RoleRoute>} />
             <Route path="/year-end" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Year-End processing is limited to ADMIN and ESTABLISHMENT_OFFICER."><YearEndProcessingPage /></RoleRoute>} />
             <Route path="/reports" element={<RoleRoute allowedRoles={REPORT_ROLES} fallback="Reports are limited to ESTABLISHMENT_OFFICER, REGISTRAR, and DIRECTOR."><ReportsPage /></RoleRoute>} />
             <Route path="/admin" element={<RoleRoute allowedRoles={ADMIN_ROLES} fallback="Admin dashboard access is limited to ADMIN."><AdminDashboardPage /></RoleRoute>} />
@@ -465,7 +479,7 @@ export default function App() {
             <Route path="/performance/apar" element={<UnderConstructionPage title="My APAR" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Performance', to: '/performance' }, { label: 'My APAR' }]} />} />
             <Route path="/performance/training" element={<UnderConstructionPage title="Training Logs" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Performance', to: '/performance' }, { label: 'Training Logs' }]} />} />
             
-            <Route path="/team-calendar" element={<UnderConstructionPage title="Team Calendar" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Approvals', to: '/approver-dashboard' }, { label: 'Team Calendar' }]} />} />
+            <Route path="/team-calendar" element={<Navigate to="/forecast" replace />} />
             <Route path="/delegation" element={<UnderConstructionPage title="Delegation" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Approvals', to: '/approver-dashboard' }, { label: 'Delegation' }]} />} />
           </Routes>
           </Layout>

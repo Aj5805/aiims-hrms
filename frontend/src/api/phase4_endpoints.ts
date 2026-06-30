@@ -13,4 +13,5 @@ export const approvalsApi = {
   action: (id: string, data: Record<string, unknown>) => api.post(`/leave-approvals/${id}/action`, data),
   recall: (id: string) => api.post(`/leave-approvals/${id}/recall`),
   teamAvailability: () => api.get('/leave-approvals/team-availability'),
+  availabilityForecast: (params: Record<string, string>) => api.get('/leave-approvals/availability-forecast', { params }),
 };

@@ -49,8 +49,8 @@ export default function HodDashboardPage() {
   return (
     <div className="page">
       <PageHeader
-        title={`Nodal Officer Dashboard`}
-        description="Unified command center for department availability and pending operational tasks."
+        title={user?.role === 'HOD' ? 'HOD Dashboard' : user?.role === 'NODAL_OFFICER' ? 'Nodal Officer Dashboard' : 'Approver Dashboard'}
+        description="Command center for department availability and pending approval tasks."
         breadcrumbs={[
           { label: 'Home', to: '/' },
           { label: 'Nodal Desk' }
@@ -92,6 +92,9 @@ export default function HodDashboardPage() {
             </div>
             <Link to="/approvals" className="text-sm font-medium text-indigo-600 hover:text-indigo-800 transition-colors">
               View All &rarr;
+            </Link>
+            <Link to="/team-leave" className="text-sm font-medium text-indigo-600 hover:text-indigo-800 transition-colors ml-3">
+              Team balances &rarr;
             </Link>
           </div>
           
@@ -150,8 +153,8 @@ export default function HodDashboardPage() {
               <h2 className="text-sm font-bold text-slate-900">Team Availability</h2>
               <p className="text-xs text-slate-500 mt-0.5">Upcoming approved leaves</p>
             </div>
-            <Link to="/team-calendar" className="text-sm font-medium text-indigo-600 hover:text-indigo-800 transition-colors">
-              Open Calendar &rarr;
+            <Link to="/forecast" className="text-sm font-medium text-indigo-600 hover:text-indigo-800 transition-colors">
+              Full forecast &rarr;
             </Link>
           </div>
           

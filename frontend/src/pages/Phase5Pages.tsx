@@ -201,7 +201,8 @@ function BalanceTableRow({
 
 export function MyLeaveAccountPage() {
   const user = useAuthStore((state) => state.user);
-  const canAdminView = user?.role === 'ADMIN' || user?.role === 'ESTABLISHMENT_OFFICER';
+  const canTeamView = ['ADMIN', 'ESTABLISHMENT_OFFICER', 'HOD', 'NODAL_OFFICER'].includes(user?.role ?? '');
+  const canAdjust = ['ADMIN', 'ESTABLISHMENT_OFFICER', 'NODAL_OFFICER'].includes(user?.role ?? '');
   const [employeeQuery, setEmployeeQuery] = useState('');
   const [employeeOptions, setEmployeeOptions] = useState<EmployeeOption[]>([]);
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeOption | null>(null);
@@ -300,7 +301,7 @@ export function MyLeaveAccountPage() {
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-end gap-3">
-          {canAdminView && (
+          {canTeamView && (
             <>
               <div className="min-w-[260px] flex-1">
                 <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Employee Lookup</label>
@@ -336,7 +337,7 @@ export function MyLeaveAccountPage() {
               </div>
             </>
           )}
-          {!canAdminView && (
+          {!canTeamView && (
             <div>
               <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Employee</div>
               <div className="mt-1 text-sm text-slate-700">{user?.emp_code ?? user?.username}</div>
@@ -383,7 +384,7 @@ export function MyLeaveAccountPage() {
                   expanded={!!expandedIds[balance.leave_type_id]}
                   onToggle={() => void toggleLedger(balance)}
                   ledger={ledgerMap[balance.leave_type_id]}
-                  canAdjust={canAdminView}
+                  canAdjust={canAdjust}
                   selectedForAdjust={selectedBalanceId === balance.id}
                   onSelectAdjust={() => setSelectedBalanceId(balance.id)}
                 />
@@ -393,7 +394,7 @@ export function MyLeaveAccountPage() {
         </div>
       )}
 
-      {canAdminView && balances.length > 0 && (
+      {canAdjust && balances.length > 0 && (
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="mb-3 text-lg font-semibold text-slate-900">Manual Adjustment</div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">

@@ -24,7 +24,7 @@ from app.schemas import (
 router = APIRouter(prefix="/employees", tags=["employees"])
 
 _VIEWER_ROLES = ("ADMIN", "ESTABLISHMENT_OFFICER", "REGISTRAR", "DIRECTOR", "HOD", "DEAN_ACADEMIC", "NODAL_OFFICER", "NODAL_OFFICE")
-_EDITOR_ROLES = ("ADMIN", "ESTABLISHMENT_OFFICER", "REGISTRAR", "NODAL_OFFICER", "NODAL_OFFICE")
+_EDITOR_ROLES = ("ADMIN", "ESTABLISHMENT_OFFICER", "REGISTRAR", "NODAL_OFFICER")
 _NODAL_SCOPED_ROLES = ("NODAL_OFFICER", "NODAL_OFFICE")
 
 _EMPLOYEE_SELECT = """
@@ -101,6 +101,7 @@ async def list_employees(
     search: str = Query("", max_length=100),
     category_code: str = Query(None),
     department_code: str = Query(None),
+    designation_name: str = Query(None),
     is_active: bool = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
@@ -126,6 +127,9 @@ async def list_employees(
     if department_code:
         query += " AND d.code = :dept"
         params["dept"] = department_code
+    if designation_name:
+        query += " AND des.name = :desg"
+        params["desg"] = designation_name
     if is_active is not None:
         query += " AND e.is_active = :active"
         params["active"] = is_active
@@ -288,6 +292,84 @@ async def update_employee(
         await db.execute(text(f"UPDATE employees SET {set_clause} WHERE id = :eid"), updates)
         await db.commit()
     return await _fetch_employee(db, employee_id)
+
+
+@router.post("/{employee_id}/lifecycle")
+async def employee_lifecycle(
+    employee_id: str,
+    body: dict,
+    current_user: dict = Depends(require_role(*_EDITOR_ROLES, "ADMIN")),
+    scope: dict = Depends(employee_scope),
+    db: AsyncSession = Depends(get_db),
+):
+    """Resign, rejoin, promote, or demote an employee."""
+    action = body.get("action")
+    if action not in ("resign", "rejoin", "promote", "demote", "assign_hod"):
+        raise HTTPException(status_code=400, detail="action must be resign, rejoin, promote, demote, or assign_hod")
+
+    if scope["scope"] != "all" and employee_id not in (scope["employee_ids"] or []):
+        raise HTTPException(status_code=403, detail="Not authorized for this employee")
+
+    emp = await db.execute(
+        text("SELECT e.id, u.id AS user_id FROM employees e LEFT JOIN users u ON u.employee_id = e.id WHERE e.id = :eid"),
+        {"eid": employee_id},
+    )
+    row = emp.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Employee not found")
+
+    user_id = str(row.user_id) if row.user_id else None
+
+    if action == "resign":
+        dol = body.get("dol_last_working")
+        await db.execute(
+            text("UPDATE employees SET is_active = false, dol_last_working = COALESCE(CAST(:dol AS date), CURRENT_DATE) WHERE id = :eid"),
+            {"eid": employee_id, "dol": dol},
+        )
+        if user_id:
+            await db.execute(text("UPDATE users SET is_active = false WHERE id = :uid"), {"uid": user_id})
+    elif action == "rejoin":
+        await db.execute(
+            text("UPDATE employees SET is_active = true, dol_last_working = NULL WHERE id = :eid"),
+            {"eid": employee_id},
+        )
+        if user_id:
+            await db.execute(text("UPDATE users SET is_active = true WHERE id = :uid"), {"uid": user_id})
+    elif action in ("promote", "demote"):
+        new_desg = body.get("designation_name")
+        if not new_desg:
+            raise HTTPException(status_code=400, detail="designation_name required for promote/demote")
+        des = await db.execute(text("SELECT id FROM designations WHERE name = :n"), {"n": new_desg})
+        des_row = des.fetchone()
+        if not des_row:
+            raise HTTPException(status_code=400, detail=f"Unknown designation: {new_desg}")
+        updates: dict = {"desg_id": str(des_row[0]), "eid": employee_id}
+        set_parts = ["designation_id = :desg_id"]
+        if body.get("department_code"):
+            dept = await db.execute(text("SELECT id FROM departments WHERE code = :c"), {"c": body["department_code"]})
+            dept_row = dept.fetchone()
+            if not dept_row:
+                raise HTTPException(status_code=400, detail="Unknown department")
+            updates["dept_id"] = str(dept_row[0])
+            set_parts.append("department_id = :dept_id")
+        if body.get("pay_level"):
+            updates["pay_level"] = body["pay_level"]
+            set_parts.append("pay_level = :pay_level")
+        await db.execute(text(f"UPDATE employees SET {', '.join(set_parts)} WHERE id = :eid"), updates)
+    elif action == "assign_hod":
+        if not user_id:
+            raise HTTPException(status_code=400, detail="Employee has no login account — create user first")
+        await db.execute(text("UPDATE users SET role = 'HOD' WHERE id = :uid"), {"uid": user_id})
+
+    reporting_officer_id = body.get("reporting_officer_id")
+    if reporting_officer_id:
+        await db.execute(
+            text("UPDATE employees SET reporting_officer_id = :roid WHERE id = :eid"),
+            {"roid": reporting_officer_id, "eid": employee_id},
+        )
+
+    await db.commit()
+    return {"message": f"Employee {action} completed", "employee_id": employee_id}
 
 
 @router.post("/import", response_model=CsvImportResult)

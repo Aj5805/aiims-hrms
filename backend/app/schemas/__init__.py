@@ -187,6 +187,7 @@ class DepartmentCreate(BaseModel):
 class DepartmentUpdate(BaseModel):
     name: Optional[str] = None
     managing_office: Optional[str] = None
+    is_active: Optional[bool] = None
     model_config = ConfigDict(extra="forbid")
 
 
@@ -196,6 +197,7 @@ class DepartmentResponse(BaseModel):
     name: str
     parent_dept_id: Optional[str]
     managing_office: Optional[str]
+    is_active: bool = True
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -207,9 +209,19 @@ class DesignationCreate(BaseModel):
     category_code: Optional[str] = None
 
 
+class DesignationUpdate(BaseModel):
+    name: Optional[str] = None
+    grade_pay_level: Optional[str] = None
+    category_code: Optional[str] = None
+    is_active: Optional[bool] = None
+    model_config = ConfigDict(extra="forbid")
+
+
 class DesignationResponse(BaseModel):
     id: str
     name: str
     grade_pay_level: Optional[str]
     category_code: Optional[str]
+    is_active: bool = True
+    model_config = ConfigDict(from_attributes=True)
     model_config = ConfigDict(from_attributes=True)

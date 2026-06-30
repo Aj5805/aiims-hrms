@@ -2,6 +2,7 @@
 
 import io
 import json
+import uuid
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
@@ -13,10 +14,12 @@ from app.auth.dependencies import employee_scope, get_current_user, require_role
 from app.core.cache import cache_clear, cached, cache_set
 from app.core.database import get_db
 from app.core.upload_validation import validate_import_upload
+from app.services.leave_ledger import record_leave_ledger
 
 router = APIRouter(prefix="/leave-balances", tags=["leave-balances"])
 
 _ADMIN_BALANCE_ROLES = ("ADMIN", "ESTABLISHMENT_OFFICER")
+_NODAL_ADJUST_ROLES = ("NODAL_OFFICER",)
 _ADJUSTABLE_FIELDS = {"opening_balance", "credited", "availed", "lop_days"}
 
 
@@ -56,7 +59,7 @@ def _working_days(from_date: date, to_date: date, holidays: set[date]) -> int:
 @router.post("/opening")
 async def bulk_opening_balance(
     body: list[dict],
-    _: dict = Depends(require_role(*_ADMIN_BALANCE_ROLES)),
+    current_user: dict = Depends(require_role(*_ADMIN_BALANCE_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
     """Accepts array of {emp_code, leave_type_code, opening_balance}. Idempotent."""
@@ -105,22 +108,38 @@ async def bulk_opening_balance(
         ex_row = existing.fetchone()
 
         if ex_row:
+            bid = str(ex_row[0])
             await db.execute(
                 text("""
                     UPDATE leave_balances
                     SET opening_balance = :bal, credited = 0, availed = 0, last_updated = now()
                     WHERE id = :id
                 """),
-                {"bal": balance, "id": str(ex_row[0])},
+                {"bal": balance, "id": bid},
             )
         else:
+            bid = str(uuid.uuid4())
             await db.execute(
                 text("""
                     INSERT INTO leave_balances (id, employee_id, leave_type_id, leave_year, year_start_date, opening_balance, credited)
-                    VALUES (uuid_generate_v4(), :eid, :lid, :ly, :ysd, :bal, 0)
+                    VALUES (:id, :eid, :lid, :ly, :ysd, :bal, 0)
                 """),
-                {"eid": str(emp_row.id), "lid": str(lt_row[0]), "ly": leave_year, "ysd": year_start, "bal": balance},
+                {"id": bid, "eid": str(emp_row.id), "lid": str(lt_row[0]), "ly": leave_year, "ysd": year_start, "bal": balance},
             )
+        await record_leave_ledger(
+            db,
+            balance_id=bid,
+            employee_id=str(emp_row.id),
+            leave_type_id=str(lt_row[0]),
+            leave_year=leave_year,
+            txn_type="OPENING",
+            amount=float(balance),
+            field_affected="opening_balance",
+            reference_type="system",
+            reason="Opening balance entry",
+            actor_id=current_user["user_id"],
+            impersonated_by=current_user.get("impersonated_by"),
+        )
         results.append({"emp_code": emp_code, "leave_type": lt_code, "status": "ok"})
 
     await db.commit()
@@ -227,8 +246,39 @@ async def get_ledger(
     ]
 
     balance_ids = [row["id"] for row in balances]
-    manual_adjustments = []
+    ledger_transactions = []
     if balance_ids:
+        ledger_rows = await db.execute(
+            text("""
+                SELECT lbl.created_at, lbl.txn_type, lbl.amount, lbl.field_affected, lbl.reason,
+                       lbl.reference_type, lbl.balance_id, lbl.leave_year, la.app_number
+                FROM leave_balance_ledger lbl
+                LEFT JOIN leave_applications la
+                  ON lbl.reference_id = la.id AND lbl.reference_type = 'application'
+                WHERE lbl.balance_id = ANY(:balance_ids)
+                ORDER BY lbl.created_at
+            """),
+            {"balance_ids": balance_ids},
+        )
+        for row in ledger_rows.fetchall():
+            field = row.field_affected
+            amt = float(row.amount or 0)
+            ledger_transactions.append(
+                {
+                    "entry_type": str(row.txn_type).lower(),
+                    "event_date": row.created_at,
+                    "balance_id": str(row.balance_id),
+                    "leave_year": row.leave_year,
+                    "field": field,
+                    "reason": row.reason,
+                    "days": abs(amt),
+                    "delta": -amt if field == "availed" and row.txn_type == "AVAIL" else amt,
+                    "app_number": row.app_number,
+                }
+            )
+
+    manual_adjustments = []
+    if balance_ids and not ledger_transactions:
         audit_rows = await db.execute(
             text("""
                 SELECT entity_id, created_at, after_state
@@ -256,31 +306,31 @@ async def get_ledger(
                 )
 
     yearly_events = []
-    for row in balances:
-        yearly_events.append(
-            {
-                "entry_type": "opening_balance",
-                "event_date": row["year_start_date"],
-                "balance_id": str(row["id"]),
-                "leave_year": row["leave_year"],
-                "days": float(row["opening_balance"] or 0),
-                "delta": float(row["opening_balance"] or 0),
-            }
-        )
-        credited = float(row["credited"] or 0)
-        if credited:
+    if not ledger_transactions:
+        for row in balances:
             yearly_events.append(
                 {
-                    "entry_type": "annual_credit",
+                    "entry_type": "opening_balance",
                     "event_date": row["year_start_date"],
                     "balance_id": str(row["id"]),
                     "leave_year": row["leave_year"],
-                    "days": credited,
-                    "delta": credited,
+                    "days": float(row["opening_balance"] or 0),
+                    "delta": float(row["opening_balance"] or 0),
                 }
             )
+            credited = float(row["credited"] or 0)
+            if credited:
+                yearly_events.append(
+                    {
+                        "entry_type": "annual_credit",
+                        "event_date": row["year_start_date"],
+                        "balance_id": str(row["id"]),
+                        "leave_year": row["leave_year"],
+                        "days": credited,
+                        "delta": credited,
+                    }
+                )
 
-    # Fetch workflow configs and steps for this leave type
     emp_res = await db.execute(text("SELECT category_id FROM employees WHERE id = :eid"), {"eid": employee_id})
     emp_row = emp_res.fetchone()
     cat_id = emp_row.category_id if emp_row else None
@@ -309,16 +359,20 @@ async def get_ledger(
         cfg["steps"] = [s.approver_role for s in steps_res.fetchall()]
         approval_chains.append(cfg)
 
-    transactions = sorted(
-        [*yearly_events, *manual_adjustments, *application_events],
-        key=lambda item: (str(item.get("event_date") or ""), item["entry_type"]),
-    )
+    if ledger_transactions:
+        transactions = ledger_transactions
+    else:
+        transactions = sorted(
+            [*yearly_events, *manual_adjustments, *application_events],
+            key=lambda item: (str(item.get("event_date") or ""), item["entry_type"]),
+        )
     return {
         "employee_id": employee_id,
         "leave_type_id": leave_type_id,
         "balances": balances,
         "transactions": transactions,
         "approval_chains": approval_chains,
+        "ledger_source": "immutable" if ledger_transactions else "legacy",
     }
 
 
@@ -470,9 +524,14 @@ async def carry_forward_run(
 async def manual_adjust(
     balance_id: str,
     body: dict,
-    current_user: dict = Depends(require_role(*_ADMIN_BALANCE_ROLES)),
+    current_user: dict = Depends(get_current_user),
+    scope: dict = Depends(employee_scope),
     db: AsyncSession = Depends(get_db),
 ):
+    role = current_user["role"]
+    if role not in _ADMIN_BALANCE_ROLES and role not in _NODAL_ADJUST_ROLES:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
     reason = body.get("reason")
     if not reason:
         raise HTTPException(status_code=400, detail="Reason required")
@@ -484,18 +543,36 @@ async def manual_adjust(
 
     existing = await db.execute(
         text("""
-            SELECT id
-            FROM leave_balances
-            WHERE id = :bid
+            SELECT lb.id, lb.employee_id, lb.leave_type_id, lb.leave_year
+            FROM leave_balances lb
+            WHERE lb.id = :bid
         """),
         {"bid": balance_id},
     )
-    if not existing.fetchone():
+    bal_row = existing.fetchone()
+    if not bal_row:
         raise HTTPException(status_code=404, detail="Leave balance not found")
+
+    if role in _NODAL_ADJUST_ROLES:
+        _require_employee_scope(scope, str(bal_row.employee_id))
 
     await db.execute(
         text(f"UPDATE leave_balances SET {field} = {field} + :amt, last_updated = now() WHERE id = :bid"),
         {"amt": amount, "bid": balance_id},
+    )
+    await record_leave_ledger(
+        db,
+        balance_id=balance_id,
+        employee_id=str(bal_row.employee_id),
+        leave_type_id=str(bal_row.leave_type_id),
+        leave_year=int(bal_row.leave_year),
+        txn_type="MANUAL_ADJUST",
+        amount=amount,
+        field_affected=field,
+        reference_type="manual",
+        reason=reason,
+        actor_id=current_user["user_id"],
+        impersonated_by=current_user.get("impersonated_by"),
     )
     await db.execute(
         text("""

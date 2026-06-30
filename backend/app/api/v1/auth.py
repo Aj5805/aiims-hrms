@@ -81,6 +81,9 @@ async def login(request: Request, body: LoginRequest, response: Response, db: As
         path="/api/v1/auth",
     )
 
+    client_ip = request.client.host if request.client else None
+    user_agent = request.headers.get("user-agent", "")[:500]
+
     await db.execute(
         text(
             """
@@ -92,6 +95,15 @@ async def login(request: Request, body: LoginRequest, response: Response, db: As
             """
         ),
         {"uid": uid},
+    )
+    await db.execute(
+        text(
+            """
+            INSERT INTO login_log (user_id, ip_address, user_agent)
+            VALUES (:uid, :ip, :ua)
+            """
+        ),
+        {"uid": uid, "ip": client_ip, "ua": user_agent},
     )
     await db.commit()
 
@@ -270,6 +282,46 @@ async def change_my_password(
             "emp_code": updated_user.emp_code,
         },
     )
+
+
+@router.get("/my-login-activity")
+async def my_login_activity(
+    limit: int = 20,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Staff self-service: recent login events for the current user."""
+    result = await db.execute(
+        text("""
+            SELECT logged_in_at, ip_address, user_agent
+            FROM login_log
+            WHERE user_id = :uid
+            ORDER BY logged_in_at DESC
+            LIMIT :lim
+        """),
+        {"uid": current_user["user_id"], "lim": min(limit, 50)},
+    )
+    rows = result.fetchall()
+    last_login = None
+    user_row = await db.execute(
+        text("SELECT last_login FROM users WHERE id = :uid"),
+        {"uid": current_user["user_id"]},
+    )
+    lr = user_row.fetchone()
+    if lr and lr.last_login:
+        last_login = str(lr.last_login)
+
+    return {
+        "last_login": last_login,
+        "history": [
+            {
+                "logged_in_at": str(r.logged_in_at),
+                "ip_address": r.ip_address,
+                "user_agent": r.user_agent,
+            }
+            for r in rows
+        ],
+    }
 
 
 @router.get("/me")

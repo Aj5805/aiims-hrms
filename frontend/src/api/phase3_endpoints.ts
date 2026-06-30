@@ -1,7 +1,7 @@
 import api from './client';
 
 export const leaveTypesApi = {
-  list: () => api.get('/leave-types'),
+  list: (params?: Record<string, string | boolean>) => api.get('/leave-types', { params }),
   create: (data: Record<string, unknown>) => api.post('/leave-types', data),
   update: (id: string, data: Record<string, unknown>) => api.put(`/leave-types/${id}`, data),
 };

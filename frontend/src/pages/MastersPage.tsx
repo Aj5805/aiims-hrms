@@ -8,10 +8,13 @@ import {
   HolidayPanel,
   WorkflowPanel,
 } from './Phase3Pages';
+import { NodalAssignmentsPanel, HodAssignmentsPanel } from './RoleFeaturePages';
 
 export const MASTER_TABS = [
   { id: 'dept', label: 'Departments' },
   { id: 'desg', label: 'Designations' },
+  { id: 'assignments', label: 'Nodal Assignments' },
+  { id: 'hod-assignments', label: 'HOD Assignments' },
   { id: 'leave-types', label: 'Leave Types' },
   { id: 'entitlements', label: 'Entitlements' },
   { id: 'holidays', label: 'Holidays' },
@@ -30,6 +33,8 @@ function resolveTab(raw: string | null): MasterTabId {
 const TAB_DESCRIPTIONS: Record<MasterTabId, string> = {
   dept: 'Organisational departments used across HR and leave routing.',
   desg: 'Job titles linked to employee categories and pay levels.',
+  assignments: 'Map nodal officers and nodal office staff to departments.',
+  'hod-assignments': 'Assign the Head of Department for each department.',
   'leave-types': 'Core definitions for all available leave types.',
   entitlements: 'Annual credit and limits per category and leave type.',
   holidays: 'Institutional holiday calendar by year.',
@@ -73,6 +78,8 @@ export default function MastersPage() {
       <div className="card p-5">
         {tab === 'dept' && <DepartmentTab />}
         {tab === 'desg' && <DesignationTab />}
+        {tab === 'assignments' && <NodalAssignmentsPanel />}
+        {tab === 'hod-assignments' && <HodAssignmentsPanel />}
         {tab === 'leave-types' && <LeaveTypesPanel />}
         {tab === 'entitlements' && <EntitlementRulesPanel />}
         {tab === 'holidays' && <HolidayPanel />}
@@ -82,8 +89,8 @@ export default function MastersPage() {
   );
 }
 
-interface Dept { id: string; code: string; name: string; managing_office?: string }
-interface Desg { id: string; name: string; grade_pay_level?: string; category_code?: string }
+interface Dept { id: string; code: string; name: string; managing_office?: string; is_active?: boolean }
+interface Desg { id: string; name: string; grade_pay_level?: string; category_code?: string; is_active?: boolean }
 
 function DepartmentTab() {
   const [depts, setDepts] = useState<Dept[]>([]);
@@ -92,7 +99,7 @@ function DepartmentTab() {
   const [office, setOffice] = useState('');
 
   const load = async () => {
-    const { data } = await departmentsApi.list();
+    const { data } = await departmentsApi.list({ include_inactive: true });
     setDepts(data);
   };
   useEffect(() => { load(); }, []);
@@ -103,6 +110,15 @@ function DepartmentTab() {
     await departmentsApi.create({ code, name, managing_office: office || null });
     setCode(''); setName(''); setOffice('');
     load();
+  };
+
+  const toggleActive = async (dept: Dept) => {
+    try {
+      await departmentsApi.update(dept.id, { is_active: !dept.is_active });
+      load();
+    } catch {
+      alert('Could not update department status.');
+    }
   };
 
   return (
@@ -133,18 +149,26 @@ function DepartmentTab() {
               <th className="px-6 py-3 text-left font-medium">Code</th>
               <th className="px-6 py-3 text-left font-medium">Name</th>
               <th className="px-6 py-3 text-left font-medium">Managing Office</th>
+              <th className="px-6 py-3 text-left font-medium">Status</th>
+              <th></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {depts.map((d) => (
-              <tr key={d.id} className="hover:bg-gray-50 transition">
+              <tr key={d.id} className={`hover:bg-gray-50 transition ${d.is_active === false ? 'opacity-60' : ''}`}>
                 <td className="px-6 py-4 font-mono text-xs text-gray-600">{d.code}</td>
                 <td className="px-6 py-4 font-medium text-gray-900">{d.name}</td>
                 <td className="px-6 py-4 text-gray-500">{d.managing_office || '-'}</td>
+                <td className="px-6 py-4">{d.is_active !== false ? <span className="text-emerald-700 font-bold text-xs">Active</span> : <span className="text-slate-400 text-xs">Inactive</span>}</td>
+                <td className="px-6 py-4">
+                  <button type="button" onClick={() => void toggleActive(d)} className="text-xs font-bold text-blue-600 hover:underline">
+                    {d.is_active !== false ? 'Deactivate' : 'Activate'}
+                  </button>
+                </td>
               </tr>
             ))}
             {depts.length === 0 && (
-              <tr><td colSpan={3} className="px-6 py-12 text-center text-gray-400">No departments configured.</td></tr>
+              <tr><td colSpan={5} className="px-6 py-12 text-center text-gray-400">No departments configured.</td></tr>
             )}
           </tbody>
         </table>
@@ -160,10 +184,19 @@ function DesignationTab() {
   const [catCode, setCatCode] = useState('');
 
   const load = async () => {
-    const { data } = await designationsApi.list();
+    const { data } = await designationsApi.list({ include_inactive: true });
     setDesgs(data);
   };
   useEffect(() => { load(); }, []);
+
+  const toggleActive = async (desg: Desg) => {
+    try {
+      await designationsApi.update(desg.id, { is_active: !desg.is_active });
+      load();
+    } catch {
+      alert('Could not update designation status.');
+    }
+  };
 
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -201,11 +234,13 @@ function DesignationTab() {
               <th className="px-6 py-3 text-left font-medium">Designation Name</th>
               <th className="px-6 py-3 text-left font-medium">Pay Level</th>
               <th className="px-6 py-3 text-left font-medium">Category Code</th>
+              <th className="px-6 py-3 text-left font-medium">Status</th>
+              <th></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {desgs.map((d) => (
-              <tr key={d.id} className="hover:bg-gray-50 transition">
+              <tr key={d.id} className={`hover:bg-gray-50 transition ${d.is_active === false ? 'opacity-60' : ''}`}>
                 <td className="px-6 py-4 font-medium text-gray-900">{d.name}</td>
                 <td className="px-6 py-4 text-gray-500">{d.grade_pay_level || '-'}</td>
                 <td className="px-6 py-4 text-gray-500">
@@ -215,10 +250,16 @@ function DesignationTab() {
                     </span>
                   ) : '-'}
                 </td>
+                <td className="px-6 py-4">{d.is_active !== false ? <span className="text-emerald-700 font-bold text-xs">Active</span> : <span className="text-slate-400 text-xs">Inactive</span>}</td>
+                <td className="px-6 py-4">
+                  <button type="button" onClick={() => void toggleActive(d)} className="text-xs font-bold text-blue-600 hover:underline">
+                    {d.is_active !== false ? 'Deactivate' : 'Activate'}
+                  </button>
+                </td>
               </tr>
             ))}
             {desgs.length === 0 && (
-              <tr><td colSpan={3} className="px-6 py-12 text-center text-gray-400">No designations configured.</td></tr>
+              <tr><td colSpan={5} className="px-6 py-12 text-center text-gray-400">No designations configured.</td></tr>
             )}
           </tbody>
         </table>

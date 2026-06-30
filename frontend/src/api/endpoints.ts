@@ -5,6 +5,7 @@ export const authApi = {
     api.post('/auth/login', { username, password }),
   logout: () => api.post('/auth/logout'),
   me: () => api.get('/auth/me'),
+  myLoginActivity: (limit = 20) => api.get('/auth/my-login-activity', { params: { limit } }),
   changePassword: (userId: string, newPassword: string) =>
     api.post('/auth/change-password', { user_id: userId, new_password: newPassword }),
   changeMyPassword: (currentPassword: string, newPassword: string) =>
@@ -19,6 +20,7 @@ export const employeesApi = {
   get: (id: string) => api.get(`/employees/${id}`),
   create: (data: Record<string, unknown>) => api.post('/employees', data),
   update: (id: string, data: Record<string, unknown>) => api.put(`/employees/${id}`, data),
+  lifecycle: (id: string, data: Record<string, unknown>) => api.post(`/employees/${id}/lifecycle`, data),
   importCsv: (file: File) => {
     const form = new FormData();
     form.append('file', file);
@@ -29,18 +31,20 @@ export const employeesApi = {
 };
 
 export const departmentsApi = {
-  list: () => api.get('/departments'),
+  list: (params?: Record<string, string | boolean>) => api.get('/departments', { params }),
   create: (data: Record<string, unknown>) => api.post('/departments', data),
   update: (id: string, data: Record<string, unknown>) => api.put(`/departments/${id}`, data),
 };
 
 export const designationsApi = {
-  list: () => api.get('/designations'),
+  list: (params?: Record<string, string | boolean>) => api.get('/designations', { params }),
   create: (data: Record<string, unknown>) => api.post('/designations', data),
+  update: (id: string, data: Record<string, unknown>) => api.put(`/designations/${id}`, data),
 };
 
 export const usersApi = {
   list: (role?: string) => api.get('/users', { params: role ? { role } : {} }),
+  create: (data: Record<string, unknown>) => api.post('/users', data),
   update: (id: string, data: Record<string, unknown>) => api.put(`/users/${id}`, data),
 };
 
@@ -64,6 +68,8 @@ export const reportsApi = {
     api.get('/reports/pending-applications', { responseType: 'blob' }),
   balanceSummary: (params: Record<string, string>) =>
     api.get('/reports/balance-summary', { params, responseType: 'blob' }),
+  balanceOverview: (params: Record<string, string>) =>
+    api.get('/reports/balance-overview', { params }),
   sanctionPdf: (applicationId: string) =>
     api.get(`/reports/sanction-pdf/${applicationId}`, { responseType: 'blob' }),
   leaveCalendar: (params: Record<string, string>) =>
@@ -89,4 +95,18 @@ export const broadcastsApi = {
   getAll: () => api.get('/broadcasts/'),
   create: (data: any) => api.post('/broadcasts/', data),
   update: (id: string, data: any) => api.put(`/broadcasts/${id}`, data),
+};
+
+export const nodalAssignmentsApi = {
+  list: (params?: Record<string, string | boolean>) => api.get('/nodal-assignments', { params }),
+  create: (data: Record<string, unknown>) => api.post('/nodal-assignments', data),
+  update: (id: string, data: Record<string, unknown>) => api.put(`/nodal-assignments/${id}`, data),
+  nodalUsers: () => api.get('/nodal-assignments/nodal-users'),
+};
+
+export const hodAssignmentsApi = {
+  list: (params?: Record<string, string | boolean>) => api.get('/hod-assignments', { params }),
+  create: (data: Record<string, unknown>) => api.post('/hod-assignments', data),
+  update: (id: string, data: Record<string, unknown>) => api.put(`/hod-assignments/${id}`, data),
+  hodUsers: () => api.get('/hod-assignments/hod-users'),
 };

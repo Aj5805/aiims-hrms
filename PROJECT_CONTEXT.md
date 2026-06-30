@@ -2,7 +2,7 @@
 
 > **Agents:** Read this file at the start of every session. Update it after meaningful work (features, fixes, decisions, validation). Keep it concise — current state only, not a full changelog. Detailed history stays in `HANDOFF.md`.
 
-**Last updated:** 2026-06-30 (nav cleanup — unified Masters hub)
+**Last updated:** 2026-06-30 (deferred alignment items complete)
 
 ---
 
@@ -70,6 +70,42 @@ scripts/db_sync.py      cross-platform DB snapshot sync
 | `STAFF` | Own record | Apply leave, view balances |
 
 **Nodal leave workflow:** `Staff → HOD (step 1) → NODAL_OFFICER (step 2, FINAL)` via `dept_nodal_assignments`.
+
+**Owner spec mapping:** Staff = `STAFF`; HOD = `HOD`; Nodal Officer = `NODAL_OFFICER`; Nodal office clerical (view-only, no approvals) = `NODAL_OFFICE`; Super Admin = `ADMIN`.
+
+---
+
+## Owner Role Requirements — Alignment (2026-06-30)
+
+*Reviewed against owner four-tier spec. ✓ = built; ~ = partial/shell; ✗ = not built.*
+
+| Area | Staff | HOD | Nodal Officer | Super Admin |
+|---|---|---|---|---|
+| Leave balance / history | ~ own only | ~ API only, no team UI | ~ report export only | ✓ adjust + audit |
+| Apply for leave | ✓ | — | — | — |
+| Login activity tracking | ✓ `/login-activity` | — | — | ~ last_login in user list |
+| Approval inbox | — | ~ approve/forward/reject | ✓ final step | — |
+| Team leave ledgers | — | ~ team picker + ledger via `/leave-account` | ~ scoped API | — |
+| Forecasting (dates × designations) | — | ✓ `/forecast` | ✓ same | — |
+| Assign HOD / nodal to dept | — | — | ~ assign HOD per employee | ✓ Masters → Nodal Assignments |
+| Onboard / resign / rejoin / promote | — | — | ~ directory actions (nodal officer) | — |
+| Reports | — | — | ✓ | — |
+| Custom leave adjustments | — | — | ✓ nodal officer scoped | ✓ |
+| Balance overview + filters | — | — | ✓ `/balance-overview` | — |
+| NODAL_OFFICE view-only logins | — | — | ✓ no edit/onboard/approve | ~ via user create |
+| Masters CRUD + activate/deactivate | — | — | — | ✓ dept/desg/leave types |
+| Holidays / RH load | — | — | — | ✓ Masters tab |
+| Auditability | — | — | — | ✓ + immutable leave ledger |
+
+**All four deferred items (2026-06-30) shipped:**
+1. **Master activate/deactivate** — `is_active` on departments, designations, leave types; Masters UI toggles.
+2. **HOD per department** — `dept_hod_assignments` table + Masters → HOD Assignments; approval routing uses it.
+3. **Nodal office hierarchy** — `users.parent_nodal_user_id`; create view-only logins under a nodal officer in Masters → Nodal Assignments.
+4. **Immutable leave ledger** — `leave_balance_ledger` append-only table; wired to opening, adjust, approve, recall; ledger API prefers immutable entries.
+
+**Latest work (2026-06-30):** Deferred items + prior role alignment slice. Migrations: `b2c3d4e5f6a7` (login_log), `c3d4e5f6a7b8` (deferred). Frontend `npm run build` ✓.
+
+**Prior (2026-06-30):** Role alignment — nodal assignments, login activity, team views, forecast, balance overview, lifecycle actions.
 
 ---
 
@@ -205,17 +241,13 @@ Step 5: Year-end / special   → Closing, encashment, LOP, comp-off (as AIIMS re
 
 **Built so far (foundation):** Auth, role-based navigation, leave apply/approve flow (incl. nodal routing), leave balances (basic), admin console, impersonation, reports shell, hub dashboards, test seed data.
 
-**Latest work (2026-06-30):** Navigation cleanup — all reference masters consolidated under `/masters` (6 tabs); removed duplicate System Config menu and Admin Console stub modules; legacy `/leave-types` etc. redirect into Masters hub; Admin Tools grouped (impersonate/audit moved into Admin Console users/audit modules).
+**Latest work (2026-06-30):** Role-requirements gap build (see alignment section). Frontend `npm run build` ✓.
 
-**Prior (2026-06-30):** Onboard form uses **12-column width rationalisation** — each field sized to expected data length (narrow for codes/dates/enums, wide for names/addresses/emails). Entry font bumped to 13px with clearer labels; codes (PAN, Aadhaar, mobile, etc.) use monospace tabular digits.
-
-**Prior (2026-06-29):** AIIMS department (57) and designation (39) masters loaded into local PostgreSQL via `python seeds/run.py`. Onboard Staff dropdowns now use real lists.
-
-**Git:** Uncommitted — staff reg fields, NODAL_OFFICE role, form rebuild.
+**Git:** Uncommitted — full role alignment + deferred items slice.
 
 ### WIP / Uncommitted
 
-Staff registration DB/API/form + NODAL_OFFICE role (this session).
+Role alignment + deferred items (masters is_active, HOD assignments, nodal hierarchy, immutable ledger).
 
 ---
 
@@ -305,11 +337,11 @@ Use this ladder. **Default = keep building; fix only when a trigger fires.**
 
 ## Next Action
 
-**Immediate:** Run `cd backend && alembic upgrade head` locally to apply employee field migration. Create NODAL_OFFICE users in Admin → Users & Roles and assign departments via nodal assignments.
+**Run locally:** `cd backend && alembic upgrade head` (applies `login_log` + deferred migrations). Restart backend + frontend.
 
-**Build sequence:** Step 1 Masters ✓ → Step 2 Registration (fields done; workflow rules next) → Step 3 Leave config → Step 4 Leave transactions → Step 5 Year-end.
+**Smoke test:** Masters → deactivate/reactivate a test dept; assign HOD; create nodal office login under nodal officer; apply + approve leave and confirm Leave Ledger shows immutable entries (`ledger_source: immutable`).
 
-**Still open (plain language):** Staff categories breakdown; CCS vs Resident leave rules first; pilot timeline.
+**Build sequence:** Step 2 Registration workflow rules → Step 3 Leave config → Step 4 Leave transaction hardening.
 
 ---
 

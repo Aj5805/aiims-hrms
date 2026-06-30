@@ -257,15 +257,21 @@ async def _fetch_pending_rows(db: AsyncSession) -> list[dict]:
     return _rows_from_result(result)
 
 
-async def _fetch_balance_rows(db: AsyncSession, as_of_date: date | None) -> list[dict]:
+async def _fetch_balance_rows(
+    db: AsyncSession,
+    as_of_date: date | None,
+    department_code: str | None = None,
+    designation_name: str | None = None,
+    current_user: dict | None = None,
+) -> list[dict]:
     target_year = as_of_date.year if as_of_date else date.today().year
-    result = await db.execute(
-        text(
-            """
+    query = """
             SELECT
                 e.emp_code AS emp_code,
                 e.name AS name,
+                d.code AS department_code,
                 d.name AS dept,
+                des.name AS designation_name,
                 lt.code AS leave_type,
                 lb.opening_balance AS opening_balance,
                 lb.credited AS credited,
@@ -274,13 +280,20 @@ async def _fetch_balance_rows(db: AsyncSession, as_of_date: date | None) -> list
             FROM leave_balances lb
             JOIN employees e ON lb.employee_id = e.id
             JOIN departments d ON e.department_id = d.id
+            JOIN designations des ON e.designation_id = des.id
             JOIN leave_types lt ON lb.leave_type_id = lt.id
-            WHERE lb.leave_year = :leave_year
-            ORDER BY e.emp_code, lt.code
-            """
-        ),
-        {"leave_year": target_year},
-    )
+            WHERE lb.leave_year = :leave_year AND e.is_active = true
+    """
+    params: dict = {"leave_year": target_year}
+    if department_code and department_code != "ALL":
+        query += " AND d.code = :dept_code"
+        params["dept_code"] = department_code
+    if designation_name and designation_name != "ALL":
+        query += " AND des.name = :desg_name"
+        params["desg_name"] = designation_name
+    query = _apply_nodal_scope(query, current_user, params)
+    query += " ORDER BY d.name, des.name, e.emp_code, lt.code"
+    result = await db.execute(text(query), params)
     return _rows_from_result(result)
 
 
@@ -424,10 +437,18 @@ async def pending_applications(
 async def balance_summary(
     request: Request,
     as_of_date: str | None = Query(None),
-    _: dict = Depends(require_role(*REPORT_ROLES)),
+    department_code: str | None = Query(None),
+    designation_name: str | None = Query(None),
+    current_user: dict = Depends(require_role(*REPORT_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
-    rows = await _fetch_balance_rows(db, date.fromisoformat(as_of_date) if as_of_date else None)
+    rows = await _fetch_balance_rows(
+        db,
+        date.fromisoformat(as_of_date) if as_of_date else None,
+        department_code,
+        designation_name,
+        current_user,
+    )
     headers = ["Emp Code", "Name", "Dept", "Leave Type", "Opening", "Credited", "Availed", "Closing"]
     body_rows = [
         [
@@ -449,6 +470,25 @@ async def balance_summary(
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         f"balance_summary_{suffix}.xlsx",
     )
+
+
+@router.get("/balance-overview")
+async def balance_overview(
+    as_of_date: str | None = Query(None),
+    department_code: str | None = Query(None),
+    designation_name: str | None = Query(None),
+    current_user: dict = Depends(require_role(*REPORT_ROLES)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Interactive balance grid for nodal officers — filter by department and designation."""
+    rows = await _fetch_balance_rows(
+        db,
+        date.fromisoformat(as_of_date) if as_of_date else None,
+        department_code,
+        designation_name,
+        current_user,
+    )
+    return {"as_of_date": as_of_date or str(date.today().year), "rows": rows, "count": len(rows)}
 
 
 @router.get("/sanction-pdf/{application_id}")

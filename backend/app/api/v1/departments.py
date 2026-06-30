@@ -2,7 +2,7 @@
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Query
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,29 +20,37 @@ _NODAL_SCOPED_ROLES = ("NODAL_OFFICER", "NODAL_OFFICE")
 
 @router.get("", response_model=list[DepartmentResponse])
 async def list_departments(
+    include_inactive: bool = Query(False),
     current_user: dict = Depends(require_role(*_MASTER_VIEW_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
+    inactive_clause = "" if include_inactive else " AND d.is_active = true"
     if current_user["role"] in _NODAL_SCOPED_ROLES:
         result = await db.execute(
-            text("""
-                SELECT d.id, d.code, d.name, d.parent_dept_id, d.managing_office
+            text(f"""
+                SELECT d.id, d.code, d.name, d.parent_dept_id, d.managing_office, d.is_active
                 FROM departments d
                 JOIN dept_nodal_assignments dna ON dna.department_id = d.id
-                WHERE dna.nodal_user_id = :uid AND dna.is_active = true
+                WHERE dna.nodal_user_id = :uid AND dna.is_active = true{inactive_clause}
                 ORDER BY d.name
             """),
             {"uid": current_user["user_id"]},
         )
     else:
         result = await db.execute(
-            text("SELECT id, code, name, parent_dept_id, managing_office FROM departments ORDER BY name")
+            text(f"""
+                SELECT id, code, name, parent_dept_id, managing_office, is_active
+                FROM departments
+                WHERE 1=1{inactive_clause.replace('d.', '')}
+                ORDER BY name
+            """)
         )
     return [
         DepartmentResponse(
             id=str(r.id), code=r.code, name=r.name,
             parent_dept_id=str(r.parent_dept_id) if r.parent_dept_id else None,
             managing_office=r.managing_office,
+            is_active=bool(r.is_active),
         )
         for r in result.fetchall()
     ]
@@ -74,13 +82,14 @@ async def create_department(
         raise HTTPException(status_code=409, detail=f"Department with code '{body.code}' already exists")
 
     result = await db.execute(
-        text("SELECT id, code, name, parent_dept_id, managing_office FROM departments WHERE id = :id"), {"id": did}
+        text("SELECT id, code, name, parent_dept_id, managing_office, is_active FROM departments WHERE id = :id"), {"id": did}
     )
     r = result.fetchone()
     return DepartmentResponse(
         id=str(r.id), code=r.code, name=r.name,
         parent_dept_id=str(r.parent_dept_id) if r.parent_dept_id else None,
         managing_office=r.managing_office,
+        is_active=bool(r.is_active),
     )
 
 
@@ -96,6 +105,15 @@ async def update_department(
         updates["name"] = body.name
     if body.managing_office is not None:
         updates["managing_office"] = body.managing_office
+    if body.is_active is not None:
+        if not body.is_active:
+            active_staff = await db.execute(
+                text("SELECT 1 FROM employees WHERE department_id = :did AND is_active = true LIMIT 1"),
+                {"did": department_id},
+            )
+            if active_staff.fetchone():
+                raise HTTPException(status_code=400, detail="Cannot deactivate department with active staff")
+        updates["is_active"] = body.is_active
     if updates:
         set_clause = ", ".join(f"{k} = :{k}" for k in updates)
         updates["eid"] = department_id
@@ -113,4 +131,5 @@ async def update_department(
         id=str(r.id), code=r.code, name=r.name,
         parent_dept_id=str(r.parent_dept_id) if r.parent_dept_id else None,
         managing_office=r.managing_office,
+        is_active=bool(r.is_active),
     )
