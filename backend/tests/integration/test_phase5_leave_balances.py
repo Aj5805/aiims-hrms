@@ -189,7 +189,7 @@ async def main() -> None:
 
         annual = await client.post(
             "/api/v1/leave-balances/credit/annual",
-            json={"year_start": "2027-04-01", "leave_year": 2027},
+            json={"year_start": "2027-01-01", "leave_year": 2027},
             headers=headers,
         )
         annual_body = await expect_status(annual, 200, "annual credit 2027")
@@ -199,10 +199,11 @@ async def main() -> None:
             JOIN employee_categories c ON c.id = e.category_id
             JOIN leave_entitlement_rules ler ON ler.category_id = c.id
             JOIN leave_types lt ON lt.id = ler.leave_type_id
-            WHERE c.leave_scheme = 'CCS'
-              AND ler.year_ref = 'FINANCIAL'
-              AND lt.code IN ('EL', 'HPL')
-              AND COALESCE(ler.days_per_year, 0) > 0
+            WHERE ler.year_ref = 'CALENDAR'
+              AND (
+                COALESCE(ler.days_per_year, 0) > 0
+                OR COALESCE(ler.prorata_rate, 0) > 0
+              )
         """, {}))
         assert_equal(annual_body["rows_affected"], expected_annual_rows, "annual credit inserted rows")
 
@@ -237,7 +238,7 @@ async def main() -> None:
 
         annual_again = await client.post(
             "/api/v1/leave-balances/credit/annual",
-            json={"year_start": "2027-04-01", "leave_year": 2027},
+            json={"year_start": "2027-01-01", "leave_year": 2027},
             headers=headers,
         )
         annual_again_body = await expect_status(annual_again, 200, "annual credit rerun 2027")
@@ -245,7 +246,7 @@ async def main() -> None:
 
         carry = await client.post(
             "/api/v1/leave-balances/carryforward",
-            json={"source_year": 2027, "target_year": 2028, "year_start": "2028-04-01"},
+            json={"source_year": 2027, "target_year": 2028, "year_start": "2028-01-01"},
             headers=headers,
         )
         carry_body = await expect_status(carry, 200, "carry-forward 2027->2028")

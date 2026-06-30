@@ -8,64 +8,37 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_current_user, require_role
 from app.core.database import get_db
+from app.services.leave_validation import validate_leave_application
 from app.services.notifications import notify_event
-from app.services.leave_ledger import record_leave_ledger
+from app.services.leave_transaction import (
+    LeaveBalanceError,
+    adjust_balance_delta,
+    assert_sufficient_balance,
+    deduct_on_final_approval,
+    get_effective_available_balance,
+    restore_on_recall,
+)
 
 router = APIRouter(prefix="/leave-approvals", tags=["leave-approvals"])
-
-
-async def _record_avail_ledger(
-    db: AsyncSession,
-    balance_id: str,
-    days: float,
-    application_id: str,
-    actor_id: str,
-    impersonated_by: str | None,
-    reversal: bool = False,
-):
-    meta = await db.execute(
-        text("SELECT employee_id, leave_type_id, leave_year FROM leave_balances WHERE id = :bid"),
-        {"bid": balance_id},
-    )
-    row = meta.fetchone()
-    if not row:
-        return
-    signed = -abs(days) if reversal else abs(days)
-    await record_leave_ledger(
-        db,
-        balance_id=balance_id,
-        employee_id=str(row.employee_id),
-        leave_type_id=str(row.leave_type_id),
-        leave_year=int(row.leave_year),
-        txn_type="REVERSAL" if reversal else "AVAIL",
-        amount=signed if reversal else abs(days),
-        field_affected="availed",
-        reference_type="application",
-        reference_id=application_id,
-        reason="Leave recalled" if reversal else "Leave approved",
-        actor_id=actor_id,
-        impersonated_by=impersonated_by,
-    )
 
 
 async def _resolve_applicant_user(db: AsyncSession, employee_id: str | None):
     if not employee_id:
         return None
-    result = await db.execute(text("SELECT id FROM users WHERE employee_id = :eid AND is_active = true ORDER BY created_at LIMIT 1"), {"eid": employee_id})
+    result = await db.execute(
+        text("SELECT id FROM users WHERE employee_id = :eid AND is_active = true ORDER BY created_at LIMIT 1"),
+        {"eid": employee_id},
+    )
     row = result.fetchone()
     return str(row[0]) if row and row[0] else None
 
 
-def _format_date(value: str | None):
+def _format_date(value):
     return value.isoformat() if value else None
 
 
 async def _resolve_approver_user(db: AsyncSession, config_id: str, step_order: int, employee_id: str | None = None):
-    """Resolve which user should act on the given workflow step.
-
-    For NODAL_OFFICER steps, looks up dept_nodal_assignments using the
-    applicant's department — enabling per-department routing.
-    """
+    """Resolve which user should act on the given workflow step."""
     step_result = await db.execute(
         text("SELECT id, approver_role, specific_approver_id FROM workflow_steps WHERE config_id = :cid AND step_order = :so LIMIT 1"),
         {"cid": config_id, "so": step_order},
@@ -112,7 +85,6 @@ async def _resolve_approver_user(db: AsyncSession, config_id: str, step_order: i
             return str(dept_row[0])
         return None
 
-    # Department-aware routing for NODAL_OFFICER
     if approver_role == "NODAL_OFFICER" and employee_id:
         nodal_result = await db.execute(
             text("""
@@ -136,6 +108,161 @@ async def _resolve_approver_user(db: AsyncSession, config_id: str, step_order: i
     )
     user_row = user_result.fetchone()
     return str(user_row[0]) if user_row and user_row[0] else None
+
+
+async def _verify_balance_for_action(app_row, application_id: str, days: float, db: AsyncSession) -> None:
+    """Re-check effective balance at every approval stage (incl. pending applications)."""
+    kind = getattr(app_row, "application_kind", "NEW") or "NEW"
+    if kind == "CANCELLATION":
+        return
+    if kind == "MODIFICATION" and app_row.parent_application_id:
+        parent = await db.execute(
+            text("SELECT applied_days FROM leave_applications WHERE id = :id"),
+            {"id": str(app_row.parent_application_id)},
+        )
+        parent_row = parent.fetchone()
+        parent_days = float(parent_row[0]) if parent_row else 0.0
+        days_to_check = max(float(days) - parent_days, 0.0)
+    else:
+        days_to_check = float(days)
+    if days_to_check > 0:
+        await assert_sufficient_balance(
+            db,
+            str(app_row.employee_id),
+            str(app_row.leave_type_id),
+            app_row.from_date,
+            days_to_check,
+            exclude_application_id=application_id,
+        )
+
+
+async def _finalize_cancellation(
+    db: AsyncSession,
+    app_row,
+    application_id: str,
+    user_id: str,
+    impersonated_by: str | None,
+) -> None:
+    parent_id = str(app_row.parent_application_id)
+    parent = await db.execute(
+        text("SELECT * FROM leave_applications WHERE id = :id FOR UPDATE"),
+        {"id": parent_id},
+    )
+    parent_row = parent.fetchone()
+    if not parent_row or parent_row.status != "APPROVED":
+        raise HTTPException(status_code=400, detail="Parent leave is no longer approved")
+
+    await restore_on_recall(
+        db,
+        employee_id=str(parent_row.employee_id),
+        leave_type_id=str(parent_row.leave_type_id),
+        from_date=parent_row.from_date,
+        days=float(parent_row.applied_days),
+        application_id=parent_id,
+        actor_id=user_id,
+        impersonated_by=impersonated_by,
+    )
+    await db.execute(
+        text("UPDATE leave_applications SET status = 'CANCELLED', last_action_at = now() WHERE id = :id"),
+        {"id": parent_id},
+    )
+    await db.execute(
+        text("UPDATE leave_applications SET status = 'APPROVED', last_action_at = now() WHERE id = :id"),
+        {"id": application_id},
+    )
+
+
+async def _finalize_modification(
+    db: AsyncSession,
+    app_row,
+    application_id: str,
+    user_id: str,
+    impersonated_by: str | None,
+) -> None:
+    parent_id = str(app_row.parent_application_id)
+    parent = await db.execute(
+        text("SELECT * FROM leave_applications WHERE id = :id FOR UPDATE"),
+        {"id": parent_id},
+    )
+    parent_row = parent.fetchone()
+    if not parent_row or parent_row.status != "APPROVED":
+        raise HTTPException(status_code=400, detail="Parent leave is no longer approved")
+
+    old_days = float(parent_row.applied_days)
+    new_days = float(app_row.applied_days)
+    delta = new_days - old_days
+    if delta != 0:
+        try:
+            await adjust_balance_delta(
+                db,
+                employee_id=str(app_row.employee_id),
+                leave_type_id=str(app_row.leave_type_id),
+                from_date=app_row.from_date,
+                delta_days=delta,
+                application_id=application_id,
+                actor_id=user_id,
+                reason="Leave modification approved",
+                impersonated_by=impersonated_by,
+            )
+        except LeaveBalanceError as exc:
+            raise HTTPException(status_code=400, detail=exc.message) from exc
+
+    await db.execute(
+        text("""
+            UPDATE leave_applications
+            SET from_date = :fd, to_date = :td, applied_days = :ad,
+                is_half_day = :hd, last_action_at = now()
+            WHERE id = :id
+        """),
+        {
+            "fd": app_row.from_date,
+            "td": app_row.to_date,
+            "ad": new_days,
+            "hd": app_row.is_half_day,
+            "id": parent_id,
+        },
+    )
+    await db.execute(
+        text("UPDATE leave_applications SET status = 'APPROVED', last_action_at = now() WHERE id = :id"),
+        {"id": application_id},
+    )
+
+
+async def _finalize_with_deduction(
+    db: AsyncSession,
+    app_row,
+    days: float,
+    application_id: str,
+    user_id: str,
+    impersonated_by: str | None,
+) -> None:
+    """Deduct balance and mark application APPROVED in one transaction."""
+    kind = getattr(app_row, "application_kind", "NEW") or "NEW"
+    if kind == "CANCELLATION":
+        await _finalize_cancellation(db, app_row, application_id, user_id, impersonated_by)
+        return
+    if kind == "MODIFICATION":
+        await _finalize_modification(db, app_row, application_id, user_id, impersonated_by)
+        return
+
+    try:
+        await deduct_on_final_approval(
+            db,
+            employee_id=str(app_row.employee_id),
+            leave_type_id=str(app_row.leave_type_id),
+            from_date=app_row.from_date,
+            days=float(days),
+            application_id=application_id,
+            actor_id=user_id,
+            impersonated_by=impersonated_by,
+        )
+    except LeaveBalanceError as exc:
+        raise HTTPException(status_code=400, detail=exc.message) from exc
+
+    await db.execute(
+        text("UPDATE leave_applications SET status = 'APPROVED', last_action_at = now() WHERE id = :id"),
+        {"id": application_id},
+    )
 
 
 def _build_notification_context(app_row, base_status: str, reason: str | None = None):
@@ -195,7 +322,21 @@ async def approval_inbox(current_user: dict = Depends(get_current_user), db: Asy
     query += " ORDER BY hours_pending DESC"
 
     result = await db.execute(text(query), params)
-    return [dict(r._mapping) for r in result.fetchall()]
+    items = []
+    for r in result.fetchall():
+        row = dict(r._mapping)
+        if row.get("application_kind", "NEW") != "CANCELLATION":
+            row["effective_balance"] = await get_effective_available_balance(
+                db,
+                str(row["employee_id"]),
+                str(row["leave_type_id"]),
+                row["from_date"],
+                exclude_application_id=str(row["id"]),
+            )
+        else:
+            row["effective_balance"] = None
+        items.append(row)
+    return items
 
 
 @router.get("/team-availability")
@@ -389,53 +530,80 @@ async def approve_action(application_id: str, body: dict, current_user: dict = D
     elif step_dict["approver_role"] != current_user["role"]:
         raise HTTPException(status_code=403, detail="Not authorized to approve this step")
 
+    if action == "MODIFIED":
+        if not modified_from or not modified_to:
+            raise HTTPException(status_code=400, detail="modified_from_date and modified_to_date required")
+        lt = await db.execute(text("SELECT * FROM leave_types WHERE id = :id"), {"id": str(app_row.leave_type_id)})
+        lt_dict = dict(lt.fetchone()._mapping)
+        modified_days = await validate_leave_application(
+            db,
+            employee_id=str(app_row.employee_id),
+            leave_type=lt_dict,
+            from_date=modified_from,
+            to_date=modified_to,
+            is_half_day=bool(app_row.is_half_day),
+            mc_attached=bool(getattr(app_row, "mc_attached", False)),
+            application_kind=getattr(app_row, "application_kind", "NEW") or "NEW",
+        )
+
     approval_id = str(uuid.uuid4())
-    await db.execute(text("""
-        INSERT INTO leave_approvals
-            (id, application_id, step_id, approver_id, step_order, action, remarks, modified_from_date, modified_to_date, modified_days)
-        VALUES
-            (:id, :aid, :sid, :uid, :so, :action, :remarks, :mfd, :mtd, :md)
-    """), {
-        "id": approval_id, "aid": application_id, "sid": step_dict["id"], "uid": user_id, "so": app_row.current_step_order,
-        "action": action, "remarks": remarks, "mfd": modified_from, "mtd": modified_to, "md": modified_days,
-    })
+    try:
+        await db.execute(text("""
+            INSERT INTO leave_approvals
+                (id, application_id, step_id, approver_id, step_order, action, remarks, modified_from_date, modified_to_date, modified_days)
+            VALUES
+                (:id, :aid, :sid, :uid, :so, :action, :remarks, :mfd, :mtd, :md)
+        """), {
+            "id": approval_id, "aid": application_id, "sid": step_dict["id"], "uid": user_id, "so": app_row.current_step_order,
+            "action": action, "remarks": remarks, "mfd": modified_from, "mtd": modified_to, "md": modified_days,
+        })
 
-    if action == "REJECTED":
-        await db.execute(text("UPDATE leave_applications SET status = 'REJECTED', last_action_at = now() WHERE id = :id"), {"id": application_id})
-    elif action == "FORWARDED":
-        await db.execute(text("UPDATE leave_applications SET status = 'UNDER_REVIEW', current_step_order = current_step_order + 1, last_action_at = now() WHERE id = :id"), {"id": application_id})
-    elif action == "MODIFIED":
-        overlap = await db.execute(text("""
-            SELECT id FROM leave_applications
-            WHERE employee_id = :eid AND id != :id
-              AND status IN ('SUBMITTED', 'UNDER_REVIEW', 'APPROVED')
-              AND from_date <= :td AND to_date >= :fd
-            LIMIT 1
-        """), {"eid": app_row.employee_id, "id": application_id, "fd": modified_from, "td": modified_to})
-        if overlap.fetchone():
-            raise HTTPException(status_code=400, detail="Modified dates overlap with another leave")
+        if action == "REJECTED":
+            await db.execute(text("UPDATE leave_applications SET status = 'REJECTED', last_action_at = now() WHERE id = :id"), {"id": application_id})
+        elif action == "FORWARDED":
+            await _verify_balance_for_action(app_row, application_id, float(app_row.applied_days), db)
+            await db.execute(text("UPDATE leave_applications SET status = 'UNDER_REVIEW', current_step_order = current_step_order + 1, last_action_at = now() WHERE id = :id"), {"id": application_id})
+        elif action == "MODIFIED":
+            exclude = [application_id]
+            if app_row.parent_application_id:
+                exclude.append(str(app_row.parent_application_id))
+            overlap = await db.execute(
+                text("""
+                SELECT id FROM leave_applications
+                WHERE employee_id = :eid AND id != ALL(:exclude)
+                  AND status IN ('SUBMITTED', 'UNDER_REVIEW', 'APPROVED')
+                  AND from_date <= :td AND to_date >= :fd
+                LIMIT 1
+            """),
+                {"eid": app_row.employee_id, "exclude": exclude, "fd": modified_from, "td": modified_to},
+            )
+            if overlap.fetchone():
+                raise HTTPException(status_code=400, detail="Modified dates overlap with another leave")
 
-        bal = await db.execute(text("SELECT closing_balance FROM leave_balances WHERE employee_id = :eid AND leave_type_id = :lid ORDER BY leave_year DESC LIMIT 1"), {"eid": str(app_row.employee_id), "lid": str(app_row.leave_type_id)})
-        bal_row = bal.fetchone()
-        available = float(bal_row.closing_balance) if bal_row else 0
-        if modified_days > available:
-            raise HTTPException(status_code=400, detail="Insufficient balance for modified days")
-        
-        try:
-            await db.execute(text("UPDATE leave_applications SET from_date = :fd, to_date = :td, applied_days = :md, last_action_at = now() WHERE id = :id"), {"fd": modified_from, "td": modified_to, "md": modified_days, "id": application_id})
-            
+            await _verify_balance_for_action(app_row, application_id, float(modified_days), db)
+            await db.execute(
+                text("UPDATE leave_applications SET from_date = :fd, to_date = :td, applied_days = :md, last_action_at = now() WHERE id = :id"),
+                {"fd": modified_from, "td": modified_to, "md": modified_days, "id": application_id},
+            )
+
             is_final = step_dict.get("is_final_authority", False)
             if is_final:
-                bal = await db.execute(text("SELECT id FROM leave_balances WHERE employee_id = :eid AND leave_type_id = :lid ORDER BY leave_year DESC LIMIT 1 FOR UPDATE"), {"eid": str(app_row.employee_id), "lid": str(app_row.leave_type_id)})
-                bal_row = bal.fetchone()
-                if bal_row:
-                    bid = str(bal_row[0])
-                    await db.execute(text("UPDATE leave_balances SET availed = availed + :days, last_updated = now() WHERE id = :bid"), {"days": float(modified_days), "bid": bid})
-                    await _record_avail_ledger(db, bid, float(modified_days), application_id, user_id, current_user.get("impersonated_by"))
-                await db.execute(text("UPDATE leave_applications SET status = 'APPROVED', last_action_at = now() WHERE id = :id"), {"id": application_id})
+                updated_app = await db.execute(
+                    text("SELECT * FROM leave_applications WHERE id = :id"),
+                    {"id": application_id},
+                )
+                mod_row = updated_app.fetchone()
+                await _finalize_with_deduction(
+                    db,
+                    mod_row,
+                    float(modified_days),
+                    application_id,
+                    user_id,
+                    current_user.get("impersonated_by"),
+                )
             else:
                 await db.execute(text("UPDATE leave_applications SET status = 'UNDER_REVIEW', current_step_order = current_step_order + 1, last_action_at = now() WHERE id = :id"), {"id": application_id})
-                
+
             applicant_user_id = await _resolve_applicant_user(db, str(app_row.employee_id))
             next_approver_id = None
             if not is_final:
@@ -453,39 +621,46 @@ async def approve_action(application_id: str, body: dict, current_user: dict = D
             notify_context["to_date"] = _format_date(modified_to)
             notify_context["days"] = modified_days
             await notify_event(db, "APP_MODIFIED", application_id, notify_context)
-            await db.commit()
-            return {"message": action}
-        except IntegrityError:
-            await db.rollback()
-            raise HTTPException(status_code=409, detail="Dates overlap with an existing approved leave (concurrent modification)")
-    elif action == "APPROVED":
-        is_final = step_dict.get("is_final_authority", False)
-        if is_final:
-            bal = await db.execute(text("SELECT id FROM leave_balances WHERE employee_id = :eid AND leave_type_id = :lid ORDER BY leave_year DESC LIMIT 1 FOR UPDATE"), {"eid": str(app_row.employee_id), "lid": str(app_row.leave_type_id)})
-            bal_row = bal.fetchone()
-            if bal_row:
-                bid = str(bal_row[0])
-                await db.execute(text("UPDATE leave_balances SET availed = availed + :days, last_updated = now() WHERE id = :bid"), {"days": float(app_row.applied_days), "bid": bid})
-                await _record_avail_ledger(db, bid, float(app_row.applied_days), application_id, user_id, current_user.get("impersonated_by"))
-            await db.execute(text("UPDATE leave_applications SET status = 'APPROVED', last_action_at = now() WHERE id = :id"), {"id": application_id})
-        else:
-            await db.execute(text("UPDATE leave_applications SET status = 'UNDER_REVIEW', current_step_order = current_step_order + 1, last_action_at = now() WHERE id = :id"), {"id": application_id})
+        elif action == "APPROVED":
+            is_final = step_dict.get("is_final_authority", False)
+            await _verify_balance_for_action(app_row, application_id, float(app_row.applied_days), db)
+            if is_final:
+                await _finalize_with_deduction(
+                    db,
+                    app_row,
+                    float(app_row.applied_days),
+                    application_id,
+                    user_id,
+                    current_user.get("impersonated_by"),
+                )
+            else:
+                await db.execute(text("UPDATE leave_applications SET status = 'UNDER_REVIEW', current_step_order = current_step_order + 1, last_action_at = now() WHERE id = :id"), {"id": application_id})
 
-    applicant_user_id = await _resolve_applicant_user(db, str(app_row.employee_id))
-    base_notify_context = _build_notification_context(app_row, "REJECTED", remarks)
-    if action == "REJECTED":
-        base_notify_context.update({"status": "REJECTED", "recipient_id": applicant_user_id})
-        await notify_event(db, "APP_REJECTED", application_id, base_notify_context)
-    elif action == "APPROVED" and step_dict.get("is_final_authority", False):
-        base_notify_context.update({"status": "APPROVED", "recipient_id": applicant_user_id})
-        await notify_event(db, "APP_APPROVED", application_id, base_notify_context)
-    elif action == "APPROVED" and not step_dict.get("is_final_authority", False):
-        next_approver_id = await _resolve_approver_user(db, str(app_row.config_id), app_row.current_step_order + 1, str(app_row.employee_id))
-        base_notify_context.update({"status": "UNDER_REVIEW", "approver_id": next_approver_id})
-        await notify_event(db, "APPROVAL_REQUEST", application_id, base_notify_context)
+        if action != "MODIFIED":
+            applicant_user_id = await _resolve_applicant_user(db, str(app_row.employee_id))
+            base_notify_context = _build_notification_context(app_row, "REJECTED", remarks)
+            if action == "REJECTED":
+                base_notify_context.update({"status": "REJECTED", "recipient_id": applicant_user_id})
+                await notify_event(db, "APP_REJECTED", application_id, base_notify_context)
+            elif action == "APPROVED" and step_dict.get("is_final_authority", False):
+                base_notify_context.update({"status": "APPROVED", "recipient_id": applicant_user_id})
+                await notify_event(db, "APP_APPROVED", application_id, base_notify_context)
+            elif action == "APPROVED" and not step_dict.get("is_final_authority", False):
+                next_approver_id = await _resolve_approver_user(db, str(app_row.config_id), app_row.current_step_order + 1, str(app_row.employee_id))
+                base_notify_context.update({"status": "UNDER_REVIEW", "approver_id": next_approver_id})
+                await notify_event(db, "APPROVAL_REQUEST", application_id, base_notify_context)
 
-    await db.commit()
-    return {"message": action}
+        await db.commit()
+        return {"message": action}
+    except LeaveBalanceError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=exc.message) from exc
+    except HTTPException:
+        await db.rollback()
+        raise
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Concurrent update conflict — please retry")
 
 
 @router.post("/{application_id}/recall")
@@ -504,15 +679,19 @@ async def recall_application(application_id: str, current_user: dict = Depends(g
         raise HTTPException(status_code=404)
     if app_row.status != "APPROVED":
         raise HTTPException(status_code=400, detail="Only APPROVED leave can be recalled")
-    bal = await db.execute(text("SELECT id FROM leave_balances WHERE employee_id = :eid AND leave_type_id = :lid ORDER BY leave_year DESC LIMIT 1 FOR UPDATE"), {"eid": str(app_row.employee_id), "lid": str(app_row.leave_type_id)})
-    bal_row = bal.fetchone()
-    if bal_row:
-        bid = str(bal_row[0])
-        await db.execute(text("UPDATE leave_balances SET availed = GREATEST(0, availed - :days), last_updated = now() WHERE id = :bid"), {"days": float(app_row.applied_days), "bid": bid})
-        await _record_avail_ledger(
-            db, bid, float(app_row.applied_days), application_id,
-            current_user["user_id"], current_user.get("impersonated_by"), reversal=True,
+    try:
+        await restore_on_recall(
+            db,
+            employee_id=str(app_row.employee_id),
+            leave_type_id=str(app_row.leave_type_id),
+            from_date=app_row.from_date,
+            days=float(app_row.applied_days),
+            application_id=application_id,
+            actor_id=current_user["user_id"],
+            impersonated_by=current_user.get("impersonated_by"),
         )
+    except LeaveBalanceError as exc:
+        raise HTTPException(status_code=400, detail=exc.message) from exc
     await db.execute(text("UPDATE leave_applications SET status = 'RECALLED', last_action_at = now() WHERE id = :id"), {"id": application_id})
     applicant_user_id = await _resolve_applicant_user(db, str(app_row.employee_id))
     withdraw_context = _build_notification_context(app_row, "RECALLED")

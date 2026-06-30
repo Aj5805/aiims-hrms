@@ -18,6 +18,8 @@ export const employeesApi = {
   list: (params: Record<string, string | boolean>) =>
     api.get('/employees', { params }),
   get: (id: string) => api.get(`/employees/${id}`),
+  eligibleLeaveTypes: (id: string) => api.get(`/employees/${id}/eligible-leave-types`),
+  bootstrapLeaveBalances: (id: string) => api.post(`/employees/${id}/bootstrap-leave-balances`),
   create: (data: Record<string, unknown>) => api.post('/employees', data),
   update: (id: string, data: Record<string, unknown>) => api.put(`/employees/${id}`, data),
   lifecycle: (id: string, data: Record<string, unknown>) => api.post(`/employees/${id}/lifecycle`, data),

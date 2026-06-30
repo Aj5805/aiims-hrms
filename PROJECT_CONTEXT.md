@@ -2,7 +2,7 @@
 
 > **Agents:** Read this file at the start of every session. Update it after meaningful work (features, fixes, decisions, validation). Keep it concise — current state only, not a full changelog. Detailed history stays in `HANDOFF.md`.
 
-**Last updated:** 2026-06-30 (deferred alignment items complete)
+**Last updated:** 2026-06-30 (leave transaction hardening — balance, validation, cancel/modify, forms, scheduler)
 
 ---
 
@@ -214,14 +214,23 @@ All-caps names normalised for display (e.g. NURSING → Nursing, PULMONARY MEDIC
 
 | Status | What exists | What transaction logic is still needed |
 |---|---|---|
-| Shell | 13 leave types seeded (EL, HPL, CL, ML, etc.) with flags (half-day, MC required, max accumulation) | **Per-type rules engine:** CL no prefix/suffix holidays, EL minimum notice, HPL >3 days needs MC, leave combination bans |
-| Shell | Entitlement rules per category (days/year, pro-rata, carry-forward) | **Annual credit job:** auto-credit EL 30/yr, HPL 20/yr on correct date (financial year for CCS, joining anniversary for residents) |
-| Shell | Opening balances, manual adjust, basic availed deduction on approval | **Immutable transaction ledger** (currently balances are updated in place — no append-only audit trail per ADR-003) |
-| Shell | Leave application + multi-step approval | **Balance deduction atomicity:** approve → deduct → sanction PDF in one reliable transaction; rollback on failure |
-| Partial | Carry-forward with EL cap (300) | Resident pro-rata on contract change (deferred ADR-006) |
-| Gap | — | Encashment, LOP (loss of pay) calculation, comp-off earning from overtime, year-end closing process |
+| Shell | 13 leave types seeded (EL, HPL, CL, ML, etc.) with flags (half-day, MC required, max accumulation) | Encashment, LOP, comp-off earning, year-end closing |
+| **Seeded + wired** | Entitlement matrix, eligible leave types, onboarding bootstrap | Tenure-pool consumption (EOL/ML) on apply |
+| **Done (2026-06-30)** | **Atomic final approval** — balance lock, fund check, deduct + ledger + APPROVED in one commit; idempotent recall | Sanction PDF polish |
+| **Done (2026-06-30)** | **Multi-stage balance check** — pending applications reserved at apply, forward, approve, modify | — |
+| **Done (2026-06-30)** | **Cancel/modify approved leave** — change-request workflow restores or adjusts balance on final approval | — |
+| **Done (2026-06-30)** | **Validation engine** — CL prefix/suffix (holidays + weekends) from config, MC requirement, min notice (EL), max stretch, workflow min/max days | Leave combination bans |
+| **Done (2026-06-30)** | **AIIMS Bibinagar form catalogue** — `GET /leave-form-templates` + Apply screen links by category/leave type | Host PDFs in-repo if institute URLs change |
+| **Done (2026-06-30)** | **Jan-1 annual credit scheduler** (optional, `ANNUAL_CREDIT_SCHEDULER_ENABLED`); manual button still available | — |
+| Partial | Carry-forward (EL cap 300); one annual credit run (1 Jan) for CCS + residents | Year-end closing automation |
 
-**Suggested order:** (a) Define leave rules per type in plain language with AIIMS HR → (b) Implement entitlement + credit logic → (c) Harden apply/approve/deduct as one transaction → (d) Add ledger/audit trail when rules stabilise.
+**Owner-confirmed leave policy (2026-06-30):**
+- **Year boundary:** Calendar year (1 Jan – 31 Dec) for **both** regular staff and residents.
+- **Regular staff (CCS):** Same rules for Faculty, Nursing, Admin — EL 30/yr, HPL 20/yr, CL 8/yr, etc. (seed `003`).
+- **Residents:** Unified JR/SR rules — ANNUAL_RES **30/yr calendar** (pro-rata if joined mid-year), same annual pattern as staff; EOL/ML/PL tenure limits (seed `004`). **No monthly scheduler** (owner choice 2026-06-30).
+- **Config approach:** Seed once (`python seeds/run.py`), then adjust in Masters → Entitlements.
+
+**Suggested order:** Step 4 leave transactions largely done → Step 5 year-end / encashment / LOP as AIIMS requires.
 
 ### Recommended build sequence
 
@@ -241,13 +250,16 @@ Step 5: Year-end / special   → Closing, encashment, LOP, comp-off (as AIIMS re
 
 **Built so far (foundation):** Auth, role-based navigation, leave apply/approve flow (incl. nodal routing), leave balances (basic), admin console, impersonation, reports shell, hub dashboards, test seed data.
 
-**Latest work (2026-06-30):** Role-requirements gap build (see alignment section). Frontend `npm run build` ✓.
+**Latest work (2026-06-30):** Leave transaction hardening — pending-balance checks at all approval stages; cancel/modify approved leave; config-driven validation (CL prefix/suffix, MC, EL notice); AIIMS Bibinagar form template API + Apply UI; Jan-1 annual credit scheduler. Migration `d4e5f6a7b8c9`. Seed `005_validation_rules_update`. Frontend `npm run build` ✓.
 
-**Git:** Uncommitted — full role alignment + deferred items slice.
+**Prior (2026-06-30):** Role-requirements gap build (see alignment section). Frontend `npm run build` ✓.
+
+**Git:** Uncommitted — leave hardening slice + prior role alignment.
 
 ### WIP / Uncommitted
 
-Role alignment + deferred items (masters is_active, HOD assignments, nodal hierarchy, immutable ledger).
+Leave transaction hardening + role alignment (masters is_active, HOD assignments, nodal hierarchy, immutable ledger).
+
 
 ---
 
@@ -337,11 +349,12 @@ Use this ladder. **Default = keep building; fix only when a trigger fires.**
 
 ## Next Action
 
-**Run locally:** `cd backend && alembic upgrade head` (applies `login_log` + deferred migrations). Restart backend + frontend.
+**Run locally:** `cd backend && alembic upgrade head` (applies `d4e5f6a7b8c9` leave-application extensions). `python seeds/run.py` (includes `005_validation_rules_update`). Restart backend + frontend.
 
-**Smoke test:** Masters → deactivate/reactivate a test dept; assign HOD; create nodal office login under nodal officer; apply + approve leave and confirm Leave Ledger shows immutable entries (`ledger_source: immutable`).
+**Smoke test:** Apply two overlapping CL requests — second should fail on balance. Approve leave → request cancellation → final approve → balance restored. Apply page shows Bibinagar form links + live balance projection. Approval inbox shows effective balance.
 
-**Build sequence:** Step 2 Registration workflow rules → Step 3 Leave config → Step 4 Leave transaction hardening.
+**Next Action:** Year-end closing / encashment rules when owner supplies policy; optional document upload on apply.
+
 
 ---
 

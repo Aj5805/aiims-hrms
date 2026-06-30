@@ -2,6 +2,7 @@ import api from './client';
 
 export const leaveAppApi = {
   submit: (data: Record<string, unknown>) => api.post('/leave-applications', data),
+  changeRequest: (data: Record<string, unknown>) => api.post('/leave-applications/change-request', data),
   list: (params?: Record<string, string>) => api.get('/leave-applications', { params }),
   get: (id: string) => api.get(`/leave-applications/${id}`),
   withdraw: (id: string) => api.put(`/leave-applications/${id}/withdraw`),
@@ -14,4 +15,8 @@ export const approvalsApi = {
   recall: (id: string) => api.post(`/leave-approvals/${id}/recall`),
   teamAvailability: () => api.get('/leave-approvals/team-availability'),
   availabilityForecast: (params: Record<string, string>) => api.get('/leave-approvals/availability-forecast', { params }),
+};
+
+export const leaveFormTemplatesApi = {
+  list: (params?: Record<string, string>) => api.get('/leave-form-templates', { params }),
 };

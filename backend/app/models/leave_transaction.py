@@ -68,6 +68,9 @@ class LeaveApplication(Base):
     current_step_order = Column(Integer, default=1)
     submitted_at = Column(DateTime(timezone=True), nullable=True)
     last_action_at = Column(DateTime(timezone=True), nullable=True)
+    application_kind = Column(String(20), default="NEW", comment="NEW | CANCELLATION | MODIFICATION")
+    parent_application_id = Column(UUID(as_uuid=True), ForeignKey("leave_applications.id"), nullable=True)
+    mc_attached = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 

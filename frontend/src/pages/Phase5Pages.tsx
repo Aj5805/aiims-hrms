@@ -452,7 +452,7 @@ export function YearEndProcessingPage() {
 
   const runCarryForward = async () => {
     try {
-      const { data } = await balApi.carryForward({ source_year: 2026, target_year: 2027, year_start: '2027-04-01' });
+      const { data } = await balApi.carryForward({ source_year: 2026, target_year: 2027, year_start: '2027-01-01' });
       setMessage(`Carry-forward complete. ${data.rows_affected} balance rows processed.`);
     } catch (err: unknown) {
       setMessage((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Carry-forward failed');
@@ -461,7 +461,7 @@ export function YearEndProcessingPage() {
 
   const runAnnualCredit = async () => {
     try {
-      const { data } = await balApi.annualCredit({ year_start: '2027-04-01', leave_year: 2027 });
+      const { data } = await balApi.annualCredit({ year_start: '2027-01-01', leave_year: 2027 });
       setMessage(`Annual credit complete. ${data.rows_affected} balance rows processed.`);
     } catch (err: unknown) {
       setMessage((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Annual credit failed');
@@ -520,7 +520,7 @@ export function YearEndProcessingPage() {
         <div className="rounded-xl border border-emerald-200 bg-white p-6 shadow-sm">
           <h3 className="text-lg font-semibold text-slate-900">Annual Credit</h3>
           <p className="mt-2 text-sm text-slate-600">
-            Applies the configured financial-year EL/HPL credits. If an EL carry-forward row already exists for the target year, the credit is added onto that row instead of being skipped.
+            Applies calendar-year credits for all entitled leave types (regular staff EL/HPL/CL and resident ANNUAL_RES). Join-year staff receive pro-rata credit. Skips rows that already have credit.
           </p>
           <button onClick={() => void runAnnualCredit()} className="mt-4 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">
             Execute Annual Credit

@@ -14,7 +14,9 @@ from app.auth.dependencies import employee_scope, get_current_user, require_role
 from app.core.cache import cache_clear, cached, cache_set
 from app.core.database import get_db
 from app.core.upload_validation import validate_import_upload
+from app.services.leave_annual_credit import run_annual_credit
 from app.services.leave_ledger import record_leave_ledger
+from app.services.leave_transaction import get_effective_available_balance, get_pending_committed_days
 
 router = APIRouter(prefix="/leave-balances", tags=["leave-balances"])
 
@@ -89,13 +91,8 @@ async def bulk_opening_balance(
             results.append({"emp_code": emp_code, "status": "error", "message": f"Unknown leave type: {lt_code}"})
             continue
 
-        scheme = emp_row.leave_scheme
-        leave_year = 2026
-        if scheme == "CCS":
-            year_start = date(leave_year, 4, 1)
-        else:
-            doj = emp_row.doj
-            year_start = date(leave_year, doj.month, doj.day)
+        leave_year = date.today().year
+        year_start = date(leave_year, 1, 1)
 
         existing = await db.execute(
             text("""
@@ -398,19 +395,6 @@ async def project_balance(
         raise HTTPException(status_code=400, detail=f"Unknown leave type: {leave_type_code}")
 
     lt_id = str(lt_row[0])
-    bal = await db.execute(
-        text("""
-            SELECT closing_balance
-            FROM leave_balances
-            WHERE employee_id = :eid AND leave_type_id = :lid
-            ORDER BY leave_year DESC
-            LIMIT 1
-        """),
-        {"eid": employee_id, "lid": lt_id},
-    )
-    bal_row = bal.fetchone()
-    current = float(bal_row[0]) if bal_row else 0
-
     fd = date.fromisoformat(from_date)
     td = date.fromisoformat(to_date)
     holidays_result = await db.execute(
@@ -418,9 +402,13 @@ async def project_balance(
         {"f": fd, "t": td},
     )
     holiday_dates = {r[0] for r in holidays_result.fetchall()}
+    current = await get_effective_available_balance(db, employee_id, lt_id, fd)
+    pending = await get_pending_committed_days(db, employee_id, lt_id, fd.year)
     days = _working_days(fd, td, holiday_dates)
     payload = {
-        "current_balance": current,
+        "current_balance": current + pending,
+        "pending_commitments": pending,
+        "effective_balance": current,
         "requested_days": days,
         "projected_balance": max(0, current - days),
     }
@@ -434,57 +422,10 @@ async def annual_credit_run(
     _: dict = Depends(require_role(*_ADMIN_BALANCE_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
+    """Calendar-year credit for all staff — CCS (EL, HPL, CL) and residents (ANNUAL_RES)."""
     year_start = date.fromisoformat(body["year_start"])
     leave_year = body["leave_year"]
-    updated = await db.execute(
-        text("""
-            UPDATE leave_balances lb
-            SET credited = COALESCE(ler.days_per_year, 0),
-                last_updated = now()
-            FROM employees e
-            JOIN employee_categories c ON e.category_id = c.id
-            JOIN leave_entitlement_rules ler ON ler.category_id = c.id
-            JOIN leave_types lt ON ler.leave_type_id = lt.id
-            WHERE lb.employee_id = e.id
-              AND lb.leave_type_id = lt.id
-              AND lb.leave_year = :ly
-              AND c.leave_scheme = 'CCS'
-              AND ler.year_ref = 'FINANCIAL'
-              AND lt.code IN ('EL', 'HPL')
-              AND COALESCE(ler.days_per_year, 0) > 0
-              AND COALESCE(lb.credited, 0) = 0
-        """),
-        {"ly": leave_year},
-    )
-    inserted = await db.execute(
-        text("""
-            INSERT INTO leave_balances (id, employee_id, leave_type_id, leave_year, year_start_date, opening_balance, credited)
-            SELECT uuid_generate_v4(), e.id, lt.id, :ly, CAST(:ys AS date),
-                   COALESCE((
-                       SELECT closing_balance
-                       FROM leave_balances
-                       WHERE employee_id = e.id AND leave_type_id = lt.id AND leave_year = :ly - 1
-                   ), 0),
-                   COALESCE(ler.days_per_year, 0)
-            FROM employees e
-            JOIN employee_categories c ON e.category_id = c.id
-            JOIN leave_entitlement_rules ler ON ler.category_id = c.id
-            JOIN leave_types lt ON ler.leave_type_id = lt.id
-            WHERE c.leave_scheme = 'CCS'
-              AND ler.year_ref = 'FINANCIAL'
-              AND lt.code IN ('EL', 'HPL')
-              AND COALESCE(ler.days_per_year, 0) > 0
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM leave_balances lb2
-                  WHERE lb2.employee_id = e.id AND lb2.leave_type_id = lt.id AND lb2.leave_year = :ly
-              )
-        """),
-        {"ly": leave_year, "ys": year_start},
-    )
-    await db.commit()
-    cache_clear()
-    rows_affected = (updated.rowcount or 0) + (inserted.rowcount or 0)
+    rows_affected = await run_annual_credit(db, leave_year=leave_year, year_start=year_start)
     return {"message": f"Annual credit run complete for {leave_year}", "rows_affected": rows_affected}
 
 
@@ -496,7 +437,7 @@ async def carry_forward_run(
 ):
     source_year = body["source_year"]
     target_year = body["target_year"]
-    year_start = date.fromisoformat(body["year_start"]) if body.get("year_start") else date(target_year, 4, 1)
+    year_start = date.fromisoformat(body["year_start"]) if body.get("year_start") else date(target_year, 1, 1)
     result = await db.execute(
         text("""
             INSERT INTO leave_balances (id, employee_id, leave_type_id, leave_year, year_start_date, opening_balance, credited)

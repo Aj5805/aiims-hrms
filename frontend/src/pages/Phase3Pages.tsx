@@ -104,8 +104,9 @@ export function EntitlementRulesPanel() {
             <tr>
               <th>Category</th>
               <th>Leave Type</th>
+              <th>Year Ref</th>
               <th className="text-center">Days/Yr</th>
-              <th className="text-center">Yr 1 Days</th>
+              <th className="text-center">Per Month</th>
               <th className="text-center">Max/Stretch</th>
               <th className="text-center">Max/Tenure</th>
             </tr>
@@ -115,14 +116,15 @@ export function EntitlementRulesPanel() {
               <tr key={r.id as string}>
                 <td className="font-mono text-xs">{r.category_code as string}</td>
                 <td className="font-mono text-xs">{r.leave_type_code as string}</td>
+                <td className="text-xs">{r.year_ref != null ? String(r.year_ref) : '—'}</td>
                 <td className="text-right">{r.days_per_year != null ? String(r.days_per_year) : '—'}</td>
-                <td className="text-right">{r.year1_days != null ? String(r.year1_days) : '—'}</td>
-                <td className="text-right">{r.year2_plus_days != null ? String(r.year2_plus_days) : '—'}</td>
+                <td className="text-right">{r.prorata_rate != null ? String(r.prorata_rate) : '—'}</td>
+                <td className="text-right">{r.max_at_a_stretch != null ? String(r.max_at_a_stretch) : '—'}</td>
                 <td className="text-right">{r.max_in_tenure != null ? String(r.max_in_tenure) : '—'}</td>
               </tr>
             ))}
             {items.length === 0 && (
-              <tr><td colSpan={6} className="py-10 text-center text-slate-400">No entitlement rules configured.</td></tr>
+              <tr><td colSpan={7} className="py-10 text-center text-slate-400">No entitlement rules configured.</td></tr>
             )}
           </tbody>
         </table>

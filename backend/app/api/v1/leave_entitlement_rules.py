@@ -50,7 +50,7 @@ async def create_rule(
         VALUES (:id, :cid, :lid, :yr, :dpy, :pr, :y1, :y2, :ms, :mt, :cf, :sr::jsonb)
     """), {
         "id": rid, "cid": str(c_row[0]), "lid": str(lt_row[0]),
-        "yr": body.get("year_ref", "FINANCIAL"),
+        "yr": body.get("year_ref", "CALENDAR"),
         "dpy": body.get("days_per_year"), "pr": body.get("prorata_rate"),
         "y1": body.get("year1_days"), "y2": body.get("year2_plus_days"),
         "ms": body.get("max_at_a_stretch"), "mt": body.get("max_in_tenure"),

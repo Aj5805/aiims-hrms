@@ -3,6 +3,7 @@
 import csv
 import io
 import uuid
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from sqlalchemy import text
@@ -20,6 +21,8 @@ from app.schemas import (
     EmployeeResponse,
     EmployeeUpdate,
 )
+from app.services.leave_balance_bootstrap import bootstrap_leave_balances
+from app.services.leave_rules import fetch_eligible_leave_types
 
 router = APIRouter(prefix="/employees", tags=["employees"])
 
@@ -142,6 +145,56 @@ async def list_employees(
     return [_row_to_response(r) for r in rows]
 
 
+def _assert_employee_access(scope: dict, employee_id: str, own_emp_id: str | None) -> None:
+    if scope["scope"] != "all" and employee_id != own_emp_id and employee_id not in (scope["employee_ids"] or []):
+        raise HTTPException(status_code=403, detail="Not authorized to view this employee")
+
+
+@router.get("/{employee_id}/eligible-leave-types")
+async def eligible_leave_types(
+    employee_id: str,
+    current_user: dict = Depends(get_current_user),
+    scope: dict = Depends(employee_scope),
+    db: AsyncSession = Depends(get_db),
+):
+    """Leave types this employee may apply for (category entitlement matrix + scheme)."""
+    user_res = await db.execute(
+        text("SELECT employee_id FROM users WHERE id = :uid"),
+        {"uid": current_user["user_id"]},
+    )
+    user_row = user_res.fetchone()
+    own_emp_id = str(user_row[0]) if user_row and user_row[0] else None
+    _assert_employee_access(scope, employee_id, own_emp_id)
+
+    exists = await db.execute(text("SELECT 1 FROM employees WHERE id = :eid"), {"eid": employee_id})
+    if not exists.fetchone():
+        raise HTTPException(status_code=404, detail="Employee not found")
+
+    return await fetch_eligible_leave_types(db, employee_id)
+
+
+@router.post("/{employee_id}/bootstrap-leave-balances")
+async def bootstrap_employee_leave_balances(
+    employee_id: str,
+    current_user: dict = Depends(require_role("ADMIN", "ESTABLISHMENT_OFFICER")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create missing balance rows for an existing employee (backfill / manual run)."""
+    row = await db.execute(text("SELECT doj FROM employees WHERE id = :eid"), {"eid": employee_id})
+    emp = row.fetchone()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    result = await bootstrap_leave_balances(
+        db,
+        employee_id,
+        emp[0],
+        actor_id=current_user["user_id"],
+        impersonated_by=current_user.get("impersonated_by"),
+    )
+    await db.commit()
+    return result
+
+
 @router.get("/{employee_id}", response_model=EmployeeResponse)
 async def get_employee(
     employee_id: str,
@@ -156,8 +209,7 @@ async def get_employee(
     user_row = user_res.fetchone()
     own_emp_id = str(user_row[0]) if user_row and user_row[0] else None
 
-    if scope["scope"] != "all" and employee_id != own_emp_id and employee_id not in (scope["employee_ids"] or []):
-        raise HTTPException(status_code=403, detail="Not authorized to view this employee")
+    _assert_employee_access(scope, employee_id, own_emp_id)
     return await _fetch_employee(db, employee_id)
 
 
@@ -247,6 +299,14 @@ async def create_employee(
             {"un": body.emp_code, "ph": hash_password(body.emp_code), "eid": eid},
         )
 
+    await bootstrap_leave_balances(
+        db,
+        eid,
+        body.doj,
+        actor_id=current_user["user_id"],
+        impersonated_by=current_user.get("impersonated_by"),
+    )
+
     await db.commit()
     return await _fetch_employee(db, eid)
 
@@ -335,6 +395,16 @@ async def employee_lifecycle(
         )
         if user_id:
             await db.execute(text("UPDATE users SET is_active = true WHERE id = :uid"), {"uid": user_id})
+        doj_row = await db.execute(text("SELECT doj FROM employees WHERE id = :eid"), {"eid": employee_id})
+        doj_val = doj_row.fetchone()
+        if doj_val:
+            await bootstrap_leave_balances(
+                db,
+                employee_id,
+                doj_val[0],
+                actor_id=current_user["user_id"],
+                impersonated_by=current_user.get("impersonated_by"),
+            )
     elif action in ("promote", "demote"):
         new_desg = body.get("designation_name")
         if not new_desg:
@@ -356,6 +426,16 @@ async def employee_lifecycle(
             updates["pay_level"] = body["pay_level"]
             set_parts.append("pay_level = :pay_level")
         await db.execute(text(f"UPDATE employees SET {', '.join(set_parts)} WHERE id = :eid"), updates)
+        doj_row = await db.execute(text("SELECT doj FROM employees WHERE id = :eid"), {"eid": employee_id})
+        doj_val = doj_row.fetchone()
+        if doj_val:
+            await bootstrap_leave_balances(
+                db,
+                employee_id,
+                doj_val[0],
+                actor_id=current_user["user_id"],
+                impersonated_by=current_user.get("impersonated_by"),
+            )
     elif action == "assign_hod":
         if not user_id:
             raise HTTPException(status_code=400, detail="Employee has no login account — create user first")
@@ -456,6 +536,14 @@ async def import_csv(
                             """),
                             {"un": emp_code, "ph": hash_password(emp_code), "eid": eid},
                         )
+
+                    await bootstrap_leave_balances(
+                        db,
+                        eid,
+                        date.fromisoformat(doj_str),
+                        actor_id=current_user["user_id"],
+                        impersonated_by=current_user.get("impersonated_by"),
+                    )
             except IntegrityError:
                 rows.append(CsvImportRow(row_number=i, emp_code=emp_code, status="error", message="Duplicate emp_code"))
                 errors += 1
