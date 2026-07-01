@@ -135,6 +135,26 @@ export function isValidEmail(value: string): boolean {
   return dot > 0 && dot < domain.length - 1;
 }
 
+export const MIN_DATE_YEAR = 1900;
+export const MAX_DATE_YEAR = 2099;
+export const ISO_DATE_MIN = '1900-01-01';
+export const ISO_DATE_MAX = '2099-12-31';
+
+const ISO_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** True when the string is exactly YYYY-MM-DD (not necessarily a valid calendar date). */
+export function isCompleteIsoDateString(value: string): boolean {
+  return ISO_DATE_RE.test(value);
+}
+
+/** Strip to digits and insert dashes while typing (max 8 digits → YYYY-MM-DD). */
+export function formatIsoDateInput(value: string): string {
+  const digits = value.replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 4) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 4)}-${digits.slice(4)}`;
+  return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6)}`;
+}
+
 /** Returns ISO date string or empty if the calendar date is invalid. */
 export function normalizeIsoDate(value: string): string {
   if (!value) return '';
@@ -147,18 +167,34 @@ export function isValidIsoDateString(value: string): boolean {
   return parseIsoDate(value) !== null;
 }
 
-export function parseIsoDate(value: string): Date | null {
+export function isoDateValidationMessage(value: string): string | null {
   if (!value) return null;
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (!match) return null;
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
+  if (!ISO_DATE_RE.test(value)) {
+    return 'Date must be in YYYY-MM-DD format.';
+  }
+  const year = Number(value.slice(0, 4));
+  const month = Number(value.slice(5, 7));
+  const day = Number(value.slice(8, 10));
+  if (year < MIN_DATE_YEAR || year > MAX_DATE_YEAR) {
+    return `Year must be between ${MIN_DATE_YEAR} and ${MAX_DATE_YEAR}.`;
+  }
+  if (month < 1 || month > 12) {
+    return 'Month must be between 01 and 12.';
+  }
   const d = new Date(year, month - 1, day);
   if (d.getFullYear() !== year || d.getMonth() !== month - 1 || d.getDate() !== day) {
-    return null;
+    return 'Not a valid calendar date (e.g. 30 Feb is not allowed).';
   }
-  return d;
+  return null;
+}
+
+export function parseIsoDate(value: string): Date | null {
+  if (!value) return null;
+  return isoDateValidationMessage(value) === null ? new Date(
+    Number(value.slice(0, 4)),
+    Number(value.slice(5, 7)) - 1,
+    Number(value.slice(8, 10)),
+  ) : null;
 }
 
 export interface DateValidationResult {
@@ -178,10 +214,17 @@ export function validateEmployeeDates(input: {
   const doj = input.doj ? parseIsoDate(input.doj) : null;
   const nextInc = input.next_increment_date ? parseIsoDate(input.next_increment_date) : null;
 
-  if (input.dob && !dob) return { ok: false, message: 'Date of birth is not a valid calendar date.' };
-  if (input.doj && !doj) return { ok: false, message: 'Date of joining is not a valid calendar date.' };
+  if (input.dob && !dob) {
+    return { ok: false, message: `Date of birth: ${isoDateValidationMessage(input.dob) ?? 'invalid date.'}` };
+  }
+  if (input.doj && !doj) {
+    return { ok: false, message: `Date of joining: ${isoDateValidationMessage(input.doj) ?? 'invalid date.'}` };
+  }
   if (input.next_increment_date && !nextInc) {
-    return { ok: false, message: 'Next increment date is not a valid calendar date.' };
+    return {
+      ok: false,
+      message: `Next increment date: ${isoDateValidationMessage(input.next_increment_date) ?? 'invalid date.'}`,
+    };
   }
 
   if (dob && dob > today) return { ok: false, message: 'Date of birth cannot be in the future.' };

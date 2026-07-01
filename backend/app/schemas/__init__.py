@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from app.utils.employee_validation import (
     normalize_name,
     normalize_address_field,
+    validate_calendar_date,
     validate_email_optional,
     validate_grade_group,
     validate_mobile_optional,
@@ -178,6 +179,14 @@ class EmployeeCreate(EmployeeBase):
             raise ValueError("Aadhaar must be exactly 12 digits")
         return digits
 
+    @field_validator("dob", "doj", "doj_actual", "dol_last_working", "next_increment_date")
+    @classmethod
+    def _validate_calendar_dates_create(cls, v, info):
+        if v is None:
+            return v
+        label = str(info.field_name).replace("_", " ").title()
+        return validate_calendar_date(v, field=label)
+
     @field_validator(
         "father_name", "religion", "bank_name", "last_qualification", "initial", "pay_level",
         mode="before",
@@ -308,6 +317,14 @@ class EmployeeUpdate(BaseModel):
         if len(digits) != 12:
             raise ValueError("Aadhaar must be exactly 12 digits")
         return digits
+
+    @field_validator("dob", "doj", "next_increment_date")
+    @classmethod
+    def _validate_calendar_dates_update(cls, v, info):
+        if v is None:
+            return v
+        label = str(info.field_name).replace("_", " ").title()
+        return validate_calendar_date(v, field=label)
 
 
 class SelfEmployeeUpdate(BaseModel):

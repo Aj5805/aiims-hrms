@@ -13,6 +13,9 @@ _IFSC_RE = re.compile(r"^[A-Z]{4}0[A-Z0-9]{6}$")
 _NPS_RE = re.compile(r"^\d{12}$")
 _PFMS_RE = re.compile(r"^[A-Z0-9]{14}$")
 _ADDRESS_KEYS = ("flat", "street", "city", "state", "pin")
+_MIN_DATE_YEAR = 1900
+_MAX_DATE_YEAR = 2099
+_ISO_DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
 
 
 def normalize_name(value: str) -> str:
@@ -124,6 +127,31 @@ def normalize_address_field(value: str | None) -> str | None:
     return json.dumps(normalized)
 
 
+def validate_calendar_date(value: date | None, *, field: str = "Date") -> date | None:
+    """Ensure a date falls within the allowed year range (calendar validity assumed)."""
+    if value is None:
+        return None
+    if value.year < _MIN_DATE_YEAR or value.year > _MAX_DATE_YEAR:
+        raise ValueError(f"{field} year must be between {_MIN_DATE_YEAR} and {_MAX_DATE_YEAR}")
+    return value
+
+
+def parse_iso_date_string(value: str, *, field: str = "Date") -> date:
+    """Parse YYYY-MM-DD with strict year, month, and day rules."""
+    match = _ISO_DATE_RE.fullmatch(str(value).strip())
+    if not match:
+        raise ValueError(f"{field} must be in YYYY-MM-DD format")
+    year, month, day = int(match.group(1)), int(match.group(2)), int(match.group(3))
+    if year < _MIN_DATE_YEAR or year > _MAX_DATE_YEAR:
+        raise ValueError(f"{field} year must be between {_MIN_DATE_YEAR} and {_MAX_DATE_YEAR}")
+    if month < 1 or month > 12:
+        raise ValueError(f"{field} month must be between 01 and 12")
+    try:
+        return date(year, month, day)
+    except ValueError as exc:
+        raise ValueError(f"{field} is not a valid calendar date") from exc
+
+
 def validate_employee_dates(
     *,
     dob: date | None,
@@ -174,6 +202,10 @@ def apply_registration_validators(data: dict[str, Any]) -> dict[str, Any]:
     for field in ("father_name", "religion", "bank_name", "last_qualification", "initial"):
         if field in out and out[field] not in (None, ""):
             out[field] = str(out[field]).upper()
+    for field in ("dob", "doj", "doj_actual", "dol_last_working", "next_increment_date"):
+        if field in out and out.get(field) is not None:
+            label = field.replace("_", " ").title()
+            out[field] = validate_calendar_date(out[field], field=label)
     validate_employee_dates(
         dob=out.get("dob"),
         doj=out.get("doj"),

@@ -2,7 +2,7 @@
 
 > **Agents:** Read this file at the start of every session. Update it after meaningful work (features, fixes, decisions, validation). Keep it concise — current state only, not a full changelog. Detailed history stays in `HANDOFF.md`.
 
-**Last updated:** 2026-07-01 (staff registration form + prefixed staff numbers)
+**Last updated:** 2026-07-01 (strict YYYY-MM-DD date validation)
 
 ---
 
@@ -123,7 +123,9 @@ scripts/db_sync.py      cross-platform DB snapshot sync
 
 **Latest (2026-07-01):** **CCS/DoPT Casual Leave** — CL may attach to weekends/holidays (not debited); 8-day calendar absence cap; sandwich ban with EL/HPL; half-day CL → next-day regular leave exception; Apply UX guidance + span preview; seed `014_cl_dopt_rules`. Tests + frontend build ✓.
 
-**Latest (2026-07-01):** **Onboarding validation & profile view** — structured address (5 parallel fields per permanent/present); email/date/PAN/IFSC/mobile checks; unsaved-data warning when leaving onboard tab; employee profile page (`/employees/:id`) with view, edit, export JSON, print; actual reporting date removed from form (DOJ used). Frontend build + validation unit tests ✓.
+**Latest (2026-07-01):** **Date entry UX** — staff form dates are typed `YYYY-MM-DD` (auto-dashes); validate instantly on 8 digits; invalid → inline warning + clear. **Enter** advances focus field-to-field on onboard form. Frontend build ✓.
+
+**Prior (2026-07-01):** **Onboarding validation & profile view** — structured address (5 parallel fields per permanent/present); email/date/PAN/IFSC/mobile checks; unsaved-data warning when leaving onboard tab; employee profile page (`/employees/:id`) with view, edit, export JSON, print; actual reporting date removed from form (DOJ used). Frontend build + validation unit tests ✓.
 
 **Prior (2026-07-01):** Staff registration form refinements — initials dropdown; Group A/B/C; prefixed staff numbers; field validation (name, NPS, PFMS). Migration `h8i9j0k1l2m3`.
 

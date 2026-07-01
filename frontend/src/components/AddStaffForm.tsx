@@ -20,6 +20,7 @@ import {
   validateAddressParts,
   validateEmployeeDates,
 } from '../utils/employeeForm';
+import { handleFormEnterKey } from '../utils/focusNavigation';
 
 interface Department {
   id: string;
@@ -358,7 +359,7 @@ export default function AddStaffForm({ onSaved, onCancel, onDirtyChange }: AddSt
     }
   };
 
-  const showDateError = (message: string) => setError(message);
+  const showDateError = (message: string | null) => setError(message ?? '');
 
   if (loading) return <div className="py-6 text-center text-slate-500 text-sm">Loading master data…</div>;
 
@@ -378,7 +379,10 @@ export default function AddStaffForm({ onSaved, onCancel, onDirtyChange }: AddSt
         Staff numbers use a group prefix and 4-digit sequence (e.g. FAC0001, NUR0002). The number stays with the employee for life.
       </p>
 
-      <form onSubmit={handleSubmit}>
+      <form
+        onSubmit={handleSubmit}
+        onKeyDown={(e) => handleFormEnterKey(e, e.currentTarget)}
+      >
         <div className="dense-form">
           <Section title="Personal Identity" />
           <Field label="Initial" cols={2}>
