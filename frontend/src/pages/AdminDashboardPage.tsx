@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, Navigate, useNavigate } from 'react-router-dom';
 import { adminApi, authApi, usersApi } from '../api/endpoints';
-import { entitlementRulesApi, leaveTypesApi } from '../api/phase3_endpoints';
+import { entitlementRulesApi, leaveTypesApi } from '../api/endpoints';
 import { PageHeader } from '../components/PageHeader';
 import { useAuthStore } from '../stores';
 import { SYSTEM_ROLES } from '../constants/roles';

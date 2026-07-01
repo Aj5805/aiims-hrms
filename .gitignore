@@ -49,12 +49,14 @@ backend/test-results/
 *.png
 repomix-output.xml
 repomix-*.xml
+temp/
 
 # Uploads and local runtime data
 uploads/
 backend/uploads/
 logs/
 *.log
+*.db
 pgdata/
 postgres-data/
 .postgres-data/

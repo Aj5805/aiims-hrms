@@ -33,6 +33,7 @@ from app.services.staff_number import (
     resolve_staff_group,
     validate_staff_group,
 )
+from app.utils.employee_validation import validate_employee_dates
 from app.data.staff_number_groups import STAFF_NUMBER_GROUPS
 
 router = APIRouter(prefix="/employees", tags=["employees"])
@@ -201,7 +202,7 @@ async def suggest_staff_group(
 
 @router.get("/next-staff-number", response_model=StaffNumberPreview)
 async def next_staff_number(
-    staff_group: str | None = Query(None),
+    staff_group: str = Query(..., min_length=1),
     _: dict = Depends(require_role(*_EDITOR_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
@@ -351,7 +352,7 @@ async def create_employee(
                 "perm_addr": body.permanent_address, "marital": body.marital_status,
                 "father": body.father_name, "blood": body.blood_group, "photo": body.photo,
                 "mobile": body.mobile, "alt_mobile": body.alt_mobile,
-                "qual": body.last_qualification, "doj_act": body.doj_actual,
+                "qual": body.last_qualification, "doj_act": body.doj or body.doj_actual,
                 "dol": body.dol_last_working, "incr": body.next_increment_date,
                 "staff_grp": staff_group, "ph": body.is_physically_handicapped,
                 "flat": body.type_of_flat, "caste": body.caste_category,
@@ -401,18 +402,37 @@ async def update_employee(
 ):
     if scope["scope"] != "all" and employee_id not in (scope["employee_ids"] or []):
         raise HTTPException(status_code=403, detail="Not authorized to modify this employee")
+
+    current = await _fetch_employee(db, employee_id)
+    validate_employee_dates(
+        dob=body.dob if body.dob is not None else current.dob,
+        doj=body.doj if body.doj is not None else current.doj,
+        next_increment_date=(
+            body.next_increment_date
+            if body.next_increment_date is not None
+            else current.next_increment_date
+        ),
+    )
+
     updates: dict = {}
     if body.name is not None:
         updates["name"] = body.name
+    if body.gender is not None:
+        updates["gender"] = body.gender
+    if body.dob is not None:
+        updates["dob"] = body.dob
+    if body.doj is not None:
+        updates["doj"] = body.doj
+        updates["doj_actual"] = body.doj
     if body.department_code is not None:
         dept = await db.execute(text("SELECT id FROM departments WHERE code = :c"), {"c": body.department_code})
         dept_row = dept.fetchone()
         if not dept_row:
             raise HTTPException(status_code=400, detail=f"Unknown department: {body.department_code}")
-        
+
         if current_user["role"] in _NODAL_SCOPED_ROLES:
             await _check_nodal_dept_access(db, current_user["user_id"], dept_row[0])
-                
+
         updates["department_id"] = str(dept_row[0])
     if body.designation_name is not None:
         des = await db.execute(text("SELECT id FROM designations WHERE name = :n"), {"n": body.designation_name})
@@ -422,6 +442,52 @@ async def update_employee(
         updates["designation_id"] = str(des_row[0])
     if body.email is not None:
         updates["email"] = body.email
+    if body.personal_email is not None:
+        updates["personal_email"] = body.personal_email
+    if body.initial is not None:
+        updates["initial"] = body.initial
+    if body.address is not None:
+        updates["address"] = body.address
+    if body.permanent_address is not None:
+        updates["permanent_address"] = body.permanent_address
+    if body.marital_status is not None:
+        updates["marital_status"] = body.marital_status
+    if body.father_name is not None:
+        updates["father_name"] = body.father_name.upper()
+    if body.blood_group is not None:
+        updates["blood_group"] = body.blood_group
+    if body.mobile is not None:
+        updates["mobile"] = body.mobile
+    if body.alt_mobile is not None:
+        updates["alt_mobile"] = body.alt_mobile
+    if body.last_qualification is not None:
+        updates["last_qualification"] = body.last_qualification.upper()
+    if body.next_increment_date is not None:
+        updates["next_increment_date"] = body.next_increment_date
+    if body.is_physically_handicapped is not None:
+        updates["is_physically_handicapped"] = body.is_physically_handicapped
+    if body.caste_category is not None:
+        updates["caste_category"] = body.caste_category
+    if body.religion is not None:
+        updates["religion"] = body.religion.upper()
+    if body.bank_account_no is not None:
+        updates["bank_account_no"] = body.bank_account_no
+    if body.bank_name is not None:
+        updates["bank_name"] = body.bank_name.upper()
+    if body.ifsc_code is not None:
+        updates["ifsc_code"] = body.ifsc_code
+    if body.pan is not None:
+        updates["pan"] = body.pan
+    if body.aadhaar is not None:
+        updates["aadhaar"] = body.aadhaar
+    if body.nps_or_gpf_no is not None:
+        updates["nps_or_gpf_no"] = body.nps_or_gpf_no
+    if body.pfms_code is not None:
+        updates["pfms_code"] = body.pfms_code
+    if body.grade is not None:
+        updates["grade"] = body.grade
+    if body.pay_level is not None:
+        updates["pay_level"] = body.pay_level.upper()
     if body.is_active is not None:
         updates["is_active"] = body.is_active
 

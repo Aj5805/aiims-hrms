@@ -1,46 +1,64 @@
-"""Seed global staff number sequence and sync counter from existing numeric emp codes."""
+"""Seed per-group staff number sequences and sync counters from existing emp codes."""
 
 import re
 
 from sqlalchemy import text
 
-from app.data.staff_number_groups import GLOBAL_SEQUENCE_CODE, STAFF_NUMBER_BASE, STAFF_NUMBER_WIDTH
+from app.data.staff_number_groups import STAFF_NUMBER_GROUPS
 
-_NUMERIC_CODE = re.compile(r"^1\d{6}$")
+_PREFIX_PATTERNS: dict[str, re.Pattern[str]] = {
+    code: re.compile(
+        rf"^{re.escape(spec['prefix'])}(\d{{{spec['pad_width']}}})$"
+    )
+    for code, spec in STAFF_NUMBER_GROUPS.items()
+}
 
 
 def run(session):
-    session.execute(
-        text(
-            """
-            INSERT INTO staff_number_sequences (group_code, label, prefix, pad_width, last_number)
-            VALUES (:code, 'Institution-wide', '', :pad, 0)
-            ON CONFLICT (group_code) DO UPDATE SET
-                label = EXCLUDED.label,
-                prefix = EXCLUDED.prefix,
-                pad_width = EXCLUDED.pad_width
-            """
-        ),
-        {"code": GLOBAL_SEQUENCE_CODE, "pad": STAFF_NUMBER_WIDTH},
-    )
-
-    max_num = 0
-    for (emp_code,) in session.execute(text("SELECT emp_code FROM employees")).fetchall():
-        code = str(emp_code).strip()
-        if _NUMERIC_CODE.match(code):
-            sequence = int(code) - STAFF_NUMBER_BASE
-            if sequence >= 1:
-                max_num = max(max_num, sequence)
-
-    if max_num > 0:
+    for code, spec in STAFF_NUMBER_GROUPS.items():
         session.execute(
             text(
                 """
-                UPDATE staff_number_sequences
-                SET last_number = GREATEST(last_number, :max_num), updated_at = now()
-                WHERE group_code = :g
+                INSERT INTO staff_number_sequences (group_code, label, prefix, pad_width, last_number)
+                VALUES (:code, :label, :prefix, :pad, 0)
+                ON CONFLICT (group_code) DO UPDATE SET
+                    label = EXCLUDED.label,
+                    prefix = EXCLUDED.prefix,
+                    pad_width = EXCLUDED.pad_width
                 """
             ),
-            {"g": GLOBAL_SEQUENCE_CODE, "max_num": max_num},
+            {
+                "code": code,
+                "label": spec["label"],
+                "prefix": spec["prefix"],
+                "pad": spec["pad_width"],
+            },
         )
-        print(f"    global staff number counter synced to sequence {max_num} (next {max_num + 1:07d} → {STAFF_NUMBER_BASE + max_num + 1})")
+
+    max_by_group = {code: 0 for code in STAFF_NUMBER_GROUPS}
+    for (emp_code,) in session.execute(text("SELECT emp_code FROM employees")).fetchall():
+        code = str(emp_code).strip().upper()
+        for group_code, pattern in _PREFIX_PATTERNS.items():
+            match = pattern.match(code)
+            if match:
+                sequence = int(match.group(1))
+                if sequence >= 1:
+                    max_by_group[group_code] = max(max_by_group[group_code], sequence)
+
+    for group_code, max_num in max_by_group.items():
+        if max_num > 0:
+            session.execute(
+                text(
+                    """
+                    UPDATE staff_number_sequences
+                    SET last_number = GREATEST(last_number, :max_num), updated_at = now()
+                    WHERE group_code = :g
+                    """
+                ),
+                {"g": group_code, "max_num": max_num},
+            )
+            spec = STAFF_NUMBER_GROUPS[group_code]
+            print(
+                f"    {group_code} counter synced to {max_num} "
+                f"(next {spec['prefix']}{max_num + 1:0{spec['pad_width']}d})"
+            )

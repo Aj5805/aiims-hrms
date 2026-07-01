@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { authApi, departmentsApi, designationsApi, employeesApi, nodalAssignmentsApi, hodAssignmentsApi, reportsApi, usersApi } from '../api/endpoints';
-import { approvalsApi } from '../api/phase4_endpoints';
+import { approvalsApi } from '../api/endpoints';
 import api from '../api/client';
 import { useAuthStore } from '../stores';
 import { PageHeader } from '../components/PageHeader';

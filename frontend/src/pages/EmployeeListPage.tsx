@@ -44,10 +44,25 @@ export default function EmployeeListPage() {
   const activeTab: EmployeeTab =
     rawTab && rawTab in TAB_LABELS ? (rawTab as EmployeeTab) : 'directory';
   const setActiveTab = (tab: EmployeeTab) => setSearchParams({ tab });
+  const [onboardDirty, setOnboardDirty] = useState(false);
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
   const canEdit = ['ADMIN', 'ESTABLISHMENT_OFFICER', 'REGISTRAR', 'NODAL_OFFICER'].includes(user?.role ?? '');
   const canOnboard = canEdit;
+
+  const requestTab = (tab: EmployeeTab) => {
+    if (activeTab === 'onboard' && onboardDirty && tab !== 'onboard') {
+      if (!window.confirm('You have unsaved onboarding data. Leave without saving?')) return;
+    }
+    if (tab !== 'onboard') setOnboardDirty(false);
+    setActiveTab(tab);
+  };
+
+  const handleOnboardCancel = () => {
+    if (onboardDirty && !window.confirm('You have unsaved onboarding data. Leave without saving?')) return;
+    setOnboardDirty(false);
+    setActiveTab('directory');
+  };
 
   const [lifecycleEmpId, setLifecycleEmpId] = useState('');
   const [lifecycleAction, setLifecycleAction] = useState('');
@@ -143,7 +158,7 @@ export default function EmployeeListPage() {
           <button
             key={tab}
             type="button"
-            onClick={() => setActiveTab(tab)}
+            onClick={() => requestTab(tab)}
             className={`px-3 py-1.5 text-xs font-semibold rounded-md transition ${activeTab === tab ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
           >
             {TAB_LABELS[tab]}
@@ -185,7 +200,11 @@ export default function EmployeeListPage() {
                     </thead>
                     <tbody>
                       {employees.map((emp) => (
-                        <tr key={emp.id} className="defer-render">
+                        <tr
+                          key={emp.id}
+                          className="defer-render cursor-pointer hover:bg-slate-50"
+                          onClick={() => navigate(`/employees/${emp.id}`)}
+                        >
                           <td className="font-mono text-slate-500">{emp.emp_code}</td>
                           <td className="font-medium text-slate-900 whitespace-nowrap">{emp.name}</td>
                           <td>{emp.gender?.charAt(0) || '—'}</td>
@@ -213,12 +232,18 @@ export default function EmployeeListPage() {
 
           {activeTab === 'onboard' && (
             <AddStaffForm
-              onSaved={() => {
-                setActiveTab('directory');
-                setSearch('');
-                fetchEmployees();
+              onDirtyChange={setOnboardDirty}
+              onSaved={(employeeId) => {
+                setOnboardDirty(false);
+                if (employeeId) {
+                  navigate(`/employees/${employeeId}`);
+                } else {
+                  setActiveTab('directory');
+                  setSearch('');
+                  fetchEmployees();
+                }
               }}
-              onCancel={() => setActiveTab('directory')}
+              onCancel={handleOnboardCancel}
             />
           )}
 

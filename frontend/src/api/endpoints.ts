@@ -21,7 +21,8 @@ export const employeesApi = {
   staffGroups: () => api.get('/employees/staff-groups'),
   suggestStaffGroup: (params: { designation_name: string; department_code: string; category_code?: string }) =>
     api.get('/employees/suggest-staff-group', { params }),
-  nextStaffNumber: () => api.get('/employees/next-staff-number'),
+  nextStaffNumber: (staff_group: string) =>
+    api.get('/employees/next-staff-number', { params: { staff_group } }),
   eligibleLeaveTypes: (id: string) => api.get(`/employees/${id}/eligible-leave-types`),
   bootstrapLeaveBalances: (id: string) => api.post(`/employees/${id}/bootstrap-leave-balances`),
   create: (data: Record<string, unknown>) => api.post('/employees', data),
@@ -115,4 +116,78 @@ export const hodAssignmentsApi = {
   create: (data: Record<string, unknown>) => api.post('/hod-assignments', data),
   update: (id: string, data: Record<string, unknown>) => api.put(`/hod-assignments/${id}`, data),
   hodUsers: () => api.get('/hod-assignments/hod-users'),
+};
+
+export const leaveTypesApi = {
+  list: (params?: Record<string, string | boolean>) => api.get('/leave-types', { params }),
+  create: (data: Record<string, unknown>) => api.post('/leave-types', data),
+  update: (id: string, data: Record<string, unknown>) => api.put(`/leave-types/${id}`, data),
+};
+
+export const entitlementRulesApi = {
+  list: () => api.get('/leave-entitlement-rules'),
+  create: (data: Record<string, unknown>) => api.post('/leave-entitlement-rules', data),
+  update: (id: string, data: Record<string, unknown>) => api.put(`/leave-entitlement-rules/${id}`, data),
+};
+
+export const holidayApi = {
+  list: (year?: number) => api.get('/holiday-master', { params: year ? { year } : {} }),
+  create: (data: Record<string, unknown>) => api.post('/holiday-master', data),
+  update: (id: string, data: Record<string, unknown>) => api.put(`/holiday-master/${id}`, data),
+  delete: (id: string) => api.delete(`/holiday-master/${id}`),
+};
+
+export const workflowApi = {
+  list: () => api.get('/workflow-configs'),
+  create: (data: Record<string, unknown>) => api.post('/workflow-configs', data),
+  update: (id: string, data: Record<string, unknown>) => api.put(`/workflow-configs/${id}`, data),
+  addStep: (configId: string, data: Record<string, unknown>) =>
+    api.post(`/workflow-configs/${configId}/steps`, data),
+  updateStep: (configId: string, stepId: string, data: Record<string, unknown>) =>
+    api.put(`/workflow-configs/${configId}/steps/${stepId}`, data),
+  deleteStep: (configId: string, stepId: string) =>
+    api.delete(`/workflow-configs/${configId}/steps/${stepId}`),
+  simulate: (data: Record<string, unknown>) => api.post('/workflow-configs/simulate', data),
+};
+
+export const leaveBalancesApi = {
+  get: (employeeId: string) => api.get(`/leave-balances/${employeeId}`),
+  ledger: (employeeId: string, leaveTypeId: string) =>
+    api.get(`/leave-balances/${employeeId}/ledger/${leaveTypeId}`),
+  project: (employeeId: string, params: Record<string, string>) =>
+    api.get(`/leave-balances/${employeeId}/project`, { params }),
+  opening: (data: Record<string, unknown>[]) => api.post('/leave-balances/opening', data),
+  importExcel: (file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post('/leave-balances/opening/import', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+  annualCredit: (data: Record<string, unknown>) => api.post('/leave-balances/credit/annual', data),
+  carryForward: (data: Record<string, unknown>) => api.post('/leave-balances/carryforward', data),
+  manualAdjust: (balanceId: string, data: Record<string, unknown>) =>
+    api.put(`/leave-balances/${balanceId}/manual-adjust`, data),
+};
+
+export const leaveAppApi = {
+  submit: (data: Record<string, unknown>) => api.post('/leave-applications', data),
+  changeRequest: (data: Record<string, unknown>) => api.post('/leave-applications/change-request', data),
+  list: (params?: Record<string, string>) => api.get('/leave-applications', { params }),
+  get: (id: string) => api.get(`/leave-applications/${id}`),
+  withdraw: (id: string) => api.put(`/leave-applications/${id}/withdraw`),
+  trail: (id: string) => api.get(`/leave-applications/${id}/approval-trail`),
+};
+
+export const approvalsApi = {
+  inbox: () => api.get('/leave-approvals/inbox'),
+  action: (id: string, data: Record<string, unknown>) => api.post(`/leave-approvals/${id}/action`, data),
+  recall: (id: string) => api.post(`/leave-approvals/${id}/recall`),
+  teamAvailability: () => api.get('/leave-approvals/team-availability'),
+  availabilityForecast: (params: Record<string, string>) =>
+    api.get('/leave-approvals/availability-forecast', { params }),
+};
+
+export const leaveFormTemplatesApi = {
+  list: (params?: Record<string, string>) => api.get('/leave-form-templates', { params }),
 };

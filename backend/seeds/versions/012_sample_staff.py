@@ -15,31 +15,31 @@ from datetime import date
 from sqlalchemy import text
 
 from app.auth.jwt import hash_password
-from app.data.staff_number_groups import GLOBAL_SEQUENCE_CODE, STAFF_NUMBER_BASE, STAFF_GROUP_CODES
+from app.data.staff_number_groups import STAFF_GROUP_CODES, format_staff_number
 from seeds.purge_dev_data import purge_dev_staff
 
 # (name, gender, dob, doj, dept_code, designation_name, staff_group, pay_level, mobile, email_local, father_name, blood_group, pan_suffix)
 SAMPLE_STAFF = [
-    ("Dr. Ananya Sharma", "FEMALE", "1985-04-12", "2012-07-01", "GENMED", "Associate Professor", "faculty", "Level 13", "9876501001", "ananya.sharma", "Rajesh Sharma", "B+", "A"),
-    ("Dr. Vikram Reddy", "MALE", "1982-09-03", "2010-01-15", "GENSURG", "Professor", "faculty", "Level 14", "9876501002", "vikram.reddy", "Srinivas Reddy", "O+", "B"),
-    ("Dr. Meera Iyer", "FEMALE", "1988-11-20", "2016-08-01", "PAEDS", "Assistant Professor", "faculty", "Level 12", "9876501003", "meera.iyer", "Krishnan Iyer", "A+", "C"),
-    ("Dr. Arjun Patel", "MALE", "1990-06-08", "2019-03-01", "CARDIO", "Assistant Professor", "faculty", "Level 12", "9876501004", "arjun.patel", "Harsh Patel", "B+", "D"),
-    ("Dr. Kavita Nair", "FEMALE", "1987-02-14", "2014-07-01", "OBGYN", "Additional Professor", "faculty", "Level 13", "9876501005", "kavita.nair", "Suresh Nair", "AB+", "E"),
-    ("Smt. Lakshmi Devi", "FEMALE", "1991-05-25", "2015-04-01", "NURSING", "Nursing Officer", "nursingofficer", "Level 7", "9876501006", "lakshmi.devi", "Rama Rao", "O+", "F"),
-    ("Shri. Ramesh Kumar", "MALE", "1989-12-01", "2013-06-15", "NURSING", "Senior Nursing Officer", "seniorNursingofficer", "Level 8", "9876501007", "ramesh.kumar", "Gopal Kumar", "A+", "G"),
-    ("Shri. Sanjay Gupta", "MALE", "1984-08-19", "2011-02-01", "ADMIN", "Accounts Officer", "admin", "Level 8", "9876501008", "sanjay.gupta", "Mohan Gupta", "B+", "H"),
-    ("Smt. Priya Thomas", "FEMALE", "1992-03-30", "2017-09-01", "FINANCE", "Junior Administrative Officer", "admin", "Level 6", "9876501009", "priya.thomas", "Thomas Mathew", "O-", "J"),
-    ("Shri. Amit Singh", "MALE", "1986-07-07", "2012-11-01", "MSO", "Medical Record Officer", "admin", "Level 7", "9876501010", "amit.singh", "Harinder Singh", "A-", "K"),
-    ("Dr. Rohit Malhotra", "MALE", "1993-01-18", "2020-07-01", "ANAES", "Junior Resident", "JR", "Level 10", "9876501011", "rohit.malhotra", "Anil Malhotra", "B+", "L"),
-    ("Dr. Neha Kapoor", "FEMALE", "1992-10-05", "2021-07-01", "RADIODX", "Junior Resident", "JR", "Level 10", "9876501012", "neha.kapoor", "Raj Kapoor", "O+", "M"),
-    ("Dr. Karan Joshi", "MALE", "1990-04-22", "2018-07-01", "PATH", "Senior Resident", "SR", "Level 11", "9876501013", "karan.joshi", "Dev Joshi", "AB+", "N"),
-    ("Dr. Divya Menon", "FEMALE", "1989-09-11", "2017-07-01", "PSYCH", "Senior Resident", "SR", "Level 11", "9876501014", "divya.menon", "Vijay Menon", "A+", "P"),
-    ("Dr. Aditya Bose", "MALE", "1994-06-16", "2022-07-01", "NEURO", "P.G. Student", "PG", "Level 10", "9876501015", "aditya.bose", "Subhash Bose", "B-", "Q"),
-    ("Shri. Manoj Yadav", "MALE", "1988-02-28", "2013-01-10", "ENGINE", "Junior Engineer", "admin", "Level 6", "9876501016", "manoj.yadav", "Ram Yadav", "O+", "R"),
-    ("Smt. Rekha Pillai", "FEMALE", "1990-11-09", "2014-05-20", "LIBRARY", "Library & Information Officer", "admin", "Level 7", "9876501017", "rekha.pillai", "Krishna Pillai", "A+", "S"),
-    ("Shri. Deepak Verma", "MALE", "1987-08-04", "2012-03-15", "STORES", "Store Keeper", "admin", "Level 4", "9876501018", "deepak.verma", "Shyam Verma", "B+", "T"),
-    ("Smt. Anjali Desai", "FEMALE", "1991-12-23", "2016-01-05", "HOSPADMIN", "Stenographer", "admin", "Level 4", "9876501019", "anjali.desai", "Mahesh Desai", "O+", "U"),
-    ("Dr. Suresh Babu", "MALE", "1983-05-17", "2009-07-01", "ORTHO", "Reader/Associate Professor", "faculty", "Level 13", "9876501020", "suresh.babu", "Venkat Babu", "AB-", "V"),
+    ("Dr. Ananya Sharma", "FEMALE", "1985-04-12", "2012-07-01", "GENMED", "Associate Professor", "FAC", "Level 13", "9876501001", "ananya.sharma", "Rajesh Sharma", "B+", "A"),
+    ("Dr. Vikram Reddy", "MALE", "1982-09-03", "2010-01-15", "GENSURG", "Professor", "FAC", "Level 14", "9876501002", "vikram.reddy", "Srinivas Reddy", "O+", "B"),
+    ("Dr. Meera Iyer", "FEMALE", "1988-11-20", "2016-08-01", "PAEDS", "Assistant Professor", "FAC", "Level 12", "9876501003", "meera.iyer", "Krishnan Iyer", "A+", "C"),
+    ("Dr. Arjun Patel", "MALE", "1990-06-08", "2019-03-01", "CARDIO", "Assistant Professor", "FAC", "Level 12", "9876501004", "arjun.patel", "Harsh Patel", "B+", "D"),
+    ("Dr. Kavita Nair", "FEMALE", "1987-02-14", "2014-07-01", "OBGYN", "Additional Professor", "FAC", "Level 13", "9876501005", "kavita.nair", "Suresh Nair", "AB+", "E"),
+    ("Smt. Lakshmi Devi", "FEMALE", "1991-05-25", "2015-04-01", "NURSING", "Nursing Officer", "NUR", "Level 7", "9876501006", "lakshmi.devi", "Rama Rao", "O+", "F"),
+    ("Shri. Ramesh Kumar", "MALE", "1989-12-01", "2013-06-15", "NURSING", "Senior Nursing Officer", "NFS", "Level 8", "9876501007", "ramesh.kumar", "Gopal Kumar", "A+", "G"),
+    ("Shri. Sanjay Gupta", "MALE", "1984-08-19", "2011-02-01", "ADMIN", "Accounts Officer", "DEP", "Level 8", "9876501008", "sanjay.gupta", "Mohan Gupta", "B+", "H"),
+    ("Smt. Priya Thomas", "FEMALE", "1992-03-30", "2017-09-01", "FINANCE", "Junior Administrative Officer", "DEP", "Level 6", "9876501009", "priya.thomas", "Thomas Mathew", "O-", "J"),
+    ("Shri. Amit Singh", "MALE", "1986-07-07", "2012-11-01", "MSO", "Medical Record Officer", "DEP", "Level 7", "9876501010", "amit.singh", "Harinder Singh", "A-", "K"),
+    ("Dr. Rohit Malhotra", "MALE", "1993-01-18", "2020-07-01", "ANAES", "Junior Resident", "PGJR", "Level 10", "9876501011", "rohit.malhotra", "Anil Malhotra", "B+", "L"),
+    ("Dr. Neha Kapoor", "FEMALE", "1992-10-05", "2021-07-01", "RADIODX", "Junior Resident", "PGJR", "Level 10", "9876501012", "neha.kapoor", "Raj Kapoor", "O+", "M"),
+    ("Dr. Karan Joshi", "MALE", "1990-04-22", "2018-07-01", "PATH", "Senior Resident", "SRAC", "Level 11", "9876501013", "karan.joshi", "Dev Joshi", "AB+", "N"),
+    ("Dr. Divya Menon", "FEMALE", "1989-09-11", "2017-07-01", "PSYCH", "Senior Resident", "SRAC", "Level 11", "9876501014", "divya.menon", "Vijay Menon", "A+", "P"),
+    ("Dr. Aditya Bose", "MALE", "1994-06-16", "2022-07-01", "NEURO", "P.G. Student", "PGJR", "Level 10", "9876501015", "aditya.bose", "Subhash Bose", "B-", "Q"),
+    ("Shri. Manoj Yadav", "MALE", "1988-02-28", "2013-01-10", "ENGINE", "Junior Engineer", "DEP", "Level 6", "9876501016", "manoj.yadav", "Ram Yadav", "O+", "R"),
+    ("Smt. Rekha Pillai", "FEMALE", "1990-11-09", "2014-05-20", "LIBRARY", "Library & Information Officer", "DEP", "Level 7", "9876501017", "rekha.pillai", "Krishna Pillai", "A+", "S"),
+    ("Shri. Deepak Verma", "MALE", "1987-08-04", "2012-03-15", "STORES", "Store Keeper", "DEP", "Level 4", "9876501018", "deepak.verma", "Shyam Verma", "B+", "T"),
+    ("Smt. Anjali Desai", "FEMALE", "1991-12-23", "2016-01-05", "HOSPADMIN", "Stenographer", "DEP", "Level 4", "9876501019", "anjali.desai", "Mahesh Desai", "O+", "U"),
+    ("Dr. Suresh Babu", "MALE", "1983-05-17", "2009-07-01", "ORTHO", "Reader/Associate Professor", "FAC", "Level 13", "9876501020", "suresh.babu", "Venkat Babu", "AB-", "V"),
 ]
 
 def _purge_test_data(session) -> None:
@@ -47,7 +47,7 @@ def _purge_test_data(session) -> None:
     print("  Purged all employees and non-admin users (kept admin login only).")
 
 
-def _next_emp_code(session) -> str:
+def _next_emp_code(session, staff_group: str) -> str:
     row = session.execute(
         text(
             """
@@ -57,11 +57,11 @@ def _next_emp_code(session) -> str:
             RETURNING last_number
             """
         ),
-        {"g": GLOBAL_SEQUENCE_CODE},
+        {"g": staff_group},
     ).fetchone()
     if not row:
-        raise RuntimeError("Global staff number sequence missing — run seed 011 first.")
-    return str(STAFF_NUMBER_BASE + int(row[0]))
+        raise RuntimeError(f"Staff number sequence missing for {staff_group} — run seed 011 first.")
+    return format_staff_number(staff_group, int(row[0]))
 
 
 def _lookup_id(session, table: str, column: str, value: str) -> str | None:
@@ -115,7 +115,7 @@ def _seed_sample_staff(session) -> None:
             print(f"  WARN: invalid staff group {staff_group} for {name}")
             continue
 
-        emp_code = _next_emp_code(session)
+        emp_code = _next_emp_code(session, staff_group)
         eid = str(uuid.uuid4())
         pan = f"ABCDE{1000 + idx:04d}{pan_suffix}"
         aadhaar = f"{100012345678 + idx:012d}"[:12]

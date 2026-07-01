@@ -177,5 +177,5 @@ if __name__ == "__main__":
     asyncio.run(main())
 
 
-def test_phase678_reports() -> None:
+def test_reports() -> None:
     asyncio.run(main())

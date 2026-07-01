@@ -2,7 +2,7 @@
 
 > **Agents:** Read this file at the start of every session. Update it after meaningful work (features, fixes, decisions, validation). Keep it concise — current state only, not a full changelog. Detailed history stays in `HANDOFF.md`.
 
-**Last updated:** 2026-07-01 (CCS/DoPT Casual Leave rules in validation + Apply UX)
+**Last updated:** 2026-07-01 (staff registration form + prefixed staff numbers)
 
 ---
 
@@ -46,8 +46,8 @@ backend/app/api/v1/     REST endpoints
 backend/app/models/     ORM models
 backend/alembic/        migrations
 backend/seeds/          versioned seed data
-frontend/src/pages/     UI screens
-frontend/src/App.tsx    shell, nav, role-based routing
+frontend/src/pages/     UI screens (one file per screen/panel)
+frontend/src/api/endpoints.ts   all REST client modules
 docs/                   architecture, security, go-live runbook
 scripts/db_sync.py      cross-platform DB snapshot sync
 ```
@@ -119,9 +119,15 @@ scripts/db_sync.py      cross-platform DB snapshot sync
 
 **HR Operations:** Bulk CSV import **removed** from nav and UI — onboard one employee at a time only.
 
+**Latest (2026-07-01):** **Repo file naming cleanup** — removed legacy `Phase*Pages` / `phase*_endpoints` files; split into domain-named pages (`ApplyLeavePage`, `ReportsPage`, master panels, etc.); merged leave APIs into `endpoints.ts`; removed obsolete build-instruction PDFs/scripts/temp artifacts. Frontend `npm run build` ✓.
+
 **Latest (2026-07-01):** **CCS/DoPT Casual Leave** — CL may attach to weekends/holidays (not debited); 8-day calendar absence cap; sandwich ban with EL/HPL; half-day CL → next-day regular leave exception; Apply UX guidance + span preview; seed `014_cl_dopt_rules`. Tests + frontend build ✓.
 
-**Latest (2026-06-30):** Staff numbers are **one global 7-digit series starting at `1000001`** (`1000002`, … up to `1999999`). Leading `1` is fixed; staff group is classification only (can change on promote). Numbers **never reused**. **Rejoin** = same person, same number; **promote/demote** = same number, group/designation updated; **new hire** = next number only.
+**Latest (2026-07-01):** **Onboarding validation & profile view** — structured address (5 parallel fields per permanent/present); email/date/PAN/IFSC/mobile checks; unsaved-data warning when leaving onboard tab; employee profile page (`/employees/:id`) with view, edit, export JSON, print; actual reporting date removed from form (DOJ used). Frontend build + validation unit tests ✓.
+
+**Prior (2026-07-01):** Staff registration form refinements — initials dropdown; Group A/B/C; prefixed staff numbers; field validation (name, NPS, PFMS). Migration `h8i9j0k1l2m3`.
+
+**Prior (2026-06-30):** Staff numbers were one global 7-digit series (`1000001`–`1999999`); superseded by prefixed per-group sequences above.
 
 **Prior fix (2026-06-30):** Sidebar submenu flyouts align correctly during impersonation.
 
@@ -138,7 +144,7 @@ scripts/db_sync.py      cross-platform DB snapshot sync
 | Status | What exists | What transaction logic is still needed |
 |---|---|---|
 | Shell | Add employee form, CSV bulk import, auto-create login (username = emp code, temp password) | Full registration workflow: validation rules, approval before account goes live, linking user role (STAFF/HOD) at registration time, transfers between departments, deactivation/rejoin, password policy on first login |
-| **Done (2026-06-30)** | **Auto staff number allotment** — global series `1000001`–`1999999`; staff group is classification only; numbers never reused | — |
+| **Done (2026-07-01)** | **Auto staff number allotment** — per-group prefixed series (`FAC`, `NUR`, `NFS`, `DEP`, `CON`, `PGJR`, `PGNA`, `SRAC`, `SRNA` + 4 digits); numbers never reused | — |
 | Shell | Admin can create standalone users (`users.py`) | Clear rule: when is a user created with vs without an employee record; NODAL_OFFICER role missing from admin user-create |
 | Gap | — | Self-registration (if needed for AIIMS), document upload at join, probation period flags |
 
@@ -273,7 +279,7 @@ Step 5: Year-end / special   → Closing, encashment, LOP, comp-off (as AIIMS re
 
 ### WIP / Uncommitted
 
-None (working tree clean except `temp/` reference PDFs — not in repo).
+Large rename/split in progress locally — phase-named frontend files removed; `database/db_snap.sql` remains canonical for `db_sync.py` (root/scripts duplicate snapshots removed).
 
 
 ---
@@ -299,7 +305,7 @@ cd frontend && npm run dev             # http://localhost:5173
 | Area | Path / file |
 |---|---|
 | App shell & nav | `frontend/src/App.tsx` |
-| Admin console UI | `frontend/src/pages/Phase678Pages.tsx` |
+| Admin console UI | `frontend/src/pages/AdminDashboardPage.tsx` |
 | Admin login | `frontend/src/pages/AdminLoginPage.tsx` |
 | Employee login | `frontend/src/pages/LoginPage.tsx` |
 | Auth / impersonate | `backend/app/api/v1/auth.py` |
@@ -357,7 +363,7 @@ Use this ladder. **Default = keep building; fix only when a trigger fires.**
 | Raw SQL instead of ORM models | Internal code style; works today | Major backend refactor sprint only |
 | Unused React Query library | Slightly larger download; no user impact | Frontend architecture pass |
 | `@ts-nocheck` on one large file | Type-safety gap internal to dev | When refactoring that file |
-| Phase-based file names | Confusing for developers only | Optional rename sprint |
+| Phase-based file names | Confusing for developers only | ~~Optional rename sprint~~ **Done 2026-07-01** |
 | No release tags for rollback | Rollback harder in emergency | Before first production deploy |
 
 ---

@@ -2,12 +2,10 @@ import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { departmentsApi, designationsApi } from '../api/endpoints';
 import { PageHeader } from '../components/PageHeader';
-import {
-  LeaveTypesPanel,
-  EntitlementRulesPanel,
-  HolidayPanel,
-  WorkflowPanel,
-} from './Phase3Pages';
+import { LeaveTypesPanel } from './LeaveTypesPanel';
+import { EntitlementRulesPanel } from './EntitlementRulesPanel';
+import { HolidayPanel } from './HolidayPanel';
+import { WorkflowPanel } from './WorkflowPanel';
 import { NodalAssignmentsPanel, HodAssignmentsPanel } from './RoleFeaturePages';
 
 export const MASTER_TABS = [

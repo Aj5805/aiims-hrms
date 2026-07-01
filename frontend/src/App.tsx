@@ -7,12 +7,18 @@ import { isImpersonatingSession } from './utils/authSession';
 import LoginPage from './pages/LoginPage';
 import AdminLoginPage from './pages/AdminLoginPage';
 import EmployeeListPage from './pages/EmployeeListPage';
+import EmployeeProfilePage from './pages/EmployeeProfilePage';
 import MastersPage from './pages/MastersPage';
-import { OpeningBalancePage } from './pages/Phase3Pages';
+import { OpeningBalancePage } from './pages/OpeningBalancePage';
 import { MastersRedirect } from './components/MastersRedirect';
-import { ApplyLeavePage, MyApplicationsPage, ApprovalInboxPage, LeaveFormsPage } from './pages/Phase4Pages';
-import { MyLeaveAccountPage, YearEndProcessingPage } from './pages/Phase5Pages';
-import { NotificationBell, ReportsPage } from './pages/Phase678Pages';
+import { ApplyLeavePage } from './pages/ApplyLeavePage';
+import { MyApplicationsPage } from './pages/MyApplicationsPage';
+import { ApprovalInboxPage } from './pages/ApprovalInboxPage';
+import { LeaveFormsPage } from './pages/LeaveFormsPage';
+import { MyLeaveAccountPage } from './pages/MyLeaveAccountPage';
+import { YearEndProcessingPage } from './pages/YearEndProcessingPage';
+import { NotificationBell } from './components/NotificationBell';
+import { ReportsPage } from './pages/ReportsPage';
 import { AdminDashboardPage } from './pages/AdminDashboardPage';
 import ChangePasswordPage from './pages/ChangePasswordPage';
 import StaffProfilePage from './pages/StaffProfilePage';
@@ -480,6 +486,7 @@ export default function App() {
             <Routes>
             <Route path="/" element={role === 'ADMIN' ? <Navigate to="/admin" replace /> : <HomeDashboardPage />} />
             <Route path="/employees" element={<RoleRoute allowedRoles={EMPLOYEE_MASTER_ROLES} fallback="Access restricted."><EmployeeListPage /></RoleRoute>} />
+            <Route path="/employees/:employeeId" element={<RoleRoute allowedRoles={EMPLOYEE_MASTER_ROLES} fallback="Access restricted."><EmployeeProfilePage /></RoleRoute>} />
             <Route path="/masters" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Masters access is limited to ADMIN, ESTABLISHMENT_OFFICER, and REGISTRAR."><MastersPage /></RoleRoute>} />
             <Route path="/apply" element={<ApplyLeavePage />} />
             <Route path="/leave-forms" element={<LeaveFormsPage />} />

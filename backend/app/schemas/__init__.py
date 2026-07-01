@@ -1,9 +1,23 @@
 """Pydantic schemas for all API request/response models."""
 
+import re
 from datetime import date, datetime
 from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from app.utils.employee_validation import (
+    normalize_name,
+    normalize_address_field,
+    validate_email_optional,
+    validate_grade_group,
+    validate_mobile_optional,
+    validate_nps_optional,
+    validate_pan_optional,
+    validate_pfms_optional,
+    validate_ifsc_optional,
+    validate_employee_dates,
+)
 
 
 def validate_password_complexity(value: str) -> str:
@@ -96,16 +110,91 @@ class EmployeeBase(BaseModel):
 class EmployeeCreate(EmployeeBase):
     staff_group: str = Field(..., max_length=50)
 
+    @field_validator("name")
+    @classmethod
+    def _validate_name(cls, v: str) -> str:
+        return normalize_name(v)
+
+    @field_validator("email", "personal_email")
+    @classmethod
+    def _validate_email(cls, v):
+        return validate_email_optional(v)
+
+    @field_validator("mobile")
+    @classmethod
+    def _validate_mobile(cls, v):
+        return validate_mobile_optional(v, "Mobile")
+
+    @field_validator("alt_mobile")
+    @classmethod
+    def _validate_alt_mobile(cls, v):
+        return validate_mobile_optional(v, "Alt mobile")
+
+    @field_validator("pan")
+    @classmethod
+    def _validate_pan(cls, v):
+        return validate_pan_optional(v)
+
+    @field_validator("ifsc_code")
+    @classmethod
+    def _validate_ifsc(cls, v):
+        return validate_ifsc_optional(v)
+
+    @field_validator("grade")
+    @classmethod
+    def _validate_grade(cls, v):
+        return validate_grade_group(v)
+
+    @field_validator("nps_or_gpf_no")
+    @classmethod
+    def _validate_nps(cls, v):
+        return validate_nps_optional(v)
+
+    @field_validator("pfms_code")
+    @classmethod
+    def _validate_pfms(cls, v):
+        return validate_pfms_optional(v)
+
+    @field_validator("address", "permanent_address")
+    @classmethod
+    def _validate_address(cls, v):
+        return normalize_address_field(v)
+
     @field_validator("staff_group")
     @classmethod
     def staff_group_not_blank(cls, v: str) -> str:
-        code = (v or "").strip()
+        code = (v or "").strip().upper()
         if not code:
             raise ValueError("staff_group is required for auto staff number allotment")
         return code
 
+    @field_validator("aadhaar")
+    @classmethod
+    def _validate_aadhaar_create(cls, v):
+        if v is None or str(v).strip() == "":
+            return None
+        digits = re.sub(r"\D", "", str(v))
+        if len(digits) != 12:
+            raise ValueError("Aadhaar must be exactly 12 digits")
+        return digits
+
+    @field_validator(
+        "father_name", "religion", "bank_name", "last_qualification", "initial", "pay_level",
+        mode="before",
+    )
+    @classmethod
+    def _uppercase_optional_text_create(cls, v):
+        if v is None or v == "":
+            return v
+        return str(v).upper()
+
     @model_validator(mode="after")
-    def require_code_or_group(self):
+    def validate_registration(self):
+        validate_employee_dates(
+            dob=self.dob,
+            doj=self.doj,
+            next_increment_date=self.next_increment_date,
+        )
         if not (self.emp_code or "").strip() and not (self.staff_group or "").strip():
             raise ValueError("Provide staff_group for auto allotment or an explicit emp_code")
         return self
@@ -127,12 +216,98 @@ class StaffGroupSuggestion(BaseModel):
 
 class EmployeeUpdate(BaseModel):
     name: Optional[str] = None
+    gender: Optional[str] = Field(None, pattern="^(MALE|FEMALE|OTHER)$")
+    dob: Optional[date] = None
+    doj: Optional[date] = None
     department_code: Optional[str] = None
     designation_name: Optional[str] = None
     email: Optional[str] = None
+    personal_email: Optional[str] = None
+    initial: Optional[str] = Field(None, max_length=20)
+    address: Optional[str] = None
+    permanent_address: Optional[str] = None
+    marital_status: Optional[str] = Field(None, max_length=20)
+    father_name: Optional[str] = Field(None, max_length=200)
+    blood_group: Optional[str] = Field(None, max_length=10)
+    mobile: Optional[str] = Field(None, max_length=15)
+    alt_mobile: Optional[str] = Field(None, max_length=15)
+    last_qualification: Optional[str] = Field(None, max_length=200)
+    next_increment_date: Optional[date] = None
+    is_physically_handicapped: Optional[bool] = None
+    caste_category: Optional[str] = Field(None, max_length=30)
+    religion: Optional[str] = Field(None, max_length=50)
+    bank_account_no: Optional[str] = Field(None, max_length=30)
+    bank_name: Optional[str] = Field(None, max_length=150)
+    ifsc_code: Optional[str] = Field(None, max_length=15)
+    pan: Optional[str] = Field(None, max_length=10)
+    aadhaar: Optional[str] = Field(None, max_length=12)
+    nps_or_gpf_no: Optional[str] = Field(None, max_length=30)
+    pfms_code: Optional[str] = Field(None, max_length=30)
+    grade: Optional[str] = Field(None, max_length=20)
+    pay_level: Optional[str] = Field(None, max_length=20)
     reporting_officer_code: Optional[str] = None
     is_active: Optional[bool] = None
     model_config = ConfigDict(extra="forbid")
+
+    @field_validator("name")
+    @classmethod
+    def _validate_name(cls, v):
+        return normalize_name(v) if v is not None else v
+
+    @field_validator("email", "personal_email")
+    @classmethod
+    def _validate_email(cls, v):
+        return validate_email_optional(v)
+
+    @field_validator("mobile")
+    @classmethod
+    def _validate_mobile(cls, v):
+        return validate_mobile_optional(v, "Mobile")
+
+    @field_validator("alt_mobile")
+    @classmethod
+    def _validate_alt_mobile(cls, v):
+        return validate_mobile_optional(v, "Alt mobile")
+
+    @field_validator("pan")
+    @classmethod
+    def _validate_pan(cls, v):
+        return validate_pan_optional(v)
+
+    @field_validator("ifsc_code")
+    @classmethod
+    def _validate_ifsc(cls, v):
+        return validate_ifsc_optional(v)
+
+    @field_validator("grade")
+    @classmethod
+    def _validate_grade(cls, v):
+        return validate_grade_group(v)
+
+    @field_validator("nps_or_gpf_no")
+    @classmethod
+    def _validate_nps(cls, v):
+        return validate_nps_optional(v)
+
+    @field_validator("pfms_code")
+    @classmethod
+    def _validate_pfms(cls, v):
+        return validate_pfms_optional(v)
+
+    @field_validator("address", "permanent_address")
+    @classmethod
+    def _validate_address(cls, v):
+        return normalize_address_field(v)
+
+    @field_validator("aadhaar")
+    @classmethod
+    def _validate_aadhaar(cls, v):
+        if v is None or str(v).strip() == "":
+            return None
+        digits = re.sub(r"\D", "", str(v))
+        if len(digits) != 12:
+            raise ValueError("Aadhaar must be exactly 12 digits")
+        return digits
 
 
 class SelfEmployeeUpdate(BaseModel):

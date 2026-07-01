@@ -214,5 +214,5 @@ if __name__ == "__main__":
     asyncio.run(main())
 
 
-def test_phase8_security() -> None:
+def test_security() -> None:
     asyncio.run(main())

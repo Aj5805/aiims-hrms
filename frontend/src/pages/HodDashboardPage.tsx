@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { approvalsApi } from '../api/phase4_endpoints';
+import { approvalsApi } from '../api/endpoints';
 import { useAuthStore } from '../stores';
 import { PageHeader } from '../components/PageHeader';
 

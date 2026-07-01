@@ -1,7 +1,25 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { employeesApi, departmentsApi, designationsApi } from '../api/endpoints';
 import { formatApiError } from '../constants/roles';
 import { useAuthStore } from '../stores';
+import AddressFields from './AddressFields';
+import { ValidatedDateInput } from './ValidatedDateInput';
+import {
+  type AddressParts,
+  EMPTY_ADDRESS,
+  filterAlphanumUpper,
+  filterDigits,
+  filterEmailInput,
+  filterName,
+  isValidEmail,
+  isValidIfsc,
+  isValidMobile,
+  isValidPan,
+  serializeAddress,
+  upperText,
+  validateAddressParts,
+  validateEmployeeDates,
+} from '../utils/employeeForm';
 
 interface Department {
   id: string;
@@ -22,9 +40,13 @@ interface StaffGroupOption {
 }
 
 interface AddStaffFormProps {
-  onSaved: () => void;
+  onSaved: (employeeId?: string) => void;
   onCancel: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }
+
+const INITIALS = ['', 'Dr.', 'Shri.', 'Smt.', 'Mr.', 'Mrs.', 'Ms.', 'Prof.'] as const;
+const PAY_GROUPS = ['A', 'B', 'C'] as const;
 
 const EMPTY_FORM = {
   emp_code: '',
@@ -38,21 +60,15 @@ const EMPTY_FORM = {
   caste_category: '',
   religion: '',
   is_physically_handicapped: false,
-  address: '',
-  permanent_address: '',
   mobile: '',
   alt_mobile: '',
   email: '',
   personal_email: '',
-  has_institutional_email: false,
   doj: '',
-  doj_actual: '',
-  dol_last_working: '',
   next_increment_date: '',
   department_code: '',
   designation_name: '',
   staff_group: '',
-  type_of_flat: '',
   grade: '',
   pay_level: '',
   last_qualification: '',
@@ -63,10 +79,8 @@ const EMPTY_FORM = {
   bank_account_no: '',
   bank_name: '',
   ifsc_code: '',
-  photo: '',
 };
 
-/** 12-column spans: sm (2-col) · md (6-col) · xl (12-col) */
 const COL = {
   1: 'col-span-1 md:col-span-1 xl:col-span-1',
   2: 'col-span-1 md:col-span-1 xl:col-span-2',
@@ -99,11 +113,13 @@ function Field({
   label,
   required,
   cols = 3,
+  hint,
   children,
 }: {
   label: string;
   required?: boolean;
   cols?: ColSpan;
+  hint?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -112,6 +128,7 @@ function Field({
         {label}{required && <span className="text-red-500"> *</span>}
       </label>
       {children}
+      {hint && <p className="mt-0.5 text-[11px] text-slate-500 leading-snug">{hint}</p>}
     </div>
   );
 }
@@ -129,9 +146,10 @@ function emptyToNull<T extends Record<string, unknown>>(obj: T): Record<string, 
   return out;
 }
 
-export default function AddStaffForm({ onSaved, onCancel }: AddStaffFormProps) {
+export default function AddStaffForm({ onSaved, onCancel, onDirtyChange }: AddStaffFormProps) {
   const token = useAuthStore((s) => s.token);
   const userRole = useAuthStore((s) => s.user?.role);
+  const dirtyRef = useRef(false);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [designations, setDesignations] = useState<Designation[]>([]);
   const [staffGroups, setStaffGroups] = useState<StaffGroupOption[]>([]);
@@ -139,16 +157,32 @@ export default function AddStaffForm({ onSaved, onCancel }: AddStaffFormProps) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [form, setForm] = useState(EMPTY_FORM);
+  const [permanentAddress, setPermanentAddress] = useState<AddressParts>({ ...EMPTY_ADDRESS });
+  const [presentAddress, setPresentAddress] = useState<AddressParts>({ ...EMPTY_ADDRESS });
   const [manualEmpCode, setManualEmpCode] = useState(false);
   const [previewCode, setPreviewCode] = useState('');
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [presentSameAsPermanent, setPresentSameAsPermanent] = useState(false);
 
-  const set = (key: keyof typeof EMPTY_FORM, value: string | boolean) =>
+  const markDirty = () => {
+    if (!dirtyRef.current) {
+      dirtyRef.current = true;
+      onDirtyChange?.(true);
+    }
+  };
+
+  const set = (key: keyof typeof EMPTY_FORM, value: string | boolean) => {
+    markDirty();
     setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const setText = (key: keyof typeof EMPTY_FORM, value: string) => {
+    markDirty();
+    setForm((prev) => ({ ...prev, [key]: upperText(value) }));
+  };
 
   useEffect(() => {
     if (!token) return;
-
     const fetchData = async () => {
       try {
         const [deptRes, desigRes, groupsRes] = await Promise.all([
@@ -161,8 +195,7 @@ export default function AddStaffForm({ onSaved, onCancel }: AddStaffFormProps) {
         setStaffGroups(groupsRes.data || []);
       } catch (err: unknown) {
         const data = (err as { response?: { data?: { detail?: unknown } } })?.response?.data;
-        const detail = formatApiError(data?.detail);
-        setError(detail || 'Failed to load master data. Check that the backend is running and you are logged in with an HR role.');
+        setError(formatApiError(data?.detail) || 'Failed to load master data.');
       } finally {
         setLoading(false);
       }
@@ -188,15 +221,15 @@ export default function AddStaffForm({ onSaved, onCancel }: AddStaffFormProps) {
         setForm((prev) => ({ ...prev, staff_group: data.staff_group }));
       }
     } catch {
-      // suggestion is optional
+      // optional
     }
   };
 
-  const refreshPreviewCode = async () => {
-    if (manualEmpCode) return;
+  const refreshPreviewCode = async (staffGroup: string) => {
+    if (manualEmpCode || !staffGroup) return;
     setPreviewLoading(true);
     try {
-      const { data } = await employeesApi.nextStaffNumber();
+      const { data } = await employeesApi.nextStaffNumber(staffGroup);
       const next = data?.next_emp_code || '';
       setPreviewCode(next);
       setForm((prev) => ({ ...prev, emp_code: next }));
@@ -208,15 +241,20 @@ export default function AddStaffForm({ onSaved, onCancel }: AddStaffFormProps) {
   };
 
   useEffect(() => {
-    if (manualEmpCode) return;
-    void refreshPreviewCode();
-  }, [manualEmpCode]);
+    if (manualEmpCode || !form.staff_group) {
+      if (!form.staff_group) setPreviewCode('');
+      return;
+    }
+    void refreshPreviewCode(form.staff_group);
+  }, [manualEmpCode, form.staff_group]);
 
   const handleDesignationChange = async (name: string) => {
+    markDirty();
     const desig = designations.find((d) => d.name === name);
     setForm((prev) => ({
       ...prev,
       designation_name: name,
+      pay_level: desig?.grade_pay_level || prev.pay_level,
     }));
     if (desig && form.department_code) {
       await refreshStaffGroupSuggestion(name, form.department_code, desig.category_code);
@@ -224,20 +262,63 @@ export default function AddStaffForm({ onSaved, onCancel }: AddStaffFormProps) {
   };
 
   const handleDepartmentChange = async (code: string) => {
+    markDirty();
     setForm((prev) => ({ ...prev, department_code: code }));
     if (form.designation_name && code) {
-      await refreshStaffGroupSuggestion(
-        form.designation_name,
-        code,
-        selectedDesig?.category_code,
-      );
+      await refreshStaffGroupSuggestion(form.designation_name, code, selectedDesig?.category_code);
     }
+  };
+
+  const handlePermanentAddressChange = (parts: AddressParts) => {
+    markDirty();
+    setPermanentAddress(parts);
+    if (presentSameAsPermanent) setPresentAddress(parts);
+  };
+
+  const handlePresentSameToggle = (checked: boolean) => {
+    markDirty();
+    setPresentSameAsPermanent(checked);
+    if (checked) setPresentAddress(permanentAddress);
+  };
+
+  const validateForm = (): string | null => {
+    if (!isValidEmail(form.email)) return 'Email must have exactly one @ and at least one . in the domain.';
+    if (!isValidEmail(form.personal_email)) return 'Alt email must have exactly one @ and at least one . in the domain.';
+    if (!isValidMobile(form.mobile)) return 'Mobile must be exactly 10 digits when entered.';
+    if (!isValidMobile(form.alt_mobile)) return 'Alt mobile must be exactly 10 digits when entered.';
+    if (!isValidPan(form.pan)) return 'PAN must be in format ABCDE1234F.';
+    if (!isValidIfsc(form.ifsc_code)) return 'IFSC must be 11 characters (e.g. SBIN0001234).';
+    if (form.aadhaar && form.aadhaar.length !== 12) return 'Aadhaar must be exactly 12 digits.';
+    if (form.nps_or_gpf_no && form.nps_or_gpf_no.length !== 12) return 'NPS number must be exactly 12 digits.';
+    if (form.pfms_code && form.pfms_code.length !== 14) return 'PFMS code must be exactly 14 characters.';
+
+    const permErr = validateAddressParts(permanentAddress, 'Permanent address');
+    if (permErr) return permErr;
+    const presentParts = presentSameAsPermanent ? permanentAddress : presentAddress;
+    const presErr = validateAddressParts(presentParts, 'Present address');
+    if (presErr) return presErr;
+
+    const dates = validateEmployeeDates({
+      dob: form.dob,
+      doj: form.doj,
+      next_increment_date: form.next_increment_date,
+    });
+    if (!dates.ok) return dates.message || 'Invalid date.';
+
+    return null;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     setError('');
+
+    const validationError = validateForm();
+    if (validationError) {
+      setError(validationError);
+      setSaving(false);
+      return;
+    }
 
     const category_code = selectedDesig?.category_code || '';
     if (!category_code) {
@@ -251,24 +332,33 @@ export default function AddStaffForm({ onSaved, onCancel }: AddStaffFormProps) {
       return;
     }
 
+    const presentParts = presentSameAsPermanent ? permanentAddress : presentAddress;
+
     try {
       const payload: Record<string, unknown> = {
-        ...emptyToNull(form),
+        ...emptyToNull({
+          ...form,
+          permanent_address: serializeAddress(permanentAddress),
+          address: serializeAddress(presentParts),
+        }),
         category_code,
-        has_institutional_email: form.has_institutional_email,
+        has_institutional_email: false,
         is_physically_handicapped: form.is_physically_handicapped,
       };
-      if (!manualEmpCode) {
-        delete payload.emp_code;
-      }
-      await employeesApi.create(payload);
-      onSaved();
+      if (!manualEmpCode) delete payload.emp_code;
+
+      const { data } = await employeesApi.create(payload);
+      dirtyRef.current = false;
+      onDirtyChange?.(false);
+      onSaved(data?.id);
     } catch (err: unknown) {
       const data = (err as { response?: { data?: { detail?: unknown } } })?.response?.data;
       setError(formatApiError(data?.detail) || 'Failed to create employee');
       setSaving(false);
     }
   };
+
+  const showDateError = (message: string) => setError(message);
 
   if (loading) return <div className="py-6 text-center text-slate-500 text-sm">Loading master data…</div>;
 
@@ -285,17 +375,27 @@ export default function AddStaffForm({ onSaved, onCancel }: AddStaffFormProps) {
       )}
 
       <p className="text-xs text-slate-500 mb-3 leading-relaxed">
-        Staff numbers are unique 7-digit codes starting at 1000001. Staff group classifies the role and can change later; the number stays the same.
+        Staff numbers use a group prefix and 4-digit sequence (e.g. FAC0001, NUR0002). The number stays with the employee for life.
       </p>
 
       <form onSubmit={handleSubmit}>
         <div className="dense-form">
           <Section title="Personal Identity" />
-          <Field label="Initial" cols={1}>
-            <input value={form.initial} onChange={(e) => set('initial', e.target.value)} className={inputCls} placeholder="Dr." maxLength={8} />
+          <Field label="Initial" cols={2}>
+            <select autoFocus value={form.initial} onChange={(e) => set('initial', e.target.value)} className={inputCls}>
+              {INITIALS.map((opt) => (
+                <option key={opt || 'none'} value={opt}>{opt || '—'}</option>
+              ))}
+            </select>
           </Field>
           <Field label="Full Name" required cols={6}>
-            <input required value={form.name} onChange={(e) => set('name', e.target.value)} className={inputCls} />
+            <input required value={form.name} onChange={(e) => set('name', filterName(e.target.value))} className={inputCls} />
+          </Field>
+          <Field label="Father's Name" cols={4}>
+            <input value={form.father_name} onChange={(e) => setText('father_name', e.target.value.replace(/[^A-Za-z\s.]/g, ''))} className={inputCls} />
+          </Field>
+          <Field label="Date of Birth" cols={3}>
+            <ValidatedDateInput value={form.dob} onChange={(v) => set('dob', v)} onInvalid={showDateError} />
           </Field>
           <Field label="Gender" required cols={2}>
             <select required value={form.gender} onChange={(e) => set('gender', e.target.value)} className={inputCls}>
@@ -303,20 +403,6 @@ export default function AddStaffForm({ onSaved, onCancel }: AddStaffFormProps) {
               <option value="FEMALE">Female</option>
               <option value="OTHER">Other</option>
             </select>
-          </Field>
-          <Field label="Blood Group" cols={2}>
-            <select value={form.blood_group} onChange={(e) => set('blood_group', e.target.value)} className={inputCls}>
-              <option value="">—</option>
-              {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map((bg) => (
-                <option key={bg} value={bg}>{bg}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Father's Name" cols={5}>
-            <input value={form.father_name} onChange={(e) => set('father_name', e.target.value)} className={inputCls} />
-          </Field>
-          <Field label="Date of Birth" cols={3}>
-            <input type="date" value={form.dob} onChange={(e) => set('dob', e.target.value)} className={inputCls} />
           </Field>
           <Field label="Marital Status" cols={2}>
             <select value={form.marital_status} onChange={(e) => set('marital_status', e.target.value)} className={inputCls}>
@@ -326,6 +412,9 @@ export default function AddStaffForm({ onSaved, onCancel }: AddStaffFormProps) {
               <option value="WIDOWED">Widowed</option>
               <option value="DIVORCED">Divorced</option>
             </select>
+          </Field>
+          <Field label="Religion" cols={3}>
+            <input value={form.religion} onChange={(e) => setText('religion', e.target.value)} className={inputCls} />
           </Field>
           <Field label="Caste Category" cols={2}>
             <select value={form.caste_category} onChange={(e) => set('caste_category', e.target.value)} className={inputCls}>
@@ -337,111 +426,44 @@ export default function AddStaffForm({ onSaved, onCancel }: AddStaffFormProps) {
               <option value="EWS">EWS</option>
             </select>
           </Field>
-          <Field label="Religion" cols={3}>
-            <input value={form.religion} onChange={(e) => set('religion', e.target.value)} className={inputCls} />
+          <Field label="Blood Group" cols={2}>
+            <select value={form.blood_group} onChange={(e) => set('blood_group', e.target.value)} className={inputCls}>
+              <option value="">—</option>
+              {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map((bg) => (
+                <option key={bg} value={bg}>{bg}</option>
+              ))}
+            </select>
           </Field>
           <Field label="PwD" cols={2}>
             <label className="flex items-center gap-2 h-[34px] cursor-pointer">
-              <input
-                type="checkbox"
-                checked={form.is_physically_handicapped}
-                onChange={(e) => set('is_physically_handicapped', e.target.checked)}
-                className="h-4 w-4 text-indigo-600 border-slate-300 rounded"
-              />
+              <input type="checkbox" checked={form.is_physically_handicapped} onChange={(e) => set('is_physically_handicapped', e.target.checked)} className="h-4 w-4 text-indigo-600 border-slate-300 rounded" />
               <span className="text-xs text-slate-600">Yes</span>
             </label>
           </Field>
-          <Field label="Photo Ref" cols={4}>
-            <input value={form.photo} onChange={(e) => set('photo', e.target.value)} className={inputCls} placeholder="File path or reference" />
-          </Field>
 
           <Section title="Address & Contact" />
-          <Field label="Present Address" cols={6}>
-            <input value={form.address} onChange={(e) => set('address', e.target.value)} className={inputCls} />
-          </Field>
-          <Field label="Permanent Address" cols={6}>
-            <input value={form.permanent_address} onChange={(e) => set('permanent_address', e.target.value)} className={inputCls} />
-          </Field>
-          <Field label="Flat / Quarters" cols={3}>
-            <input value={form.type_of_flat} onChange={(e) => set('type_of_flat', e.target.value)} className={inputCls} placeholder="Type-IV" />
-          </Field>
+          <AddressFields
+            permanent={permanentAddress}
+            present={presentAddress}
+            sameAsPermanent={presentSameAsPermanent}
+            onPermanentChange={handlePermanentAddressChange}
+            onPresentChange={(parts) => { markDirty(); setPresentAddress(parts); }}
+            onSameToggle={handlePresentSameToggle}
+          />
           <Field label="Mobile" cols={3}>
-            <input type="tel" value={form.mobile} onChange={(e) => set('mobile', e.target.value)} className={codeCls} placeholder="10-digit" maxLength={10} />
+            <input type="tel" inputMode="numeric" autoComplete="tel" value={form.mobile} onChange={(e) => set('mobile', filterDigits(e.target.value, 10))} className={codeCls} placeholder="10-digit" maxLength={10} />
           </Field>
           <Field label="Alt Mobile" cols={3}>
-            <input type="tel" value={form.alt_mobile} onChange={(e) => set('alt_mobile', e.target.value)} className={codeCls} maxLength={10} />
+            <input type="tel" inputMode="numeric" value={form.alt_mobile} onChange={(e) => set('alt_mobile', filterDigits(e.target.value, 10))} className={codeCls} maxLength={10} />
           </Field>
-          <Field label="Inst. Email Active" cols={3}>
-            <label className="flex items-center gap-2 h-[34px] cursor-pointer">
-              <input
-                type="checkbox"
-                checked={form.has_institutional_email}
-                onChange={(e) => set('has_institutional_email', e.target.checked)}
-                className="h-4 w-4 text-indigo-600 border-slate-300 rounded"
-              />
-              <span className="text-xs text-slate-600">Verified</span>
-            </label>
+          <Field label="Email" cols={3}>
+            <input type="email" autoComplete="email" value={form.email} onChange={(e) => set('email', filterEmailInput(e.target.value))} className={inputCls} placeholder="name@aiims.edu" />
           </Field>
-          <Field label="Official Email" cols={6}>
-            <input type="email" value={form.email} onChange={(e) => set('email', e.target.value)} className={inputCls} placeholder="name@aiims.edu" />
-          </Field>
-          <Field label="Personal Email" cols={6}>
-            <input type="email" value={form.personal_email} onChange={(e) => set('personal_email', e.target.value)} className={inputCls} placeholder="personal@email.com" />
+          <Field label="Alt Email" cols={3}>
+            <input type="email" autoComplete="email" value={form.personal_email} onChange={(e) => set('personal_email', filterEmailInput(e.target.value))} className={inputCls} placeholder="personal@email.com" />
           </Field>
 
           <Section title="Employment" />
-          <Field label="Staff Group" required cols={4}>
-            <select
-              required
-              value={form.staff_group}
-              onChange={(e) => set('staff_group', e.target.value)}
-              className={inputCls}
-            >
-              <option value="">Select staff group…</option>
-              {staffGroups.map((g) => (
-                <option key={g.code} value={g.code}>
-                  {g.label}
-                </option>
-              ))}
-            </select>
-            <p className="mt-0.5 text-[11px] text-slate-500">
-              For classification and leave rules — does not change the staff number.
-            </p>
-          </Field>
-          <Field label="Staff Number" required cols={4}>
-            <input
-              required
-              readOnly={!manualEmpCode}
-              value={manualEmpCode ? form.emp_code : (previewCode || form.emp_code)}
-              onChange={(e) => set('emp_code', e.target.value)}
-              className={codeCls}
-              placeholder={previewLoading ? 'Loading…' : 'Auto-assigned'}
-            />
-            <label className="mt-1 flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={manualEmpCode}
-                onChange={(e) => {
-                  const checked = e.target.checked;
-                  setManualEmpCode(checked);
-                  if (!checked) {
-                    void refreshPreviewCode();
-                  }
-                }}
-                className="h-3.5 w-3.5 text-indigo-600 border-slate-300 rounded"
-              />
-              <span className="text-[11px] text-slate-500">Enter code manually (legacy / migration)</span>
-            </label>
-          </Field>
-          <Field label="Grade" cols={2}>
-            <input value={form.grade} onChange={(e) => set('grade', e.target.value)} className={inputCls} />
-          </Field>
-          <Field label="Pay Level" cols={2}>
-            <input value={form.pay_level} onChange={(e) => set('pay_level', e.target.value)} className={inputCls} />
-          </Field>
-          <Field label="Date of Joining" required cols={2}>
-            <input required type="date" value={form.doj} onChange={(e) => set('doj', e.target.value)} className={inputCls} />
-          </Field>
           <Field label="Department" required cols={6}>
             <select required value={form.department_code} onChange={(e) => void handleDepartmentChange(e.target.value)} className={inputCls}>
               <option value="">Select…</option>
@@ -457,23 +479,65 @@ export default function AddStaffForm({ onSaved, onCancel }: AddStaffFormProps) {
                 <option key={d.id} value={d.name}>{d.name}</option>
               ))}
             </select>
-            {selectedDesig && (
-              <p className="mt-0.5 text-[11px] text-indigo-600 font-medium">
-                {selectedDesig.category_code}
-              </p>
-            )}
+            {selectedDesig && <p className="mt-0.5 text-[11px] text-indigo-600 font-medium">{selectedDesig.category_code}</p>}
           </Field>
-          <Field label="Actual DOJ" cols={3}>
-            <input type="date" value={form.doj_actual} onChange={(e) => set('doj_actual', e.target.value)} className={inputCls} />
+          <Field label="Staff Group" required cols={4}>
+            <select required value={form.staff_group} onChange={(e) => set('staff_group', e.target.value)} className={inputCls}>
+              <option value="">Select staff group…</option>
+              {staffGroups.map((g) => (
+                <option key={g.code} value={g.code}>{g.label}</option>
+              ))}
+            </select>
           </Field>
-          <Field label="Last Working Day" cols={3}>
-            <input type="date" value={form.dol_last_working} onChange={(e) => set('dol_last_working', e.target.value)} className={inputCls} />
+          <Field label="Staff Number" required cols={4}>
+            <input
+              required
+              readOnly={!manualEmpCode}
+              tabIndex={manualEmpCode ? 0 : -1}
+              value={manualEmpCode ? form.emp_code : (previewCode || form.emp_code)}
+              onChange={(e) => set('emp_code', upperText(e.target.value))}
+              className={codeCls}
+              placeholder={previewLoading ? 'Loading…' : form.staff_group ? 'Auto-assigned' : 'Select staff group first'}
+            />
+            <label className="mt-1 flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={manualEmpCode}
+                onChange={(e) => {
+                  markDirty();
+                  const checked = e.target.checked;
+                  setManualEmpCode(checked);
+                  if (!checked && form.staff_group) void refreshPreviewCode(form.staff_group);
+                }}
+                className="h-3.5 w-3.5 text-indigo-600 border-slate-300 rounded"
+              />
+              <span className="text-[11px] text-slate-500">Enter code manually (legacy / migration)</span>
+            </label>
           </Field>
-          <Field label="Next Increment" cols={3}>
-            <input type="date" value={form.next_increment_date} onChange={(e) => set('next_increment_date', e.target.value)} className={inputCls} />
+          <Field label="Date of Joining" required cols={4}>
+            <ValidatedDateInput value={form.doj} onChange={(v) => set('doj', v)} required onInvalid={showDateError} />
           </Field>
-          <Field label="Last Qualification" cols={3}>
-            <input value={form.last_qualification} onChange={(e) => set('last_qualification', e.target.value)} className={inputCls} placeholder="MD, M.Sc…" />
+          <Field label="Grade" cols={2}>
+            <select value={form.grade} onChange={(e) => set('grade', e.target.value)} className={inputCls}>
+              <option value="">—</option>
+              {PAY_GROUPS.map((g) => <option key={g} value={g}>{g}</option>)}
+            </select>
+          </Field>
+          <Field
+            label="Pay Level"
+            cols={4}
+            hint={selectedDesig?.grade_pay_level ? 'Default from designation — update on promotion/increment.' : undefined}
+          >
+            <input value={form.pay_level} onChange={(e) => setText('pay_level', e.target.value)} className={inputCls} placeholder="e.g. Level 12" />
+          </Field>
+          <Field label="Last Qualification" cols={6}>
+            <input value={form.last_qualification} onChange={(e) => setText('last_qualification', e.target.value)} className={inputCls} placeholder="MD, M.SC…" />
+          </Field>
+          <Field label="Next Increment" cols={4}>
+            <ValidatedDateInput value={form.next_increment_date} onChange={(v) => set('next_increment_date', v)} onInvalid={showDateError} />
+          </Field>
+          <Field label="Last Working Day" cols={4}>
+            <input type="date" value="" disabled tabIndex={-1} className={`${inputCls} opacity-60 cursor-not-allowed`} title="Set via resignation workflow" />
           </Field>
 
           <Section title="IDs & Banking" />
@@ -481,29 +545,27 @@ export default function AddStaffForm({ onSaved, onCancel }: AddStaffFormProps) {
             <input value={form.pan} onChange={(e) => set('pan', e.target.value.toUpperCase())} className={codeCls} maxLength={10} placeholder="ABCDE1234F" />
           </Field>
           <Field label="Aadhaar" cols={3}>
-            <input value={form.aadhaar} onChange={(e) => set('aadhaar', e.target.value.replace(/\D/g, '').slice(0, 12))} className={codeCls} maxLength={12} />
+            <input inputMode="numeric" value={form.aadhaar} onChange={(e) => set('aadhaar', filterDigits(e.target.value, 12))} className={codeCls} maxLength={12} />
           </Field>
           <Field label="IFSC" cols={3}>
             <input value={form.ifsc_code} onChange={(e) => set('ifsc_code', e.target.value.toUpperCase())} className={codeCls} maxLength={11} />
           </Field>
-          <Field label="NPS / GPF" cols={3}>
-            <input value={form.nps_or_gpf_no} onChange={(e) => set('nps_or_gpf_no', e.target.value)} className={inputCls} />
+          <Field label="NPS Number" cols={3}>
+            <input inputMode="numeric" value={form.nps_or_gpf_no} onChange={(e) => set('nps_or_gpf_no', filterDigits(e.target.value, 12))} className={codeCls} maxLength={12} />
           </Field>
           <Field label="PFMS Code" cols={3}>
-            <input value={form.pfms_code} onChange={(e) => set('pfms_code', e.target.value)} className={inputCls} />
+            <input value={form.pfms_code} onChange={(e) => set('pfms_code', filterAlphanumUpper(e.target.value, 14))} className={codeCls} maxLength={14} />
           </Field>
-          <Field label="Bank A/C" cols={4}>
-            <input value={form.bank_account_no} onChange={(e) => set('bank_account_no', e.target.value)} className={codeCls} />
+          <Field label="Bank A/C" cols={3}>
+            <input inputMode="numeric" value={form.bank_account_no} onChange={(e) => set('bank_account_no', filterDigits(e.target.value, 20))} className={codeCls} />
           </Field>
-          <Field label="Bank Name" cols={5}>
-            <input value={form.bank_name} onChange={(e) => set('bank_name', e.target.value)} className={inputCls} />
+          <Field label="Bank Name" cols={6}>
+            <input value={form.bank_name} onChange={(e) => setText('bank_name', e.target.value)} className={inputCls} />
           </Field>
         </div>
 
         <div className="sticky bottom-0 -mx-4 sm:-mx-6 mt-4 px-4 sm:px-6 py-2.5 flex justify-end gap-2 bg-white/95 backdrop-blur border-t border-slate-200">
-          <button type="button" onClick={onCancel} className="btn-secondary btn-sm">
-            Cancel
-          </button>
+          <button type="button" onClick={onCancel} className="btn-secondary btn-sm">Cancel</button>
           <button type="submit" disabled={saving || !selectedDesig} className="btn-primary btn-sm">
             {saving ? 'Saving…' : 'Onboard Staff'}
           </button>

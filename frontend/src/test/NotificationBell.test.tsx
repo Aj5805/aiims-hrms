@@ -3,7 +3,7 @@ import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { NotificationBell } from '../pages/Phase678Pages';
+import { NotificationBell } from '../components/NotificationBell';
 
 let unreadCount = 2;
 let notifications = [

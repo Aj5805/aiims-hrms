@@ -188,3 +188,16 @@ body {
     contain-intrinsic-size: auto none auto 72px;
   }
 }
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  .employee-profile-print .card {
+    break-inside: avoid;
+    box-shadow: none;
+  }
+}

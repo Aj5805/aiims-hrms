@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, Fragment, type FormEvent } from 'react';
-import { leaveTypesApi } from '../api/phase3_endpoints';
+import { leaveTypesApi } from '../api/endpoints';
 import { formatApiError } from '../constants/roles';
 
 const LEAVE_SCHEMES = ['CCS', 'RESIDENCY', 'BOTH'] as const;

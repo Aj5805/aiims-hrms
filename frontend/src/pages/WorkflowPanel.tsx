@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { entitlementRulesApi, leaveTypesApi, workflowApi } from '../api/phase3_endpoints';
+import { entitlementRulesApi, leaveTypesApi, workflowApi } from '../api/endpoints';
 import { formatApiError } from '../constants/roles';
 import type { LeaveTypeRow } from './LeaveTypesPanel';
 
