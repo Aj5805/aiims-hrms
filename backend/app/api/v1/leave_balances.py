@@ -27,7 +27,7 @@ from app.services.leave_validation import (
 router = APIRouter(prefix="/leave-balances", tags=["leave-balances"])
 
 _ADMIN_BALANCE_ROLES = ("ADMIN", "ESTABLISHMENT_OFFICER")
-_NODAL_ADJUST_ROLES = ("NODAL_OFFICER",)
+_NODAL_ADJUST_ROLES = ("NODAL_OFFICER", "NODAL_OFFICE")
 _ADJUSTABLE_FIELDS = {"opening_balance", "credited", "availed", "lop_days"}
 
 

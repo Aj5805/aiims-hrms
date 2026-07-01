@@ -5,7 +5,7 @@ export const SYSTEM_ROLES = [
   { code: 'ESTABLISHMENT_OFFICER', label: 'Establishment Officer', description: 'CCS staff HR, leave config, reports' },
   { code: 'REGISTRAR', label: 'Registrar', description: 'Resident HR, reports, employee master access' },
   { code: 'NODAL_OFFICER', label: 'Nodal Officer', description: 'Final leave approver for assigned departments' },
-  { code: 'NODAL_OFFICE', label: 'Nodal Office (Clerical)', description: 'Dept-scoped onboarding, directory, reports — no leave approval' },
+  { code: 'NODAL_OFFICE', label: 'Nodal Office (Clerical)', description: 'Onboarding, directory, reports, manual leave entries — no leave approval' },
   { code: 'DEAN_ACADEMIC', label: 'Dean Academic', description: 'Resident leave final approver' },
   { code: 'HOD', label: 'Head of Department', description: 'First-stage leave approver for own department' },
   { code: 'STAFF', label: 'Staff', description: 'Apply leave, view own balances and profile' },

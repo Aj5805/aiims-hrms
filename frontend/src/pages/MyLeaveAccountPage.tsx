@@ -188,8 +188,8 @@ function BalanceTableRow({
 
 export function MyLeaveAccountPage() {
   const user = useAuthStore((state) => state.user);
-  const canTeamView = ['ADMIN', 'ESTABLISHMENT_OFFICER', 'HOD', 'NODAL_OFFICER'].includes(user?.role ?? '');
-  const canAdjust = ['ADMIN', 'ESTABLISHMENT_OFFICER', 'NODAL_OFFICER'].includes(user?.role ?? '');
+  const canTeamView = ['ADMIN', 'ESTABLISHMENT_OFFICER', 'HOD', 'NODAL_OFFICER', 'NODAL_OFFICE'].includes(user?.role ?? '');
+  const canAdjust = ['ADMIN', 'ESTABLISHMENT_OFFICER', 'NODAL_OFFICER', 'NODAL_OFFICE'].includes(user?.role ?? '');
   const [employeeQuery, setEmployeeQuery] = useState('');
   const [employeeOptions, setEmployeeOptions] = useState<EmployeeOption[]>([]);
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeOption | null>(null);
@@ -383,7 +383,10 @@ export function MyLeaveAccountPage() {
 
       {canAdjust && balances.length > 0 && (
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="mb-3 text-lg font-semibold text-slate-900">Manual Adjustment</div>
+          <div className="mb-3 text-lg font-semibold text-slate-900">Manual Leave Entry</div>
+          <p className="mb-3 text-sm text-slate-600">
+            Record leave against a staff member&apos;s balance (e.g. increase <span className="font-medium">availed</span> to debit days taken outside the online application flow). A reason is required for audit.
+          </p>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
             <select
               value={selectedBalanceId}
