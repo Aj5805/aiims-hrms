@@ -45,7 +45,18 @@ _NODAL_SCOPED_ROLES = ("NODAL_OFFICER", "NODAL_OFFICE")
 
 def _apply_nodal_scope(query: str, current_user: dict | None, params: dict, employee_alias: str = "e") -> str:
     if current_user and current_user.get("role") in _NODAL_SCOPED_ROLES:
-        query += f" AND EXISTS (SELECT 1 FROM dept_nodal_assignments dna WHERE dna.department_id = {employee_alias}.department_id AND dna.nodal_user_id = :nodal_user_id)"
+        query += f"""
+          AND {employee_alias}.id IN (
+              SELECT e2.id FROM employees e2
+              JOIN employee_categories c ON c.id = e2.category_id
+              JOIN nodal_offices no ON no.leave_scheme = c.leave_scheme
+              WHERE no.is_active = true AND (
+                  no.officer_user_id = :nodal_user_id
+                  OR no.id IN (SELECT nodal_office_id FROM users WHERE id = :nodal_user_id AND nodal_office_id IS NOT NULL)
+                  OR no.officer_user_id IN (SELECT parent_nodal_user_id FROM users WHERE id = :nodal_user_id)
+              )
+          )
+        """
         params["nodal_user_id"] = current_user.get("user_id")
     return query
 

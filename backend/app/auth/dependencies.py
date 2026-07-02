@@ -144,15 +144,22 @@ async def employee_scope(
         )
         res = {"scope": "residents", "employee_ids": [str(r[0]) for r in reg_result.fetchall()]}
     elif role in ("NODAL_OFFICER", "NODAL_OFFICE"):
-        nodal_result = await db.execute(
-            text("""
-                SELECT DISTINCT e.id FROM employees e
-                JOIN dept_nodal_assignments dna ON dna.department_id = e.department_id
-                WHERE dna.nodal_user_id = :uid AND dna.is_active = true
-            """),
-            {"uid": user_id},
-        )
-        res = {"scope": "nodal_departments", "employee_ids": [str(r[0]) for r in nodal_result.fetchall()]}
+        from app.services.nodal_routing import get_nodal_office_for_user
+
+        office = await get_nodal_office_for_user(db, user_id, role)
+        if office:
+            nodal_result = await db.execute(
+                text("""
+                    SELECT e.id FROM employees e
+                    JOIN employee_categories c ON e.category_id = c.id
+                    WHERE c.leave_scheme = :scheme
+                """),
+                {"scheme": office.leave_scheme},
+            )
+            res = {
+                "scope": "nodal_office",
+                "employee_ids": [str(r[0]) for r in nodal_result.fetchall()],
+            }
 
     if res["employee_ids"] is not None and emp_id and emp_id not in res["employee_ids"]:
         res["employee_ids"].append(emp_id)

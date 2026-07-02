@@ -18,6 +18,7 @@ from app.services.leave_transaction import (
     get_effective_available_balance,
     restore_on_recall,
 )
+from app.services.nodal_routing import employee_in_nodal_scope, get_nodal_officer_for_employee
 
 router = APIRouter(prefix="/leave-approvals", tags=["leave-approvals"])
 
@@ -86,20 +87,9 @@ async def _resolve_approver_user(db: AsyncSession, config_id: str, step_order: i
         return None
 
     if approver_role == "NODAL_OFFICER" and employee_id:
-        nodal_result = await db.execute(
-            text("""
-                SELECT dna.nodal_user_id
-                FROM dept_nodal_assignments dna
-                JOIN employees e ON e.department_id = dna.department_id
-                WHERE e.id = :eid AND dna.is_active = true
-                ORDER BY dna.assigned_at DESC
-                LIMIT 1
-            """),
-            {"eid": employee_id},
-        )
-        nodal_row = nodal_result.fetchone()
-        if nodal_row and nodal_row[0]:
-            return str(nodal_row[0])
+        officer_id = await get_nodal_officer_for_employee(db, employee_id)
+        if officer_id:
+            return officer_id
         return None
 
     user_result = await db.execute(
@@ -302,11 +292,13 @@ async def approval_inbox(current_user: dict = Depends(get_current_user), db: Asy
             OR (ws.approver_role = 'SPECIFIC_USER' AND ws.specific_approver_id = :uid)
             OR (
                 ws.approver_role = 'NODAL_OFFICER'
+                AND :role = 'NODAL_OFFICER'
                 AND EXISTS (
-                    SELECT 1 FROM dept_nodal_assignments dna
-                    WHERE dna.nodal_user_id = :uid
-                      AND dna.is_active = true
-                      AND dna.department_id = e.department_id
+                    SELECT 1 FROM nodal_offices no
+                    JOIN employee_categories c ON c.id = e.category_id
+                    WHERE no.officer_user_id = :uid
+                      AND no.is_active = true
+                      AND no.leave_scheme = c.leave_scheme
                 )
             )
           )
@@ -359,9 +351,11 @@ async def team_availability(current_user: dict = Depends(get_current_user), db: 
     
     if role == "NODAL_OFFICER":
         query += """
-          AND e.department_id IN (
-              SELECT department_id FROM dept_nodal_assignments
-              WHERE nodal_user_id = :uid AND is_active = true
+          AND e.id IN (
+              SELECT e2.id FROM employees e2
+              JOIN employee_categories c ON c.id = e2.category_id
+              JOIN nodal_offices no ON no.leave_scheme = c.leave_scheme
+              WHERE no.officer_user_id = :uid AND no.is_active = true
           )
         """
     elif role == "HOD":
@@ -417,9 +411,11 @@ async def availability_forecast(
         staff_params["dept_id"] = my_dept_id
     elif role == "NODAL_OFFICER":
         staff_query += """
-          AND e.department_id IN (
-              SELECT department_id FROM dept_nodal_assignments
-              WHERE nodal_user_id = :uid AND is_active = true
+          AND e.id IN (
+              SELECT e2.id FROM employees e2
+              JOIN employee_categories c ON c.id = e2.category_id
+              JOIN nodal_offices no ON no.leave_scheme = c.leave_scheme
+              WHERE no.officer_user_id = :uid AND no.is_active = true
           )
         """
         staff_params["uid"] = user_id
@@ -515,18 +511,10 @@ async def approve_action(application_id: str, body: dict, current_user: dict = D
         if str(step_dict.get("specific_approver_id")) != str(current_user["user_id"]):
             raise HTTPException(status_code=403, detail="Not authorized to approve this step (Specific User mismatch)")
     elif step_dict["approver_role"] == "NODAL_OFFICER":
-        # Check that this user is the nodal officer for the applicant's department
-        nodal_check = await db.execute(
-            text("""
-                SELECT 1 FROM dept_nodal_assignments dna
-                JOIN employees e ON e.department_id = dna.department_id
-                WHERE e.id = :eid AND dna.nodal_user_id = :uid AND dna.is_active = true
-                LIMIT 1
-            """),
-            {"eid": str(app_row.employee_id), "uid": user_id},
-        )
-        if not nodal_check.fetchone():
-            raise HTTPException(status_code=403, detail="Not authorized — you are not the nodal officer for this department")
+        if current_user["role"] != "NODAL_OFFICER":
+            raise HTTPException(status_code=403, detail="Not authorized — nodal officer role required")
+        if not await employee_in_nodal_scope(db, user_id, "NODAL_OFFICER", str(app_row.employee_id)):
+            raise HTTPException(status_code=403, detail="Not authorized — this applicant is not in your nodal office scope")
     elif step_dict["approver_role"] != current_user["role"]:
         raise HTTPException(status_code=403, detail="Not authorized to approve this step")
 

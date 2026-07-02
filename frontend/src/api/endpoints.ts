@@ -27,6 +27,7 @@ export const employeesApi = {
   bootstrapLeaveBalances: (id: string) => api.post(`/employees/${id}/bootstrap-leave-balances`),
   create: (data: Record<string, unknown>) => api.post('/employees', data),
   update: (id: string, data: Record<string, unknown>) => api.put(`/employees/${id}`, data),
+  updateSelf: (data: Record<string, unknown>) => api.patch('/employees/me', data),
   lifecycle: (id: string, data: Record<string, unknown>) => api.post(`/employees/${id}/lifecycle`, data),
   importCsv: (file: File) => {
     const form = new FormData();
@@ -104,17 +105,25 @@ export const broadcastsApi = {
   update: (id: string, data: any) => api.put(`/broadcasts/${id}`, data),
 };
 
-export const nodalAssignmentsApi = {
-  list: (params?: Record<string, string | boolean>) => api.get('/nodal-assignments', { params }),
-  create: (data: Record<string, unknown>) => api.post('/nodal-assignments', data),
-  update: (id: string, data: Record<string, unknown>) => api.put(`/nodal-assignments/${id}`, data),
-  nodalUsers: () => api.get('/nodal-assignments/nodal-users'),
+export const nodalOfficesApi = {
+  list: (params?: Record<string, string | boolean>) => api.get('/nodal-offices', { params }),
+  create: (data: Record<string, unknown>) => api.post('/nodal-offices', data),
+  update: (id: string, data: Record<string, unknown>) => api.put(`/nodal-offices/${id}`, data),
+  eligibleStaff: (params?: Record<string, string>) => api.get('/nodal-offices/eligible-staff', { params }),
+  eligibleOfficers: () => api.get('/nodal-offices/eligible-officers'),
+  clericalLogins: (officeId: string) => api.get(`/nodal-offices/${officeId}/clerical-logins`),
+  createClericalLogin: (officeId: string, data: Record<string, unknown>) =>
+    api.post(`/nodal-offices/${officeId}/clerical-logins`, data),
 };
+
+/** @deprecated Use nodalOfficesApi — kept for any stale imports */
+export const nodalAssignmentsApi = nodalOfficesApi;
 
 export const hodAssignmentsApi = {
   list: (params?: Record<string, string | boolean>) => api.get('/hod-assignments', { params }),
   create: (data: Record<string, unknown>) => api.post('/hod-assignments', data),
   update: (id: string, data: Record<string, unknown>) => api.put(`/hod-assignments/${id}`, data),
+  eligibleStaff: (params?: Record<string, string>) => api.get('/hod-assignments/eligible-staff', { params }),
   hodUsers: () => api.get('/hod-assignments/hod-users'),
 };
 

@@ -1,9 +1,7 @@
-"""Seed 006 â€” Default workflow configs (baseline chains per category).
+"""Seed 006 — Default workflow configs (baseline chains per category).
 
-Regular staff:  HOD -> Establishment Officer -> Registrar
-Residents:      HOD -> Dean Academic
-
-Admin can customize these through the Phase 3 UI.
+Regular staff (CCS):  HOD → Nodal Officer (Establishment)
+Residents:           HOD → Nodal Officer (Registrar)
 """
 
 import secrets
@@ -64,9 +62,8 @@ def run(session):
     _create_workflow(session, admin_id,
         "Regular Staff — Default (All Types, All Durations)",
         [
-            (1, "HOD",                   "Department",     48, False),
-            (2, "ESTABLISHMENT_OFFICER", "Establishment",  72, False),
-            (3, "REGISTRAR",             "Registrar Office",72, True),
+            (1, "HOD",           "Department",     48, False),
+            (2, "NODAL_OFFICER", "Establishment",  72, True),
         ]
     )
 
@@ -75,8 +72,8 @@ def run(session):
         _create_workflow(session, admin_id,
             f"Resident — Default ({cat.code})",
             [
-                (1, "HOD",           "Department",          48, False),
-                (2, "DEAN_ACADEMIC", "Dean Academic Office",72, True),
+                (1, "HOD",           "Department",       48, False),
+                (2, "NODAL_OFFICER", "Registrar Office", 72, True),
             ],
             category_id=cat.id
         )

@@ -74,6 +74,17 @@ async def create_assignment(
     if not dept_row.fetchone():
         raise HTTPException(status_code=404, detail="Department not found")
 
+    # One active nodal officer per department (approval routing); office staff may share departments.
+    if u.role == "NODAL_OFFICER":
+        await db.execute(
+            text("""
+                UPDATE dept_nodal_assignments SET is_active = false
+                WHERE department_id = :did AND is_active = true
+                  AND nodal_user_id IN (SELECT id FROM users WHERE role = 'NODAL_OFFICER')
+            """),
+            {"did": department_id},
+        )
+
     aid = str(uuid.uuid4())
     try:
         await db.execute(

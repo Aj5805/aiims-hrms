@@ -15,7 +15,6 @@ router = APIRouter(prefix="/departments", tags=["departments"])
 
 
 _MASTER_VIEW_ROLES = ("ADMIN", "ESTABLISHMENT_OFFICER", "REGISTRAR", "DIRECTOR", "NODAL_OFFICER", "NODAL_OFFICE")
-_NODAL_SCOPED_ROLES = ("NODAL_OFFICER", "NODAL_OFFICE")
 
 
 @router.get("", response_model=list[DepartmentResponse])
@@ -24,27 +23,15 @@ async def list_departments(
     current_user: dict = Depends(require_role(*_MASTER_VIEW_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
-    inactive_clause = "" if include_inactive else " AND d.is_active = true"
-    if current_user["role"] in _NODAL_SCOPED_ROLES:
-        result = await db.execute(
-            text(f"""
-                SELECT d.id, d.code, d.name, d.parent_dept_id, d.managing_office, d.is_active
-                FROM departments d
-                JOIN dept_nodal_assignments dna ON dna.department_id = d.id
-                WHERE dna.nodal_user_id = :uid AND dna.is_active = true{inactive_clause}
-                ORDER BY d.name
-            """),
-            {"uid": current_user["user_id"]},
-        )
-    else:
-        result = await db.execute(
-            text(f"""
-                SELECT id, code, name, parent_dept_id, managing_office, is_active
-                FROM departments
-                WHERE 1=1{inactive_clause.replace('d.', '')}
-                ORDER BY name
-            """)
-        )
+    inactive_clause = "" if include_inactive else " AND is_active = true"
+    result = await db.execute(
+        text(f"""
+            SELECT id, code, name, parent_dept_id, managing_office, is_active
+            FROM departments
+            WHERE 1=1{inactive_clause}
+            ORDER BY name
+        """)
+    )
     return [
         DepartmentResponse(
             id=str(r.id), code=r.code, name=r.name,
