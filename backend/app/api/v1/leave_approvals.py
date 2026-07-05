@@ -1,13 +1,14 @@
 """Leave approvals -- inbox, action, recall, bulk."""
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_current_user, require_role
 from app.core.database import get_db
+from app.services.leave_hpl import balance_debit_days
 from app.services.leave_validation import validate_leave_application
 from app.services.notifications import notify_event
 from app.services.leave_transaction import (
@@ -105,16 +106,29 @@ async def _verify_balance_for_action(app_row, application_id: str, days: float, 
     kind = getattr(app_row, "application_kind", "NEW") or "NEW"
     if kind == "CANCELLATION":
         return
+
+    lt_code_result = await db.execute(
+        text("SELECT code FROM leave_types WHERE id = :id"),
+        {"id": str(app_row.leave_type_id)},
+    )
+    lt_code_row = lt_code_result.fetchone()
+    lt_code = lt_code_row[0] if lt_code_row else ""
+    is_commuted = bool(getattr(app_row, "is_commuted", False))
+
     if kind == "MODIFICATION" and app_row.parent_application_id:
         parent = await db.execute(
-            text("SELECT applied_days FROM leave_applications WHERE id = :id"),
+            text("SELECT applied_days, is_commuted FROM leave_applications WHERE id = :id"),
             {"id": str(app_row.parent_application_id)},
         )
         parent_row = parent.fetchone()
         parent_days = float(parent_row[0]) if parent_row else 0.0
-        days_to_check = max(float(days) - parent_days, 0.0)
+        parent_commuted = bool(parent_row[1]) if parent_row else False
+        old_debit = balance_debit_days(parent_days, lt_code, is_commuted=parent_commuted)
+        new_debit = balance_debit_days(float(days), lt_code, is_commuted=is_commuted)
+        days_to_check = max(new_debit - old_debit, 0.0)
     else:
-        days_to_check = float(days)
+        days_to_check = balance_debit_days(float(days), lt_code, is_commuted=is_commuted)
+
     if days_to_check > 0:
         await assert_sufficient_balance(
             db,
@@ -142,12 +156,23 @@ async def _finalize_cancellation(
     if not parent_row or parent_row.status != "APPROVED":
         raise HTTPException(status_code=400, detail="Parent leave is no longer approved")
 
+    lt_code_result = await db.execute(
+        text("SELECT code FROM leave_types WHERE id = :id"),
+        {"id": str(parent_row.leave_type_id)},
+    )
+    lt_code = lt_code_result.fetchone()[0]
+    restore_days = balance_debit_days(
+        float(parent_row.applied_days),
+        lt_code,
+        is_commuted=bool(parent_row.is_commuted),
+    )
+
     await restore_on_recall(
         db,
         employee_id=str(parent_row.employee_id),
         leave_type_id=str(parent_row.leave_type_id),
         from_date=parent_row.from_date,
-        days=float(parent_row.applied_days),
+        days=restore_days,
         application_id=parent_id,
         actor_id=user_id,
         impersonated_by=impersonated_by,
@@ -180,7 +205,17 @@ async def _finalize_modification(
 
     old_days = float(parent_row.applied_days)
     new_days = float(app_row.applied_days)
-    delta = new_days - old_days
+    lt_code_result = await db.execute(
+        text("SELECT code FROM leave_types WHERE id = :id"),
+        {"id": str(app_row.leave_type_id)},
+    )
+    lt_code = lt_code_result.fetchone()[0]
+    old_debit = balance_debit_days(old_days, lt_code, is_commuted=bool(parent_row.is_commuted))
+    new_debit = balance_debit_days(new_days, lt_code, is_commuted=bool(app_row.is_commuted))
+    delta = new_debit - old_debit
+    actual_rejoin = None
+    if new_days < old_days:
+        actual_rejoin = app_row.to_date + timedelta(days=1)
     if delta != 0:
         try:
             await adjust_balance_delta(
@@ -201,7 +236,8 @@ async def _finalize_modification(
         text("""
             UPDATE leave_applications
             SET from_date = :fd, to_date = :td, applied_days = :ad,
-                is_half_day = :hd, last_action_at = now()
+                is_half_day = :hd, actual_rejoin_date = COALESCE(:rejoin, actual_rejoin_date),
+                last_action_at = now()
             WHERE id = :id
         """),
         {
@@ -209,6 +245,7 @@ async def _finalize_modification(
             "td": app_row.to_date,
             "ad": new_days,
             "hd": app_row.is_half_day,
+            "rejoin": actual_rejoin,
             "id": parent_id,
         },
     )
@@ -236,12 +273,21 @@ async def _finalize_with_deduction(
         return
 
     try:
+        lt_code_result = await db.execute(
+            text("SELECT code FROM leave_types WHERE id = :id"),
+            {"id": str(app_row.leave_type_id)},
+        )
+        lt_code_row = lt_code_result.fetchone()
+        lt_code = lt_code_row[0] if lt_code_row else ""
+        is_commuted = bool(getattr(app_row, "is_commuted", False))
+        debit = balance_debit_days(float(days), lt_code, is_commuted=is_commuted)
         await deduct_on_final_approval(
             db,
             employee_id=str(app_row.employee_id),
             leave_type_id=str(app_row.leave_type_id),
             from_date=app_row.from_date,
             days=float(days),
+            balance_debit_days=debit,
             application_id=application_id,
             actor_id=user_id,
             impersonated_by=impersonated_by,
@@ -379,7 +425,7 @@ async def availability_forecast(
 ):
     """Dates × designations matrix: staff availability for HOD / Nodal scoped teams."""
     role = current_user["role"]
-    if role not in ("HOD", "NODAL_OFFICER", "ADMIN", "ESTABLISHMENT_OFFICER", "DIRECTOR"):
+    if role not in ("HOD", "NODAL_OFFICER", "ADMIN", "DIRECTOR"):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     start = datetime.strptime(from_date, "%Y-%m-%d").date()
@@ -651,8 +697,24 @@ async def approve_action(application_id: str, body: dict, current_user: dict = D
         raise HTTPException(status_code=409, detail="Concurrent update conflict — please retry")
 
 
+RECALL_ROLES = frozenset({
+    "ADMIN", "NODAL_OFFICER", "NODAL_OFFICE",
+})
+
+
 @router.post("/{application_id}/recall")
-async def recall_application(application_id: str, current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def recall_application(
+    application_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Administrative recall — restores balance. Staff must use cancellation change-request."""
+    role = current_user.get("role", "")
+    if role not in RECALL_ROLES:
+        raise HTTPException(
+            status_code=403,
+            detail="Only nodal office or admin can recall approved leave — staff should request cancellation",
+        )
     app = await db.execute(text("""
         SELECT a.*, e.name AS employee_name, e.emp_code, lt.code AS leave_type_code,
                lt.name AS leave_type_name
@@ -667,13 +729,24 @@ async def recall_application(application_id: str, current_user: dict = Depends(g
         raise HTTPException(status_code=404)
     if app_row.status != "APPROVED":
         raise HTTPException(status_code=400, detail="Only APPROVED leave can be recalled")
+    if role in ("NODAL_OFFICER", "NODAL_OFFICE"):
+        in_scope = await employee_in_nodal_scope(
+            db, current_user["user_id"], role, str(app_row.employee_id)
+        )
+        if not in_scope:
+            raise HTTPException(status_code=403, detail="Employee not in your nodal office scope")
     try:
+        restore_days = balance_debit_days(
+            float(app_row.applied_days),
+            app_row.leave_type_code,
+            is_commuted=bool(app_row.is_commuted),
+        )
         await restore_on_recall(
             db,
             employee_id=str(app_row.employee_id),
             leave_type_id=str(app_row.leave_type_id),
             from_date=app_row.from_date,
-            days=float(app_row.applied_days),
+            days=restore_days,
             application_id=application_id,
             actor_id=current_user["user_id"],
             impersonated_by=current_user.get("impersonated_by"),

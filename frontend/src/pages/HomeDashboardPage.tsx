@@ -1,76 +1,345 @@
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { useAuthStore } from '../stores';
+import api from '../api/client';
+import { approvalsApi, leaveAppApi } from '../api/endpoints';
 import { PageHeader } from '../components/PageHeader';
+import { useAuthStore } from '../stores';
+import { canToggleWorkMode, effectiveWorkMode } from '../utils/workMode';
+
+import { APPROVER_ROLES, EMPLOYEE_MASTER_ROLES as HR_ROLES } from '../constants/roles';
+
+type BalanceRow = {
+  leave_type_code: string;
+  leave_type_name?: string;
+  leave_year: number;
+  closing_balance: number | string;
+};
+
+type LeaveApp = {
+  id: string;
+  app_number?: string;
+  leave_type_code?: string;
+  from_date?: string;
+  to_date?: string;
+  applied_days?: number;
+  status: string;
+  submitted_at?: string;
+};
+
+type InboxItem = {
+  id: string;
+  emp_name?: string;
+  employee_name?: string;
+  emp_code?: string;
+  leave_type_code?: string;
+  from_date?: string;
+  to_date?: string;
+  applied_days?: number;
+};
+
+const STATUS_STYLE: Record<string, string> = {
+  SUBMITTED: 'bg-blue-100 text-blue-700',
+  UNDER_REVIEW: 'bg-amber-100 text-amber-700',
+  APPROVED: 'bg-emerald-100 text-emerald-700',
+  REJECTED: 'bg-red-100 text-red-700',
+  WITHDRAWN: 'bg-slate-100 text-slate-500',
+};
+
+function fmtDate(d?: string) {
+  if (!d) return '—';
+  try {
+    return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+  } catch {
+    return d;
+  }
+}
+
+function num(v: number | string | null | undefined) {
+  return Number(v ?? 0);
+}
 
 export default function HomeDashboardPage() {
   const user = useAuthStore((s) => s.user);
+  const workMode = useAuthStore((s) => s.workMode);
+  const role = user?.role ?? '';
+  const employeeId = user?.employee_id;
+  const inDeskMode = effectiveWorkMode(role, employeeId, workMode) === 'desk';
+  const toggleEligible = canToggleWorkMode(role, employeeId);
+
+  const [balances, setBalances] = useState<BalanceRow[]>([]);
+  const [apps, setApps] = useState<LeaveApp[]>([]);
+  const [inbox, setInbox] = useState<InboxItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const isApprover = inDeskMode && !toggleEligible && APPROVER_ROLES.includes(role as (typeof APPROVER_ROLES)[number]);
+  const isHr = inDeskMode && !toggleEligible && HR_ROLES.includes(role as (typeof HR_ROLES)[number]);
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      try {
+        const tasks: Promise<void>[] = [];
+
+        if (employeeId) {
+          tasks.push(
+            api.get(`/leave-balances/${employeeId}`).then((res) => {
+              const raw: BalanceRow[] = Array.isArray(res.data) ? res.data : (res.data?.balances ?? []);
+              const latest = new Map<string, BalanceRow>();
+              raw.forEach((b) => {
+                const ex = latest.get(b.leave_type_code);
+                if (!ex || b.leave_year > ex.leave_year) latest.set(b.leave_type_code, b);
+              });
+              setBalances(Array.from(latest.values()));
+            }),
+            leaveAppApi.list({ limit: '8' }).then((res) => {
+              setApps(res.data ?? []);
+            }),
+          );
+        }
+
+        if (isApprover) {
+          tasks.push(
+            approvalsApi.inbox().then((res) => setInbox(res.data ?? [])),
+          );
+        }
+
+        await Promise.all(tasks);
+      } catch {
+        // partial data is fine on dashboard
+      } finally {
+        setLoading(false);
+      }
+    };
+    void load();
+  }, [employeeId, isApprover]);
+
+  const stats = useMemo(() => {
+    const pending = apps.filter((a) => ['SUBMITTED', 'UNDER_REVIEW'].includes(a.status)).length;
+    const available = balances.reduce((s, b) => s + num(b.closing_balance), 0);
+    const el = balances.find((b) => b.leave_type_code === 'EL');
+    const cl = balances.find((b) => b.leave_type_code === 'CL');
+    return { pending, available, el: num(el?.closing_balance), cl: num(cl?.closing_balance) };
+  }, [apps, balances]);
+
+  const displayName = user?.name || user?.username || 'there';
+  const greeting = (() => {
+    const h = new Date().getHours();
+    if (h < 12) return 'Good morning';
+    if (h < 17) return 'Good afternoon';
+    return 'Good evening';
+  })();
 
   return (
-    <div className="page">
+    <div className="page space-y-4">
       <PageHeader
-        title={`Welcome back, ${user?.username}`}
-        description="AIIMS Bibinagar — Human Resources Management System"
-        rightContent={
-          <div className="hidden sm:block text-right">
-            <div className="text-xs text-slate-400 uppercase tracking-wider font-medium mb-1">Current Role</div>
-            <div className="inline-block bg-indigo-50 text-indigo-700 px-3 py-1 rounded-lg text-sm font-semibold border border-indigo-100">
-              {(user?.role ?? '').replace(/_/g, ' ')}
-            </div>
-          </div>
-        }
+        breadcrumbs={[{ label: 'Home' }]}
+        title={`${greeting}, ${displayName}`}
+        description="Your leave status, pending tasks, and shortcuts in one place."
       />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <DashboardCard
-          title="My Profile"
-          desc="Service book, personal details and dependent records."
-          icon="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-          to="/profile-dashboard"
-        />
-        <DashboardCard
-          title="Leave & Attendance"
-          desc="Apply for leave, view balances, and track attendance."
-          icon="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-          to="/leave-dashboard"
-        />
-        <DashboardCard
-          title="Claims & Advances"
-          desc="LTC, CEA, EHS, TA and Telephone claims."
-          icon="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-          to="/claims"
-        />
-        <DashboardCard
-          title="Payroll & Finance"
-          desc="Salary slips, Form 16, and annual summary."
-          icon="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-          to="/payroll"
-        />
-        <DashboardCard
-          title="Performance"
-          desc="APAR submission and mandatory training logs."
-          icon="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
-          to="/performance"
-        />
+      {/* Key numbers */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {employeeId && (
+          <>
+            <StatTile label="Leave available" value={loading ? '…' : String(stats.available)} tone="green" />
+            <StatTile label="EL balance" value={loading ? '…' : String(stats.el)} />
+            <StatTile label="CL balance" value={loading ? '…' : String(stats.cl)} />
+            <StatTile
+              label="My pending apps"
+              value={loading ? '…' : String(stats.pending)}
+              tone={stats.pending > 0 ? 'amber' : 'default'}
+            />
+          </>
+        )}
+        {isApprover && (
+          <StatTile
+            label="Approvals waiting"
+            value={loading ? '…' : String(inbox.length)}
+            tone={inbox.length > 0 ? 'amber' : 'green'}
+            to="/approvals"
+          />
+        )}
       </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Primary actions */}
+        <section className="card p-4 lg:col-span-1">
+          <h2 className="text-sm font-bold text-slate-800 mb-3">Quick actions</h2>
+          <div className="space-y-2">
+            {employeeId && (
+              <>
+                <ActionLink to="/apply" primary>Apply for leave</ActionLink>
+                <ActionLink to="/my-apps">My applications</ActionLink>
+                <ActionLink to="/leave-account">Leave ledger</ActionLink>
+              </>
+            )}
+            <ActionLink to="/profile">View profile</ActionLink>
+            {isApprover && <ActionLink to="/approvals" primary>Open approval inbox</ActionLink>}
+            {isApprover && <ActionLink to="/hod">Nodal desk</ActionLink>}
+            {isHr && <ActionLink to="/employees?tab=onboard">Onboard employee</ActionLink>}
+            {isHr && <ActionLink to="/employees?tab=directory">Employee directory</ActionLink>}
+            {role === 'ADMIN' && (
+              <ActionLink to="/masters">Masters</ActionLink>
+            )}
+          </div>
+        </section>
+
+        {/* My leave activity */}
+        {employeeId && (
+          <section className="card p-0 lg:col-span-1 flex flex-col overflow-hidden">
+            <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+              <h2 className="text-sm font-bold text-slate-800">My leave activity</h2>
+              <Link to="/my-apps" className="text-xs font-bold text-indigo-600 hover:underline">View all</Link>
+            </div>
+            <div className="flex-1 divide-y divide-slate-50">
+              {loading ? (
+                <p className="p-4 text-sm text-slate-400">Loading…</p>
+              ) : apps.length === 0 ? (
+                <div className="p-6 text-center">
+                  <p className="text-sm text-slate-500">No leave applications yet.</p>
+                  <Link to="/apply" className="inline-block mt-2 text-xs font-bold text-indigo-600 hover:underline">Apply now →</Link>
+                </div>
+              ) : (
+                apps.slice(0, 5).map((app) => (
+                  <div key={app.id} className="px-4 py-2.5 hover:bg-slate-50">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-mono font-semibold text-slate-700">{app.leave_type_code}</span>
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${STATUS_STYLE[app.status] ?? 'bg-slate-100 text-slate-600'}`}>
+                        {app.status.replace('_', ' ')}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {fmtDate(app.from_date)} – {fmtDate(app.to_date)} · {app.applied_days ?? '—'} day(s)
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* Approver inbox preview */}
+        {isApprover && (
+          <section className="card p-0 lg:col-span-1 flex flex-col overflow-hidden">
+            <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+              <h2 className="text-sm font-bold text-slate-800">Needs your approval</h2>
+              <Link to="/approvals" className="text-xs font-bold text-indigo-600 hover:underline">Inbox</Link>
+            </div>
+            <div className="flex-1 divide-y divide-slate-50">
+              {loading ? (
+                <p className="p-4 text-sm text-slate-400">Loading…</p>
+              ) : inbox.length === 0 ? (
+                <div className="p-6 text-center">
+                  <p className="text-sm font-medium text-slate-600">All caught up</p>
+                  <p className="text-xs text-slate-400 mt-1">No pending approvals.</p>
+                </div>
+              ) : (
+                inbox.slice(0, 5).map((item) => (
+                  <Link key={item.id} to="/approvals" className="block px-4 py-2.5 hover:bg-slate-50">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-semibold text-slate-800 truncate">
+                        {item.emp_name || item.employee_name}
+                      </span>
+                      <span className="text-xs font-mono text-slate-500 shrink-0">{item.leave_type_code}</span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {item.emp_code} · {fmtDate(item.from_date)} – {fmtDate(item.to_date)}
+                    </p>
+                  </Link>
+                ))
+              )}
+            </div>
+            {inbox.length > 0 && (
+              <div className="px-4 py-2 border-t border-slate-100 bg-slate-50/80 text-center">
+                <Link to="/approvals" className="text-xs font-bold text-indigo-700 hover:underline">
+                  Review {inbox.length} pending →
+                </Link>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* Balance snapshot when no approver column */}
+        {employeeId && balances.length > 0 && !isApprover && (
+          <section className="card p-4 lg:col-span-2">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-bold text-slate-800">Leave balances</h2>
+              <Link to="/leave-dashboard" className="text-xs font-bold text-indigo-600 hover:underline">Leave hub →</Link>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {balances.slice(0, 8).map((b) => (
+                <div key={b.leave_type_code} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 min-w-[5rem]">
+                  <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{b.leave_type_code}</div>
+                  <div className="text-lg font-black text-slate-900">{num(b.closing_balance)}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+      </div>
+
+      {/* Module shortcuts — compact secondary row */}
+      <section>
+        <h2 className="text-xs font-bold uppercase tracking-wide text-slate-400 mb-2">More modules</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+          <ModuleChip title="Profile" to="/profile-dashboard" />
+          <ModuleChip title="Leave" to="/leave-dashboard" />
+          <ModuleChip title="Claims" to="/claims" />
+          <ModuleChip title="Payroll" to="/payroll" />
+          <ModuleChip title="Performance" to="/performance" />
+        </div>
+      </section>
     </div>
   );
 }
 
-function DashboardCard({ title, desc, icon, to }: { title: string; desc: string; icon: string; to: string }) {
+function StatTile({
+  label,
+  value,
+  tone = 'default',
+  to,
+}: {
+  label: string;
+  value: string;
+  tone?: 'default' | 'amber' | 'green';
+  to?: string;
+}) {
+  const tones = {
+    default: 'border-slate-200 bg-white',
+    amber: 'border-amber-200 bg-amber-50',
+    green: 'border-emerald-200 bg-emerald-50',
+  };
+  const inner = (
+    <div className={`rounded-xl border p-3 ${tones[tone]} ${to ? 'hover:border-indigo-200 hover:shadow-sm transition-all' : ''}`}>
+      <div className="text-2xl font-black text-slate-900 leading-none">{value}</div>
+      <div className="text-xs font-semibold text-slate-500 mt-1">{label}</div>
+    </div>
+  );
+  return to ? <Link to={to}>{inner}</Link> : inner;
+}
+
+function ActionLink({ to, children, primary }: { to: string; children: ReactNode; primary?: boolean }) {
   return (
     <Link
       to={to}
-      className="group flex items-start gap-4 card p-4 hover:border-indigo-200 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
+      className={`block w-full text-center rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
+        primary
+          ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+          : 'bg-slate-50 text-slate-700 border border-slate-200 hover:border-indigo-200 hover:text-indigo-700'
+      }`}
     >
-      <div className="shrink-0 h-10 w-10 bg-slate-50 text-slate-500 rounded-lg flex items-center justify-center border border-slate-200 group-hover:bg-indigo-50 group-hover:text-indigo-600 group-hover:border-indigo-100 transition-colors">
-        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={icon} />
-        </svg>
-      </div>
-      <div className="min-w-0">
-        <h3 className="text-sm font-semibold text-slate-800 mb-1 group-hover:text-indigo-700 transition-colors">{title}</h3>
-        <p className="text-xs text-slate-500 leading-relaxed">{desc}</p>
-      </div>
+      {children}
+    </Link>
+  );
+}
+
+function ModuleChip({ title, to }: { title: string; to: string }) {
+  return (
+    <Link
+      to={to}
+      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:border-indigo-200 hover:text-indigo-700 text-center transition-colors"
+    >
+      {title}
     </Link>
   );
 }

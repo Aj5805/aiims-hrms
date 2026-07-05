@@ -1,24 +1,32 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { employeesApi, departmentsApi, designationsApi } from '../api/endpoints';
-import { formatApiError } from '../constants/roles';
+import { formatHttpError } from '../constants/roles';
+import { FALLBACK_STAFF_GROUPS, resolveStaffGroup } from '../constants/staffGroups';
 import { useAuthStore } from '../stores';
 import AddressFields from './AddressFields';
 import { ValidatedDateInput } from './ValidatedDateInput';
+import { ValidatedTextInput } from './ValidatedTextInput';
 import {
   type AddressParts,
   EMPTY_ADDRESS,
+  bankAccountValidationMessage,
+  emailValidationMessage,
   filterAlphanumUpper,
+  filterBankAccountInput,
   filterDigits,
   filterEmailInput,
+  filterIfscInput,
   filterName,
-  isValidEmail,
-  isValidIfsc,
-  isValidMobile,
-  isValidPan,
+  filterPanInput,
+  ifscValidationMessage,
+  panValidationMessage,
   serializeAddress,
   upperText,
-  validateAddressParts,
-  validateEmployeeDates,
+  BLOOD_GROUP_OPTIONS,
+  CASTE_CATEGORY_OPTIONS,
+  MARITAL_STATUS_OPTIONS,
+  suggestNextIncrementDate,
+  validateRegistrationFields,
 } from '../utils/employeeForm';
 import { handleFormEnterKey } from '../utils/focusNavigation';
 
@@ -38,6 +46,14 @@ interface Designation {
 interface StaffGroupOption {
   code: string;
   label: string;
+}
+
+interface LeaveCreditRow {
+  leave_type_code: string;
+  leave_type_name: string;
+  credit_frequency?: string | null;
+  suggested_credit: number;
+  credited: number;
 }
 
 interface AddStaffFormProps {
@@ -164,6 +180,15 @@ export default function AddStaffForm({ onSaved, onCancel, onDirtyChange }: AddSt
   const [previewCode, setPreviewCode] = useState('');
   const [previewLoading, setPreviewLoading] = useState(false);
   const [presentSameAsPermanent, setPresentSameAsPermanent] = useState(false);
+  const [leaveCredits, setLeaveCredits] = useState<LeaveCreditRow[]>([]);
+  const [leaveCreditsLoading, setLeaveCreditsLoading] = useState(false);
+  const [authHydrated, setAuthHydrated] = useState(() => useAuthStore.persist.hasHydrated());
+
+  useEffect(() => {
+    const unsub = useAuthStore.persist.onFinishHydration(() => setAuthHydrated(true));
+    setAuthHydrated(useAuthStore.persist.hasHydrated());
+    return unsub;
+  }, []);
 
   const markDirty = () => {
     if (!dirtyRef.current) {
@@ -174,7 +199,14 @@ export default function AddStaffForm({ onSaved, onCancel, onDirtyChange }: AddSt
 
   const set = (key: keyof typeof EMPTY_FORM, value: string | boolean) => {
     markDirty();
-    setForm((prev) => ({ ...prev, [key]: value }));
+    setForm((prev) => {
+      const next = { ...prev, [key]: value };
+      if (key === 'doj' && typeof value === 'string') {
+        const suggested = suggestNextIncrementDate(value);
+        if (suggested) next.next_increment_date = suggested;
+      }
+      return next;
+    });
   };
 
   const setText = (key: keyof typeof EMPTY_FORM, value: string) => {
@@ -183,46 +215,87 @@ export default function AddStaffForm({ onSaved, onCancel, onDirtyChange }: AddSt
   };
 
   useEffect(() => {
-    if (!token) return;
+    if (!authHydrated || !token) return;
+
+    let cancelled = false;
     const fetchData = async () => {
-      try {
-        const [deptRes, desigRes, groupsRes] = await Promise.all([
-          departmentsApi.list(),
-          designationsApi.list(),
-          employeesApi.staffGroups(),
-        ]);
-        setDepartments(deptRes.data || []);
-        setDesignations(desigRes.data || []);
-        setStaffGroups(groupsRes.data || []);
-      } catch (err: unknown) {
-        const data = (err as { response?: { data?: { detail?: unknown } } })?.response?.data;
-        setError(formatApiError(data?.detail) || 'Failed to load master data.');
-      } finally {
-        setLoading(false);
+      setLoading(true);
+      setError('');
+
+      const [deptResult, desigResult, groupsResult] = await Promise.allSettled([
+        departmentsApi.list(),
+        designationsApi.list(),
+        employeesApi.staffGroups(),
+      ]);
+
+      if (cancelled) return;
+
+      const failures: string[] = [];
+
+      if (deptResult.status === 'fulfilled') {
+        setDepartments(deptResult.value.data || []);
+      } else {
+        failures.push(`departments: ${formatHttpError(deptResult.reason, 'unavailable')}`);
       }
+
+      if (desigResult.status === 'fulfilled') {
+        setDesignations(desigResult.value.data || []);
+      } else {
+        failures.push(`designations: ${formatHttpError(desigResult.reason, 'unavailable')}`);
+      }
+
+      if (groupsResult.status === 'fulfilled') {
+        setStaffGroups(groupsResult.value.data || []);
+      } else {
+        setStaffGroups([...FALLBACK_STAFF_GROUPS]);
+        failures.push(`staff groups: ${formatHttpError(groupsResult.reason, 'using built-in list')}`);
+      }
+
+      if (deptResult.status === 'rejected' || desigResult.status === 'rejected') {
+        setError(`Failed to load master data (${failures.join('; ')}).`);
+      } else if (groupsResult.status === 'rejected') {
+        setError('');
+      }
+
+      setLoading(false);
     };
-    fetchData();
-  }, [token]);
+
+    void fetchData();
+    return () => { cancelled = true; };
+  }, [authHydrated, token]);
 
   const selectedDesig = designations.find((d) => d.name === form.designation_name);
+
+  const applyStaffGroup = (staffGroup: string | null | undefined) => {
+    if (!staffGroup) return;
+    setForm((prev) => (prev.staff_group === staffGroup ? prev : { ...prev, staff_group: staffGroup }));
+  };
 
   const refreshStaffGroupSuggestion = async (
     designationName: string,
     departmentCode: string,
     categoryCode?: string,
   ) => {
-    if (!designationName || !departmentCode) return;
+    if (!designationName) return;
+
+    applyStaffGroup(
+      resolveStaffGroup({
+        designationName,
+        categoryCode,
+        departmentCode: departmentCode || undefined,
+      }),
+    );
+
     try {
-      const { data } = await employeesApi.suggestStaffGroup({
+      const params: { designation_name: string; department_code?: string; category_code?: string } = {
         designation_name: designationName,
-        department_code: departmentCode,
-        category_code: categoryCode,
-      });
-      if (data?.staff_group) {
-        setForm((prev) => ({ ...prev, staff_group: data.staff_group }));
-      }
+      };
+      if (departmentCode) params.department_code = departmentCode;
+      if (categoryCode) params.category_code = categoryCode;
+      const { data } = await employeesApi.suggestStaffGroup(params);
+      applyStaffGroup(data?.staff_group);
     } catch {
-      // optional
+      // local resolve already applied
     }
   };
 
@@ -249,6 +322,43 @@ export default function AddStaffForm({ onSaved, onCancel, onDirtyChange }: AddSt
     void refreshPreviewCode(form.staff_group);
   }, [manualEmpCode, form.staff_group]);
 
+  useEffect(() => {
+    const categoryCode = selectedDesig?.category_code;
+    if (!categoryCode || !form.doj) {
+      setLeaveCredits([]);
+      return;
+    }
+    let cancelled = false;
+    const loadCredits = async () => {
+      setLeaveCreditsLoading(true);
+      try {
+        const { data } = await employeesApi.onboardingLeaveCredits({
+          category_code: categoryCode,
+          doj: form.doj,
+          gender: form.gender,
+        });
+        if (cancelled) return;
+        const rows = (data || []) as Array<{
+          leave_type_code: string;
+          leave_type_name: string;
+          credit_frequency?: string | null;
+          suggested_credit: number;
+        }>;
+        setLeaveCredits(rows.map((row) => ({
+          ...row,
+          suggested_credit: Number(row.suggested_credit) || 0,
+          credited: Number(row.suggested_credit) || 0,
+        })));
+      } catch {
+        if (!cancelled) setLeaveCredits([]);
+      } finally {
+        if (!cancelled) setLeaveCreditsLoading(false);
+      }
+    };
+    void loadCredits();
+    return () => { cancelled = true; };
+  }, [selectedDesig?.category_code, form.doj, form.gender]);
+
   const handleDesignationChange = async (name: string) => {
     markDirty();
     const desig = designations.find((d) => d.name === name);
@@ -257,7 +367,7 @@ export default function AddStaffForm({ onSaved, onCancel, onDirtyChange }: AddSt
       designation_name: name,
       pay_level: desig?.grade_pay_level || prev.pay_level,
     }));
-    if (desig && form.department_code) {
+    if (desig) {
       await refreshStaffGroupSuggestion(name, form.department_code, desig.category_code);
     }
   };
@@ -265,7 +375,7 @@ export default function AddStaffForm({ onSaved, onCancel, onDirtyChange }: AddSt
   const handleDepartmentChange = async (code: string) => {
     markDirty();
     setForm((prev) => ({ ...prev, department_code: code }));
-    if (form.designation_name && code) {
+    if (form.designation_name) {
       await refreshStaffGroupSuggestion(form.designation_name, code, selectedDesig?.category_code);
     }
   };
@@ -283,30 +393,24 @@ export default function AddStaffForm({ onSaved, onCancel, onDirtyChange }: AddSt
   };
 
   const validateForm = (): string | null => {
-    if (!isValidEmail(form.email)) return 'Email must have exactly one @ and at least one . in the domain.';
-    if (!isValidEmail(form.personal_email)) return 'Alt email must have exactly one @ and at least one . in the domain.';
-    if (!isValidMobile(form.mobile)) return 'Mobile must be exactly 10 digits when entered.';
-    if (!isValidMobile(form.alt_mobile)) return 'Alt mobile must be exactly 10 digits when entered.';
-    if (!isValidPan(form.pan)) return 'PAN must be in format ABCDE1234F.';
-    if (!isValidIfsc(form.ifsc_code)) return 'IFSC must be 11 characters (e.g. SBIN0001234).';
-    if (form.aadhaar && form.aadhaar.length !== 12) return 'Aadhaar must be exactly 12 digits.';
-    if (form.nps_or_gpf_no && form.nps_or_gpf_no.length !== 12) return 'NPS number must be exactly 12 digits.';
-    if (form.pfms_code && form.pfms_code.length !== 14) return 'PFMS code must be exactly 14 characters.';
-
-    const permErr = validateAddressParts(permanentAddress, 'Permanent address');
-    if (permErr) return permErr;
     const presentParts = presentSameAsPermanent ? permanentAddress : presentAddress;
-    const presErr = validateAddressParts(presentParts, 'Present address');
-    if (presErr) return presErr;
-
-    const dates = validateEmployeeDates({
+    return validateRegistrationFields({
+      email: form.email,
+      personal_email: form.personal_email,
+      mobile: form.mobile,
+      alt_mobile: form.alt_mobile,
+      pan: form.pan,
+      aadhaar: form.aadhaar,
+      nps_or_gpf_no: form.nps_or_gpf_no,
+      pfms_code: form.pfms_code,
+      bank_account_no: form.bank_account_no,
+      ifsc_code: form.ifsc_code,
+      permanentAddress,
+      presentAddress: presentParts,
       dob: form.dob,
       doj: form.doj,
       next_increment_date: form.next_increment_date,
     });
-    if (!dates.ok) return dates.message || 'Invalid date.';
-
-    return null;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -347,14 +451,20 @@ export default function AddStaffForm({ onSaved, onCancel, onDirtyChange }: AddSt
         is_physically_handicapped: form.is_physically_handicapped,
       };
       if (!manualEmpCode) delete payload.emp_code;
+      if (leaveCredits.length > 0) {
+        payload.onboarding_leave_credits = leaveCredits.map((row) => ({
+          leave_type_code: row.leave_type_code,
+          credited: Number(row.credited) || 0,
+        }));
+      }
 
       const { data } = await employeesApi.create(payload);
       dirtyRef.current = false;
       onDirtyChange?.(false);
       onSaved(data?.id);
+      setSaving(false);
     } catch (err: unknown) {
-      const data = (err as { response?: { data?: { detail?: unknown } } })?.response?.data;
-      setError(formatApiError(data?.detail) || 'Failed to create employee');
+      setError(formatHttpError(err, 'Failed to create employee'));
       setSaving(false);
     }
   };
@@ -411,10 +521,9 @@ export default function AddStaffForm({ onSaved, onCancel, onDirtyChange }: AddSt
           <Field label="Marital Status" cols={2}>
             <select value={form.marital_status} onChange={(e) => set('marital_status', e.target.value)} className={inputCls}>
               <option value="">—</option>
-              <option value="SINGLE">Single</option>
-              <option value="MARRIED">Married</option>
-              <option value="WIDOWED">Widowed</option>
-              <option value="DIVORCED">Divorced</option>
+              {MARITAL_STATUS_OPTIONS.map((opt) => (
+                <option key={opt} value={opt}>{opt.charAt(0) + opt.slice(1).toLowerCase()}</option>
+              ))}
             </select>
           </Field>
           <Field label="Religion" cols={3}>
@@ -423,17 +532,15 @@ export default function AddStaffForm({ onSaved, onCancel, onDirtyChange }: AddSt
           <Field label="Caste Category" cols={2}>
             <select value={form.caste_category} onChange={(e) => set('caste_category', e.target.value)} className={inputCls}>
               <option value="">—</option>
-              <option value="GEN">General</option>
-              <option value="OBC">OBC</option>
-              <option value="SC">SC</option>
-              <option value="ST">ST</option>
-              <option value="EWS">EWS</option>
+              {CASTE_CATEGORY_OPTIONS.map((opt) => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
             </select>
           </Field>
           <Field label="Blood Group" cols={2}>
             <select value={form.blood_group} onChange={(e) => set('blood_group', e.target.value)} className={inputCls}>
               <option value="">—</option>
-              {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map((bg) => (
+              {BLOOD_GROUP_OPTIONS.map((bg) => (
                 <option key={bg} value={bg}>{bg}</option>
               ))}
             </select>
@@ -461,10 +568,26 @@ export default function AddStaffForm({ onSaved, onCancel, onDirtyChange }: AddSt
             <input type="tel" inputMode="numeric" value={form.alt_mobile} onChange={(e) => set('alt_mobile', filterDigits(e.target.value, 10))} className={codeCls} maxLength={10} />
           </Field>
           <Field label="Email" cols={3}>
-            <input type="email" autoComplete="email" value={form.email} onChange={(e) => set('email', filterEmailInput(e.target.value))} className={inputCls} placeholder="name@aiims.edu" />
+            <ValidatedTextInput
+              type="email"
+              autoComplete="email"
+              value={form.email}
+              onChange={(v) => set('email', v)}
+              filter={filterEmailInput}
+              validate={emailValidationMessage}
+              placeholder="name@aiims.edu"
+            />
           </Field>
           <Field label="Alt Email" cols={3}>
-            <input type="email" autoComplete="email" value={form.personal_email} onChange={(e) => set('personal_email', filterEmailInput(e.target.value))} className={inputCls} placeholder="personal@email.com" />
+            <ValidatedTextInput
+              type="email"
+              autoComplete="email"
+              value={form.personal_email}
+              onChange={(v) => set('personal_email', v)}
+              filter={filterEmailInput}
+              validate={emailValidationMessage}
+              placeholder="personal@email.com"
+            />
           </Field>
 
           <Section title="Employment" />
@@ -537,22 +660,97 @@ export default function AddStaffForm({ onSaved, onCancel, onDirtyChange }: AddSt
           <Field label="Last Qualification" cols={6}>
             <input value={form.last_qualification} onChange={(e) => setText('last_qualification', e.target.value)} className={inputCls} placeholder="MD, M.SC…" />
           </Field>
-          <Field label="Next Increment" cols={4}>
+          <Field label="Next Increment" cols={4} hint="Jul 2–Jan 1 joiners → 1 Jul cycle; Jan 2–Jul 1 → 1 Jan cycle. Editable if needed.">
             <ValidatedDateInput value={form.next_increment_date} onChange={(v) => set('next_increment_date', v)} onInvalid={showDateError} />
           </Field>
           <Field label="Last Working Day" cols={4}>
             <input type="date" value="" disabled tabIndex={-1} className={`${inputCls} opacity-60 cursor-not-allowed`} title="Set via resignation workflow" />
           </Field>
 
+          {(leaveCreditsLoading || leaveCredits.length > 0) && (
+            <>
+              <Section title="Opening Leave Credits" />
+              <div className="col-span-2 md:col-span-6 xl:col-span-12">
+                <p className="text-[11px] text-slate-500 mb-2 leading-relaxed">
+                  Auto-calculated from category entitlement and date of joining. Adjust if needed — later credits run through scheduled postings.
+                </p>
+                {leaveCreditsLoading ? (
+                  <p className="text-xs text-slate-400">Calculating leave credits…</p>
+                ) : (
+                  <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                    <table className="min-w-full text-xs">
+                      <thead className="bg-slate-50 text-slate-600">
+                        <tr>
+                          <th className="text-left px-3 py-2 font-medium">Leave type</th>
+                          <th className="text-left px-3 py-2 font-medium">Credit cycle</th>
+                          <th className="text-right px-3 py-2 font-medium w-28">Days to credit</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {leaveCredits.map((row) => (
+                          <tr key={row.leave_type_code} className="border-t border-slate-100">
+                            <td className="px-3 py-2">
+                              <span className="font-medium text-slate-800">{row.leave_type_code}</span>
+                              <span className="text-slate-500"> — {row.leave_type_name}</span>
+                            </td>
+                            <td className="px-3 py-2 text-slate-500">
+                              {row.credit_frequency
+                                ? row.credit_frequency.replace(/_/g, ' ').toLowerCase()
+                                : '—'}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <input
+                                type="number"
+                                min={0}
+                                step={0.5}
+                                value={row.credited}
+                                onChange={(e) => {
+                                  const value = e.target.value === '' ? 0 : Number(e.target.value);
+                                  markDirty();
+                                  setLeaveCredits((prev) => prev.map((item) => (
+                                    item.leave_type_code === row.leave_type_code
+                                      ? { ...item, credited: value }
+                                      : item
+                                  )));
+                                }}
+                                className={`${codeCls} w-24 text-right ml-auto`}
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
           <Section title="IDs & Banking" />
           <Field label="PAN" cols={3}>
-            <input value={form.pan} onChange={(e) => set('pan', e.target.value.toUpperCase())} className={codeCls} maxLength={10} placeholder="ABCDE1234F" />
+            <ValidatedTextInput
+              code
+              value={form.pan}
+              onChange={(v) => set('pan', v)}
+              filter={filterPanInput}
+              validate={panValidationMessage}
+              maxLength={10}
+              placeholder="ABCDE1234F"
+            />
           </Field>
           <Field label="Aadhaar" cols={3}>
             <input inputMode="numeric" value={form.aadhaar} onChange={(e) => set('aadhaar', filterDigits(e.target.value, 12))} className={codeCls} maxLength={12} />
           </Field>
           <Field label="IFSC" cols={3}>
-            <input value={form.ifsc_code} onChange={(e) => set('ifsc_code', e.target.value.toUpperCase())} className={codeCls} maxLength={11} />
+            <ValidatedTextInput
+              code
+              value={form.ifsc_code}
+              onChange={(v) => set('ifsc_code', v)}
+              filter={filterIfscInput}
+              validate={ifscValidationMessage}
+              maxLength={11}
+              placeholder="SBIN0001234"
+            />
           </Field>
           <Field label="NPS Number" cols={3}>
             <input inputMode="numeric" value={form.nps_or_gpf_no} onChange={(e) => set('nps_or_gpf_no', filterDigits(e.target.value, 12))} className={codeCls} maxLength={12} />
@@ -561,7 +759,16 @@ export default function AddStaffForm({ onSaved, onCancel, onDirtyChange }: AddSt
             <input value={form.pfms_code} onChange={(e) => set('pfms_code', filterAlphanumUpper(e.target.value, 14))} className={codeCls} maxLength={14} />
           </Field>
           <Field label="Bank A/C" cols={3}>
-            <input inputMode="numeric" value={form.bank_account_no} onChange={(e) => set('bank_account_no', filterDigits(e.target.value, 20))} className={codeCls} />
+            <ValidatedTextInput
+              code
+              inputMode="numeric"
+              value={form.bank_account_no}
+              onChange={(v) => set('bank_account_no', v)}
+              filter={filterBankAccountInput}
+              validate={bankAccountValidationMessage}
+              maxLength={18}
+              placeholder="9–18 digits"
+            />
           </Field>
           <Field label="Bank Name" cols={6}>
             <input value={form.bank_name} onChange={(e) => setText('bank_name', e.target.value)} className={inputCls} />

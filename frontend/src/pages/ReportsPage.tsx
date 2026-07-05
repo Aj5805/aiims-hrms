@@ -1,20 +1,87 @@
-import { useEffect, useState } from 'react';
-import type { ReactNode } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { AxiosResponse } from 'axios';
-import { departmentsApi, leaveTypesApi, reportsApi } from '../api/endpoints';
+import { departmentsApi, designationsApi, reportsApi } from '../api/endpoints';
 import { PageHeader } from '../components/PageHeader';
+import { useAuthStore } from '../stores';
+import { formatHttpError, PAYROLL_EXPORT_ROLES } from '../constants/roles';
 
-type DepartmentOption = {
-  id: string;
-  code: string;
-  name: string;
+type DepartmentOption = { id: string; code: string; name: string };
+type DesignationOption = { id: string; name: string };
+
+type ReportPreview = {
+  title: string;
+  headers: string[];
+  rows: string[][];
+  count: number;
 };
 
-type LeaveTypeOption = {
-  id: string;
-  code: string;
-  name: string;
+type ReportId =
+  | 'leave-register'
+  | 'category-summary'
+  | 'pending'
+  | 'balance'
+  | 'calendar'
+  | 'payroll';
+
+type ExportFormat = 'xlsx' | 'pdf' | 'csv';
+
+type ReportDef = {
+  id: ReportId;
+  label: string;
+  description: string;
+  exports: ExportFormat[];
 };
+
+const REPORTS: ReportDef[] = [
+  {
+    id: 'leave-register',
+    label: 'Leave Register',
+    description: 'All leave applications in the selected date range.',
+    exports: ['xlsx', 'pdf'],
+  },
+  {
+    id: 'category-summary',
+    label: 'Category Summary',
+    description: 'Staff category totals and approved leave days by type.',
+    exports: ['xlsx'],
+  },
+  {
+    id: 'pending',
+    label: 'Pending (Aged)',
+    description: 'Applications still awaiting approval, sorted by age.',
+    exports: ['pdf'],
+  },
+  {
+    id: 'balance',
+    label: 'Balance Summary',
+    description: 'Opening, credit, availed, and closing balances for the year.',
+    exports: ['xlsx'],
+  },
+  {
+    id: 'calendar',
+    label: 'Leave Calendar',
+    description: 'Approved leave rows for a department and month.',
+    exports: ['xlsx'],
+  },
+  {
+    id: 'payroll',
+    label: 'Payroll (LOP)',
+    description: 'Approved EOL/LOP rows for finance handoff (NIC mapping placeholder).',
+    exports: ['csv'],
+  },
+];
+
+function monthBounds(): { from: string; to: string; month: string } {
+  const now = new Date();
+  const from = new Date(now.getFullYear(), now.getMonth(), 1);
+  const to = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  return {
+    from: from.toISOString().slice(0, 10),
+    to: to.toISOString().slice(0, 10),
+    month,
+  };
+}
 
 function saveBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -35,266 +102,355 @@ function inferFilename(response: AxiosResponse<Blob>, fallbackBase: string): str
   if (contentType.includes('pdf')) return `${fallbackBase}.pdf`;
   if (contentType.includes('csv')) return `${fallbackBase}.csv`;
   if (contentType.includes('spreadsheet') || contentType.includes('excel')) return `${fallbackBase}.xlsx`;
-  if (contentType.includes('json')) return `${fallbackBase}.json`;
   return fallbackBase;
 }
 
-function PageNotice({ children }: { children: ReactNode }) {
-  return <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">{children}</div>;
+function exportLabel(format: ExportFormat): string {
+  if (format === 'xlsx') return 'Export Excel';
+  if (format === 'pdf') return 'Export PDF';
+  return 'Export CSV';
 }
 
 export function ReportsPage() {
+  const user = useAuthStore((s) => s.user);
+  const bounds = useMemo(() => monthBounds(), []);
+  const canExportPayroll = PAYROLL_EXPORT_ROLES.includes(user?.role as (typeof PAYROLL_EXPORT_ROLES)[number]);
+
+  const visibleReports = useMemo(
+    () => (canExportPayroll ? REPORTS : REPORTS.filter((r) => r.id !== 'payroll')),
+    [canExportPayroll],
+  );
+
+  const [activeReport, setActiveReport] = useState<ReportId>('leave-register');
   const [departments, setDepartments] = useState<DepartmentOption[]>([]);
-  const [leaveTypes, setLeaveTypes] = useState<LeaveTypeOption[]>([]);
-  const [message, setMessage] = useState('');
-  const [loadingKey, setLoadingKey] = useState('');
-  const [shared, setShared] = useState({
-    from_date: '',
-    to_date: '',
+  const [designations, setDesignations] = useState<DesignationOption[]>([]);
+  const [filters, setFilters] = useState({
+    from_date: bounds.from,
+    to_date: bounds.to,
     department_code: '',
-    leave_type_code: '',
     as_of_date: '',
-    month: '',
+    month: bounds.month,
+    designation_name: '',
   });
+  const [preview, setPreview] = useState<ReportPreview | null>(null);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [loadingView, setLoadingView] = useState(false);
+  const [loadingExport, setLoadingExport] = useState('');
+
+  const report = visibleReports.find((r) => r.id === activeReport) ?? visibleReports[0];
 
   useEffect(() => {
     const loadFilters = async () => {
-      const [deptResponse, leaveTypeResponse] = await Promise.all([departmentsApi.list(), leaveTypesApi.list()]);
+      const [deptResponse, desgResponse] = await Promise.all([departmentsApi.list(), designationsApi.list()]);
       setDepartments(deptResponse.data || []);
-      setLeaveTypes(leaveTypeResponse.data || []);
+      setDesignations(desgResponse.data || []);
     };
     void loadFilters();
   }, []);
 
-  const runDownload = async (key: string, fallbackBase: string, call: () => Promise<AxiosResponse<Blob>>) => {
-    setLoadingKey(key);
+  useEffect(() => {
+    setPreview(null);
+    setMessage('');
+    setError('');
+  }, [activeReport]);
+
+  const dateRangeParams = () => ({
+    from_date: filters.from_date,
+    to_date: filters.to_date,
+  });
+
+  const deptParam = (): Record<string, string> =>
+    filters.department_code ? { department_code: filters.department_code } : {};
+
+  const balanceParams = (): Record<string, string> => {
+    const params: Record<string, string> = {};
+    if (filters.as_of_date) params.as_of_date = filters.as_of_date;
+    if (filters.department_code) params.department_code = filters.department_code;
+    if (filters.designation_name) params.designation_name = filters.designation_name;
+    return params;
+  };
+
+  const calendarParams = (): Record<string, string> => ({
+    ...deptParam(),
+    ...(filters.month ? { month: filters.month } : {}),
+  });
+
+  const loadPreview = async () => {
+    setLoadingView(true);
+    setError('');
     setMessage('');
     try {
-      const response = await call();
-      const filename = inferFilename(response, fallbackBase);
-      saveBlob(response.data, filename);
-      setMessage(`Downloaded ${filename}.`);
+      if (activeReport === 'leave-register') {
+        const { data } = await reportsApi.leaveRegisterPreview({ ...dateRangeParams(), ...deptParam() });
+        setPreview(data);
+      } else if (activeReport === 'category-summary') {
+        const { data } = await reportsApi.leaveAbstractPreview(dateRangeParams());
+        setPreview(data);
+      } else if (activeReport === 'pending') {
+        const { data } = await reportsApi.pendingApplicationsPreview();
+        setPreview(data);
+      } else if (activeReport === 'balance') {
+        const { data } = await reportsApi.balanceOverview(balanceParams());
+        const rows = (data.rows || []).map((row: Record<string, unknown>) => [
+          String(row.emp_code ?? ''),
+          String(row.name ?? ''),
+          String(row.dept ?? ''),
+          String(row.leave_type ?? ''),
+          String(row.opening_balance ?? ''),
+          String(row.credited ?? ''),
+          String(row.availed ?? ''),
+          String(row.closing_balance ?? ''),
+        ]);
+        setPreview({
+          title: 'Balance Summary',
+          headers: ['Emp Code', 'Name', 'Dept', 'Leave Type', 'Opening', 'Credited', 'Availed', 'Closing'],
+          rows,
+          count: rows.length,
+        });
+      } else if (activeReport === 'calendar') {
+        const { data } = await reportsApi.leaveCalendarPreview(calendarParams());
+        setPreview(data);
+      } else if (activeReport === 'payroll') {
+        const { data } = await reportsApi.payrollExportPreview({
+          ...dateRangeParams(),
+          export_type: 'LOP',
+        });
+        setPreview(data);
+      }
     } catch (err: unknown) {
-      setMessage((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Download failed');
+      setError(formatHttpError(err, 'Failed to load report preview'));
+      setPreview(null);
     } finally {
-      setLoadingKey('');
+      setLoadingView(false);
     }
   };
 
+  const runExport = async (format: ExportFormat) => {
+    const key = `${activeReport}-${format}`;
+    setLoadingExport(key);
+    setError('');
+    setMessage('');
+    try {
+      let response: AxiosResponse<Blob>;
+      let fallback = activeReport;
+
+      if (activeReport === 'leave-register') {
+        response = await reportsApi.leaveRegister({ ...dateRangeParams(), ...deptParam(), format });
+      } else if (activeReport === 'category-summary') {
+        response = await reportsApi.leaveAbstract(dateRangeParams());
+      } else if (activeReport === 'pending') {
+        response = await reportsApi.pendingApplications();
+      } else if (activeReport === 'balance') {
+        response = await reportsApi.balanceSummary(balanceParams());
+      } else if (activeReport === 'calendar') {
+        response = await reportsApi.leaveCalendar(calendarParams());
+      } else {
+        response = await reportsApi.payrollExport({ ...dateRangeParams(), export_type: 'LOP' });
+      }
+
+      const filename = inferFilename(response, fallback);
+      saveBlob(response.data, filename);
+      setMessage(`Downloaded ${filename}.`);
+    } catch (err: unknown) {
+      setError(formatHttpError(err, 'Export failed'));
+    } finally {
+      setLoadingExport('');
+    }
+  };
+
+  const needsDateRange = ['leave-register', 'category-summary', 'payroll'].includes(activeReport);
+  const needsDepartment = ['leave-register', 'calendar', 'balance'].includes(activeReport);
+  const needsMonth = activeReport === 'calendar';
+  const needsAsOf = activeReport === 'balance';
+  const needsDesignation = activeReport === 'balance';
+
   return (
-    <div className="space-y-6">
-      <PageHeader 
-        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Admin', to: '/admin' }, { label: 'Reports' }]}
-        title="Reports & Payroll Export"
-        description="Download institutional leave and payroll reports from the backend."
+    <div className="page">
+      <PageHeader
+        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Reports & Data' }, { label: 'Reports' }]}
+        title="Reports"
+        description="Preview leave and payroll reports on screen, then export when ready."
       />
 
-      {message && <PageNotice>{message}</PageNotice>}
+      <div className="max-w-6xl space-y-4">
+        <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-1">
+          {visibleReports.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setActiveReport(item.id)}
+              className={`rounded-t-lg px-3 py-2 text-sm font-medium transition ${
+                item.id === activeReport
+                  ? 'bg-white border border-b-white border-slate-200 text-indigo-700 -mb-px'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-2">
-          <div className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500">Shared Filters</div>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-            <input type="date" value={shared.from_date} onChange={(e) => setShared({ ...shared, from_date: e.target.value })} className="rounded-md border border-slate-300 px-3 py-2 text-sm" />
-            <input type="date" value={shared.to_date} onChange={(e) => setShared({ ...shared, to_date: e.target.value })} className="rounded-md border border-slate-300 px-3 py-2 text-sm" />
-            <select value={shared.department_code} onChange={(e) => setShared({ ...shared, department_code: e.target.value })} className="rounded-md border border-slate-300 px-3 py-2 text-sm">
-              <option value="">All departments</option>
-              {departments.map((dept) => (
-                <option key={dept.id} value={dept.code}>
-                  {dept.code} - {dept.name}
-                </option>
-              ))}
-            </select>
-            <select value={shared.leave_type_code} onChange={(e) => setShared({ ...shared, leave_type_code: e.target.value })} className="rounded-md border border-slate-300 px-3 py-2 text-sm">
-              <option value="">All leave types</option>
-              {leaveTypes.map((leaveType) => (
-                <option key={leaveType.id} value={leaveType.code}>
-                  {leaveType.code} - {leaveType.name}
-                </option>
-              ))}
-            </select>
-            <input type="date" value={shared.as_of_date} onChange={(e) => setShared({ ...shared, as_of_date: e.target.value })} className="rounded-md border border-slate-300 px-3 py-2 text-sm" />
-            <input type="month" value={shared.month} onChange={(e) => setShared({ ...shared, month: e.target.value })} className="rounded-md border border-slate-300 px-3 py-2 text-sm" />
+        <div className="card card-body space-y-4">
+          <div>
+            <h3 className="text-base font-semibold text-slate-900">{report.label}</h3>
+            <p className="mt-1 text-sm text-slate-600">{report.description}</p>
+          </div>
+
+          {(needsDateRange || needsDepartment || needsMonth || needsAsOf || needsDesignation) && (
+            <div className="flex flex-wrap gap-4 items-end">
+              {needsDateRange && (
+                <>
+                  <div>
+                    <label className="form-label">From date</label>
+                    <input
+                      type="date"
+                      value={filters.from_date}
+                      onChange={(e) => setFilters({ ...filters, from_date: e.target.value })}
+                      className="form-input"
+                    />
+                  </div>
+                  <div>
+                    <label className="form-label">To date</label>
+                    <input
+                      type="date"
+                      value={filters.to_date}
+                      min={filters.from_date}
+                      onChange={(e) => setFilters({ ...filters, to_date: e.target.value })}
+                      className="form-input"
+                    />
+                  </div>
+                </>
+              )}
+              {needsAsOf && (
+                <div>
+                  <label className="form-label">As of date</label>
+                  <input
+                    type="date"
+                    value={filters.as_of_date}
+                    onChange={(e) => setFilters({ ...filters, as_of_date: e.target.value })}
+                    className="form-input"
+                  />
+                </div>
+              )}
+              {needsMonth && (
+                <div>
+                  <label className="form-label">Month</label>
+                  <input
+                    type="month"
+                    value={filters.month}
+                    onChange={(e) => setFilters({ ...filters, month: e.target.value })}
+                    className="form-input"
+                  />
+                </div>
+              )}
+              {needsDepartment && (
+                <div>
+                  <label className="form-label">Department</label>
+                  <select
+                    value={filters.department_code}
+                    onChange={(e) => setFilters({ ...filters, department_code: e.target.value })}
+                    className="form-select min-w-[200px]"
+                  >
+                    <option value="">All departments</option>
+                    {departments.map((dept) => (
+                      <option key={dept.id} value={dept.code}>
+                        {dept.code} — {dept.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {needsDesignation && (
+                <div>
+                  <label className="form-label">Designation</label>
+                  <select
+                    value={filters.designation_name}
+                    onChange={(e) => setFilters({ ...filters, designation_name: e.target.value })}
+                    className="form-select min-w-[200px]"
+                  >
+                    <option value="">All designations</option>
+                    {designations.map((desg) => (
+                      <option key={desg.id} value={desg.name}>
+                        {desg.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-2 pt-1">
+            <button type="button" onClick={() => void loadPreview()} disabled={loadingView} className="btn-primary">
+              {loadingView ? 'Loading…' : 'View report'}
+            </button>
+            {report.exports.map((format) => (
+              <button
+                key={format}
+                type="button"
+                onClick={() => void runExport(format)}
+                disabled={!!loadingExport}
+                className="btn-secondary"
+              >
+                {loadingExport === `${activeReport}-${format}` ? 'Exporting…' : exportLabel(format)}
+              </button>
+            ))}
           </div>
         </div>
 
-        <ReportCard
-          title="Leave Register"
-          description="Locked columns with both XLSX and PDF exports."
-          controls={['Emp Code', 'Name', 'Dept', 'Leave Type', 'From', 'To', 'Days', 'Status', 'Approval Date']}
-          actions={[
-            {
-              label: 'Download XLSX',
-              key: 'leave-register-xlsx',
-              pending: loadingKey === 'leave-register-xlsx',
-              onClick: () =>
-                runDownload(
-                  'leave-register-xlsx',
-                  'leave-register',
-                  () => reportsApi.leaveRegister({
-                    from_date: shared.from_date,
-                    to_date: shared.to_date,
-                    format: 'xlsx',
-                    ...(shared.department_code ? { department_code: shared.department_code } : {}),
-                  })
-                ),
-            },
-            {
-              label: 'Download PDF',
-              key: 'leave-register-pdf',
-              pending: loadingKey === 'leave-register-pdf',
-              onClick: () =>
-                runDownload(
-                  'leave-register-pdf',
-                  'leave-register',
-                  () => reportsApi.leaveRegister({
-                    from_date: shared.from_date,
-                    to_date: shared.to_date,
-                    format: 'pdf',
-                    ...(shared.department_code ? { department_code: shared.department_code } : {}),
-                  })
-                ),
-            },
-          ]}
-        />
+        {error && (
+          <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</div>
+        )}
+        {message && (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{message}</div>
+        )}
 
-        <ReportCard
-          title="Category-wise Summary"
-          description="Locked category-wise leave summary in Excel."
-          controls={['Category', 'Total Staff', 'Total Leave Days by type', 'Avg per staff']}
-          actions={[
-            {
-              label: 'Download XLSX',
-              key: 'leave-abstract',
-              pending: loadingKey === 'leave-abstract',
-              onClick: () =>
-                runDownload(
-                  'leave-abstract',
-                  'leave-abstract',
-                  () => reportsApi.leaveAbstract({
-                    from_date: shared.from_date,
-                    to_date: shared.to_date,
-                  })
-                ),
-            },
-          ]}
-        />
-
-        <ReportCard
-          title="Pending Applications (Aged)"
-          description="Locked aged-pending report in PDF."
-          controls={['App #', 'Employee', 'Leave Type', 'Submitted Date', 'Days Pending', 'Current Approver']}
-          actions={[
-            {
-              label: 'Download PDF',
-              key: 'pending',
-              pending: loadingKey === 'pending',
-              onClick: () => runDownload('pending', 'pending-applications', () => reportsApi.pendingApplications()),
-            },
-          ]}
-        />
-
-        <ReportCard
-          title="Payroll Export (LOP)"
-          description="CSV export for approved EOL/LOP rows. The locked NIC mapping remains a backend placeholder until Finance shares the real spec."
-          controls={['Emp Code', 'Name', 'Dept', 'Month', 'LOP Days', 'Reason']}
-          actions={[
-            {
-              label: 'Download CSV',
-              key: 'payroll',
-              pending: loadingKey === 'payroll',
-              onClick: () =>
-                runDownload(
-                  'payroll',
-                  'payroll-export',
-                  () => reportsApi.payrollExport({
-                    from_date: shared.from_date,
-                    to_date: shared.to_date,
-                    export_type: 'LOP',
-                  })
-                ),
-            },
-          ]}
-        />
-
-        <ReportCard
-          title="Balance Summary"
-          description="Current leave balance workbook for the selected year."
-          controls={['Emp Code', 'Name', 'Dept', 'Leave Type', 'Opening', 'Credited', 'Availed', 'Closing']}
-          actions={[
-            {
-              label: 'Download XLSX',
-              key: 'balance-summary',
-              pending: loadingKey === 'balance-summary',
-              onClick: () =>
-                runDownload(
-                  'balance-summary',
-                  'balance-summary',
-                  () => reportsApi.balanceSummary(shared.as_of_date ? { as_of_date: shared.as_of_date } : {})
-                ),
-            },
-          ]}
-        />
-
-        <ReportCard
-          title="Leave Calendar"
-          description="Department-wise approved leave calendar workbook for the selected month."
-          controls={['Emp Code', 'Name', 'From', 'To', 'Leave Type']}
-          actions={[
-            {
-              label: 'Download XLSX',
-              key: 'leave-calendar',
-              pending: loadingKey === 'leave-calendar',
-              onClick: () =>
-                runDownload(
-                  'leave-calendar',
-                  'leave-calendar',
-                  () => reportsApi.leaveCalendar({
-                    ...(shared.department_code ? { department_code: shared.department_code } : {}),
-                    ...(shared.month ? { month: shared.month } : {}),
-                  })
-                ),
-            },
-          ]}
-        />
-      </div>
-    </div>
-  );
-}
-
-function ReportCard({
-  title,
-  description,
-  controls,
-  actions,
-}: {
-  title: string;
-  description: string;
-  controls: string[];
-  actions: { label: string; key: string; pending: boolean; onClick: () => void }[];
-}) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="text-lg font-semibold text-slate-900">{title}</div>
-      <p className="mt-2 text-sm text-slate-600">{description}</p>
-      <div className="mt-4 flex flex-wrap gap-2">
-        {controls.map((control) => (
-          <span key={control} className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600">
-            {control}
-          </span>
-        ))}
-      </div>
-      <div className="mt-5 flex flex-wrap gap-2">
-        {actions.map((action) => (
-          <button
-            key={action.key}
-            onClick={action.onClick}
-            disabled={action.pending}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {action.pending ? 'Working...' : action.label}
-          </button>
-        ))}
+        <div className="card overflow-hidden">
+          <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 flex items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold text-slate-800">{preview?.title ?? 'Preview'}</h3>
+            {preview && (
+              <span className="text-xs text-slate-500">{preview.count} row{preview.count === 1 ? '' : 's'}</span>
+            )}
+          </div>
+          <div className="overflow-x-auto">
+            <table className="data-table data-table-compact min-w-full">
+              <thead>
+                <tr>
+                  {(preview?.headers ?? []).map((header) => (
+                    <th key={header}>{header}</th>
+                  ))}
+                  {!preview && (
+                    <th className="text-slate-400 font-normal italic">Run “View report” to load data here</th>
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                {loadingView ? (
+                  <tr>
+                    <td colSpan={preview?.headers.length || 1} className="text-center py-8 text-slate-400">
+                      Loading…
+                    </td>
+                  </tr>
+                ) : preview && preview.rows.length > 0 ? (
+                  preview.rows.map((row, rowIndex) => (
+                    <tr key={rowIndex}>
+                      {row.map((cell, cellIndex) => (
+                        <td key={cellIndex}>{cell}</td>
+                      ))}
+                    </tr>
+                  ))
+                ) : preview ? (
+                  <tr>
+                    <td colSpan={preview.headers.length} className="text-center py-8 text-slate-400 italic">
+                      No rows match the selected filters.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
   );

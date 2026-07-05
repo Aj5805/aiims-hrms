@@ -54,7 +54,7 @@ class WorkflowStep(Base):
     step_order = Column(Integer, nullable=False)
     approver_role = Column(
         String(50), nullable=False,
-        comment="HOD | DEAN_ACADEMIC | ESTABLISHMENT_OFFICER | REGISTRAR | DIRECTOR | SPECIFIC_USER",
+        comment="HOD | NODAL_OFFICER | SPECIFIC_USER",
     )
     approver_office = Column(String(50), nullable=True)
     specific_approver_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)

@@ -71,6 +71,8 @@ class LeaveApplication(Base):
     application_kind = Column(String(20), default="NEW", comment="NEW | CANCELLATION | MODIFICATION")
     parent_application_id = Column(UUID(as_uuid=True), ForeignKey("leave_applications.id"), nullable=True)
     mc_attached = Column(Boolean, default=False)
+    is_commuted = Column(Boolean, default=False, comment="HPL commuted to full pay on MC — 2x HPL debit")
+    actual_rejoin_date = Column(Date, nullable=True, comment="First day back at duty after cut-short")
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 

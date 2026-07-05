@@ -12,7 +12,7 @@ from app.core.database import get_db
 
 router = APIRouter(prefix="/hod-assignments", tags=["hod-assignments"])
 
-_ADMIN_ROLES = ("ADMIN", "ESTABLISHMENT_OFFICER")
+_ADMIN_ROLES = ("ADMIN",)
 _ASSIGNABLE_HOD_ROLES = ("STAFF", "HOD")
 
 
@@ -39,7 +39,7 @@ async def _user_id_for_employee(db: AsyncSession, employee_id: str) -> tuple[str
 async def list_hod_assignments(
     department_code: str | None = None,
     active_only: bool = True,
-    _: dict = Depends(require_role(*_ADMIN_ROLES, "REGISTRAR")),
+    _: dict = Depends(require_role(*_ADMIN_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
     query = """
@@ -120,7 +120,7 @@ async def create_hod_assignment(
 async def update_hod_assignment(
     assignment_id: str,
     body: dict,
-    _: dict = Depends(require_role("ADMIN", "ESTABLISHMENT_OFFICER")),
+    _: dict = Depends(require_role("ADMIN")),
     db: AsyncSession = Depends(get_db),
 ):
     is_active = body.get("is_active")
@@ -139,7 +139,7 @@ async def update_hod_assignment(
 @router.get("/eligible-staff")
 async def list_eligible_hod_staff(
     department_id: str | None = None,
-    _: dict = Depends(require_role(*_ADMIN_ROLES, "REGISTRAR")),
+    _: dict = Depends(require_role(*_ADMIN_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
     """Active employees with login accounts — optionally filtered to one department."""
@@ -163,7 +163,7 @@ async def list_eligible_hod_staff(
 
 @router.get("/hod-users")
 async def list_hod_users(
-    _: dict = Depends(require_role(*_ADMIN_ROLES, "REGISTRAR")),
+    _: dict = Depends(require_role(*_ADMIN_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(

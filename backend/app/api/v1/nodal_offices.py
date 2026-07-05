@@ -12,13 +12,8 @@ from app.core.database import get_db
 
 router = APIRouter(prefix="/nodal-offices", tags=["nodal-offices"])
 
-_ADMIN_ROLES = ("ADMIN", "ESTABLISHMENT_OFFICER")
+_ADMIN_ROLES = ("ADMIN",)
 _VALID_SCHEMES = ("CCS", "RESIDENCY")
-_OFFICER_ROLES_BY_SCHEME = {
-    "CCS": ("NODAL_OFFICER", "ESTABLISHMENT_OFFICER"),
-    "RESIDENCY": ("NODAL_OFFICER", "REGISTRAR"),
-}
-_ELIGIBLE_OFFICER_ROLES = ("NODAL_OFFICER", "ESTABLISHMENT_OFFICER", "REGISTRAR")
 
 
 async def _user_id_for_employee(db: AsyncSession, employee_id: str) -> tuple[str, str]:
@@ -70,7 +65,7 @@ def _office_row(r) -> dict:
 @router.get("")
 async def list_nodal_offices(
     include_inactive: bool = False,
-    _: dict = Depends(require_role(*_ADMIN_ROLES, "REGISTRAR")),
+    _: dict = Depends(require_role(*_ADMIN_ROLES, "NODAL_OFFICER")),
     db: AsyncSession = Depends(get_db),
 ):
     inactive_clause = "" if include_inactive else " AND no.is_active = true"
@@ -107,16 +102,6 @@ async def create_nodal_office(
         raise HTTPException(status_code=400, detail="code and name are required")
     if leave_scheme not in _VALID_SCHEMES:
         raise HTTPException(status_code=400, detail=f"leave_scheme must be one of {_VALID_SCHEMES}")
-
-    existing_scheme = await db.execute(
-        text("SELECT id FROM nodal_offices WHERE leave_scheme = :s AND is_active = true"),
-        {"s": leave_scheme},
-    )
-    if existing_scheme.fetchone():
-        raise HTTPException(
-            status_code=400,
-            detail=f"An active nodal office already handles {leave_scheme} staff. Deactivate it first or choose another scheme.",
-        )
 
     oid = str(uuid.uuid4())
     try:
@@ -159,17 +144,6 @@ async def update_nodal_office(
         officer_id = body.get("officer_user_id")
         if body.get("officer_employee_id"):
             emp_user_id, emp_role = await _user_id_for_employee(db, body["officer_employee_id"])
-            scheme_roles = _OFFICER_ROLES_BY_SCHEME.get(row.leave_scheme, ())
-            if emp_role in ("STAFF", "HOD", "NODAL_OFFICER"):
-                pass
-            elif emp_role in scheme_roles:
-                pass
-            else:
-                scheme_label = "Establishment" if row.leave_scheme == "CCS" else "Registrar"
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"This staff member cannot be assigned to the {scheme_label} nodal office",
-                )
             officer_id = emp_user_id
             if emp_role != "NODAL_OFFICER":
                 await db.execute(
@@ -177,22 +151,13 @@ async def update_nodal_office(
                     {"uid": officer_id},
                 )
         elif officer_id:
-            allowed_roles = _OFFICER_ROLES_BY_SCHEME.get(row.leave_scheme, ())
             user_row = await db.execute(
                 text("SELECT role FROM users WHERE id = :uid AND is_active = true"),
                 {"uid": officer_id},
             )
             u = user_row.fetchone()
-            if not u or u.role not in allowed_roles:
-                scheme_label = "Establishment" if row.leave_scheme == "CCS" else "Registrar"
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        f"Officer must be an active NODAL_OFFICER or "
-                        f"{'ESTABLISHMENT_OFFICER' if row.leave_scheme == 'CCS' else 'REGISTRAR'} "
-                        f"login for the {scheme_label} office"
-                    ),
-                )
+            if not u:
+                raise HTTPException(status_code=400, detail="Officer user not found or inactive")
             if u.role != "NODAL_OFFICER":
                 await db.execute(
                     text("UPDATE users SET role = 'NODAL_OFFICER' WHERE id = :uid"),
@@ -213,12 +178,6 @@ async def update_nodal_office(
         scheme = str(body["leave_scheme"]).strip().upper()
         if scheme not in _VALID_SCHEMES:
             raise HTTPException(status_code=400, detail=f"leave_scheme must be one of {_VALID_SCHEMES}")
-        clash = await db.execute(
-            text("SELECT id FROM nodal_offices WHERE leave_scheme = :s AND is_active = true AND id != :oid"),
-            {"s": scheme, "oid": office_id},
-        )
-        if clash.fetchone():
-            raise HTTPException(status_code=400, detail=f"Another active office already handles {scheme} staff")
         updates["leave_scheme"] = scheme
 
     if updates:
@@ -247,38 +206,31 @@ async def update_nodal_office(
 
 @router.get("/eligible-staff")
 async def list_eligible_nodal_staff(
-    leave_scheme: str | None = None,
-    _: dict = Depends(require_role(*_ADMIN_ROLES, "REGISTRAR")),
+    _: dict = Depends(require_role(*_ADMIN_ROLES, "NODAL_OFFICER")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Active employees with login accounts, filtered by leave scheme when provided."""
-    query = """
-        SELECT e.id, e.emp_code, e.name, c.leave_scheme,
-               d.name AS department_name, des.name AS designation_name,
-               u.id AS user_id, u.role AS user_role
-        FROM employees e
-        JOIN employee_categories c ON e.category_id = c.id
-        JOIN departments d ON e.department_id = d.id
-        JOIN designations des ON e.designation_id = des.id
-        JOIN users u ON u.employee_id = e.id AND u.is_active = true
-        WHERE e.is_active = true
-          AND u.role IN ('STAFF', 'HOD', 'NODAL_OFFICER', 'ESTABLISHMENT_OFFICER', 'REGISTRAR')
-    """
-    params: dict = {}
-    if leave_scheme:
-        scheme = leave_scheme.strip().upper()
-        if scheme not in _VALID_SCHEMES:
-            raise HTTPException(status_code=400, detail=f"leave_scheme must be one of {_VALID_SCHEMES}")
-        query += " AND c.leave_scheme = :scheme"
-        params["scheme"] = scheme
-    query += " ORDER BY e.name"
-    result = await db.execute(text(query), params)
+    """Active employees with login accounts — all staff, for nodal officer assignment."""
+    result = await db.execute(
+        text("""
+            SELECT e.id, e.emp_code, e.name, c.leave_scheme,
+                   d.name AS department_name, des.name AS designation_name,
+                   u.id AS user_id, u.role AS user_role
+            FROM employees e
+            JOIN employee_categories c ON e.category_id = c.id
+            JOIN departments d ON e.department_id = d.id
+            JOIN designations des ON e.designation_id = des.id
+            JOIN users u ON u.employee_id = e.id AND u.is_active = true
+            WHERE e.is_active = true
+              AND u.role IN ('STAFF', 'HOD', 'NODAL_OFFICER')
+            ORDER BY e.name
+        """),
+    )
     return [dict(r._mapping) for r in result.fetchall()]
 
 
 @router.get("/eligible-officers")
 async def list_eligible_officers(
-    _: dict = Depends(require_role(*_ADMIN_ROLES, "REGISTRAR")),
+    _: dict = Depends(require_role(*_ADMIN_ROLES, "NODAL_OFFICER")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
@@ -288,7 +240,7 @@ async def list_eligible_officers(
             FROM users u
             LEFT JOIN employees e ON e.id = u.employee_id
             LEFT JOIN nodal_offices no ON no.officer_user_id = u.id AND no.is_active = true
-            WHERE u.role IN ('NODAL_OFFICER', 'ESTABLISHMENT_OFFICER', 'REGISTRAR') AND u.is_active = true
+            WHERE u.role = 'NODAL_OFFICER' AND u.is_active = true
             ORDER BY u.role, u.username
         """)
     )
@@ -346,7 +298,7 @@ async def create_clerical_login(
 @router.get("/{office_id}/clerical-logins")
 async def list_clerical_logins(
     office_id: str,
-    _: dict = Depends(require_role(*_ADMIN_ROLES, "REGISTRAR")),
+    _: dict = Depends(require_role(*_ADMIN_ROLES, "NODAL_OFFICER")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(

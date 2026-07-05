@@ -271,7 +271,7 @@ function staffOptionLabel(s: AssignableStaff): string {
 
 export function NodalOfficesPanel() {
   const [offices, setOffices] = useState<NodalOffice[]>([]);
-  const [staffByScheme, setStaffByScheme] = useState<Record<string, AssignableStaff[]>>({});
+  const [eligibleStaff, setEligibleStaff] = useState<AssignableStaff[]>([]);
   const [message, setMessage] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
   const [newCode, setNewCode] = useState('');
@@ -285,16 +285,12 @@ export function NodalOfficesPanel() {
   const [clericalPassword, setClericalPassword] = useState('');
 
   const load = async () => {
-    const [oRes, ccsRes, resRes] = await Promise.all([
+    const [oRes, staffRes] = await Promise.all([
       nodalOfficesApi.list({ include_inactive: true }),
-      nodalOfficesApi.eligibleStaff({ leave_scheme: 'CCS' }),
-      nodalOfficesApi.eligibleStaff({ leave_scheme: 'RESIDENCY' }),
+      nodalOfficesApi.eligibleStaff(),
     ]);
     setOffices(oRes.data || []);
-    setStaffByScheme({
-      CCS: ccsRes.data || [],
-      RESIDENCY: resRes.data || [],
-    });
+    setEligibleStaff(staffRes.data || []);
   };
 
   useEffect(() => { void load(); }, []);
@@ -304,7 +300,6 @@ export function NodalOfficesPanel() {
     if (!newCode.trim() || !newName.trim()) return;
     try {
       await nodalOfficesApi.create({ code: newCode.trim(), name: newName.trim(), leave_scheme: newScheme });
-      setMessage('Nodal office added.');
       setNewCode('');
       setNewName('');
       setShowAddForm(false);
@@ -333,7 +328,6 @@ export function NodalOfficesPanel() {
     }
     try {
       await nodalOfficesApi.update(office.id, { officer_employee_id: editEmployeeId });
-      setMessage(`Nodal officer saved for ${office.name}.`);
       cancelEdit();
       void load();
     } catch (err: unknown) {
@@ -375,7 +369,6 @@ export function NodalOfficesPanel() {
         username: clericalUsername.trim(),
         password: clericalPassword || clericalUsername.trim(),
       });
-      setMessage('Clerical login added.');
       setClericalUsername('');
       setClericalPassword('');
       void loadClerical(officeId);
@@ -389,8 +382,8 @@ export function NodalOfficesPanel() {
   return (
     <div className="space-y-6">
       <p className="text-sm text-slate-600">
-        Nodal offices route leave after HOD approval — Establishment for regular staff, Registrar for residents.
-        Pick a staff member for each office and save.
+        Nodal offices route leave after HOD approval by staff type: regular staff (CCS) → Establishment; residents → Registrar.
+        Assign a nodal officer from any active staff member, then add clerical logins if needed.
       </p>
 
       {message && <p className="text-sm text-blue-700 bg-blue-50 border border-blue-100 rounded px-3 py-2">{message}</p>}
@@ -439,7 +432,6 @@ export function NodalOfficesPanel() {
           </thead>
           <tbody>
             {offices.map((office) => {
-              const schemeStaff = staffByScheme[office.leave_scheme] || [];
               const clericalOpen = clericalOfficeId === office.id;
               return (
                 <Fragment key={office.id}>
@@ -455,12 +447,12 @@ export function NodalOfficesPanel() {
                           className="form-select py-1.5 text-sm w-full min-w-[220px]"
                         >
                           <option value="">Select staff…</option>
-                          {schemeStaff.map((s) => (
+                          {eligibleStaff.map((s) => (
                             <option key={s.id} value={s.id}>{staffOptionLabel(s)}</option>
                           ))}
                         </select>
-                        {schemeStaff.length === 0 && (
-                          <p className="text-xs text-amber-700 mt-1">No eligible staff — onboard staff in this category first.</p>
+                        {eligibleStaff.length === 0 && (
+                          <p className="text-xs text-amber-700 mt-1">No eligible staff — onboard staff first.</p>
                         )}
                       </td>
                     ) : (
@@ -621,7 +613,6 @@ export function HodAssignmentsPanel() {
     }
     try {
       await hodAssignmentsApi.create({ department_id: dept.id, employee_id: editEmployeeId });
-      setMessage(`HOD saved for ${dept.name}.`);
       cancelEdit();
       void load();
     } catch (err: unknown) {

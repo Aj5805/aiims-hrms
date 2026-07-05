@@ -20,12 +20,14 @@ from app.schemas import (
     EmployeeCreate,
     EmployeeResponse,
     EmployeeUpdate,
+    OnboardingLeaveCreditPreview,
+    SelfEmployeeUpdate,
     StaffGroupInfo,
     StaffGroupSuggestion,
     StaffNumberPreview,
 )
-from app.services.leave_balance_bootstrap import bootstrap_leave_balances
-from app.services.leave_rules import fetch_eligible_leave_types
+from app.services.leave_balance_bootstrap import bootstrap_leave_balances, onboarding_credited_amount
+from app.services.leave_rules import fetch_category_leave_entitlements, fetch_eligible_leave_types
 from app.services.staff_number import (
     StaffNumberError,
     allocate_staff_number,
@@ -33,13 +35,14 @@ from app.services.staff_number import (
     resolve_staff_group,
     validate_staff_group,
 )
+from app.services.employee_uniqueness import assert_employee_fields_unique
 from app.utils.employee_validation import validate_employee_dates
 from app.data.staff_number_groups import STAFF_NUMBER_GROUPS
 
 router = APIRouter(prefix="/employees", tags=["employees"])
 
-_VIEWER_ROLES = ("ADMIN", "ESTABLISHMENT_OFFICER", "REGISTRAR", "DIRECTOR", "HOD", "DEAN_ACADEMIC", "NODAL_OFFICER", "NODAL_OFFICE")
-_EDITOR_ROLES = ("ADMIN", "ESTABLISHMENT_OFFICER", "REGISTRAR", "NODAL_OFFICER")
+_VIEWER_ROLES = ("ADMIN", "DIRECTOR", "HOD", "NODAL_OFFICER", "NODAL_OFFICE")
+_EDITOR_ROLES = ("ADMIN", "NODAL_OFFICER", "NODAL_OFFICE")
 _NODAL_SCOPED_ROLES = ("NODAL_OFFICER", "NODAL_OFFICE")
 
 _EMPLOYEE_SELECT = """
@@ -88,16 +91,11 @@ def _row_to_response(r) -> EmployeeResponse:
     )
 
 
-async def _check_nodal_dept_access(db: AsyncSession, user_id: str, department_id) -> None:
-    nodal_check = await db.execute(
-        text(
-            "SELECT 1 FROM dept_nodal_assignments "
-            "WHERE nodal_user_id = :uid AND department_id = :did AND is_active = true"
-        ),
-        {"uid": user_id, "did": department_id},
-    )
-    if not nodal_check.fetchone():
-        raise HTTPException(status_code=403, detail="Not authorized for this department")
+async def _check_nodal_employee_access(db: AsyncSession, user_id: str, role: str, employee_id: str) -> None:
+    from app.services.nodal_routing import employee_in_nodal_scope
+
+    if not await employee_in_nodal_scope(db, user_id, role, employee_id):
+        raise HTTPException(status_code=403, detail="Not authorized for this employee")
 
 
 async def _fetch_employee(db: AsyncSession, employee_id: str) -> EmployeeResponse:
@@ -170,7 +168,7 @@ async def list_staff_groups(
 @router.get("/suggest-staff-group", response_model=StaffGroupSuggestion)
 async def suggest_staff_group(
     designation_name: str = Query(..., min_length=1),
-    department_code: str = Query(..., min_length=1),
+    department_code: str | None = Query(None),
     category_code: str | None = Query(None),
     _: dict = Depends(require_role(*_EDITOR_ROLES)),
     db: AsyncSession = Depends(get_db),
@@ -213,9 +211,111 @@ async def next_staff_number(
     return StaffNumberPreview(next_emp_code=next_code)
 
 
+@router.get("/onboarding-leave-credits", response_model=list[OnboardingLeaveCreditPreview])
+async def onboarding_leave_credits_preview(
+    category_code: str = Query(..., min_length=1),
+    doj: date = Query(...),
+    gender: str | None = Query(None),
+    _: dict = Depends(require_role(*_EDITOR_ROLES)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Suggested opening leave credits for a new employee (editable before onboard)."""
+    cat = await db.execute(
+        text("SELECT 1 FROM employee_categories WHERE code = :c"),
+        {"c": category_code},
+    )
+    if not cat.fetchone():
+        raise HTTPException(status_code=400, detail=f"Unknown category: {category_code}")
+
+    rules = await fetch_category_leave_entitlements(db, category_code, gender=gender)
+    return [
+        OnboardingLeaveCreditPreview(
+            leave_type_code=str(rule["code"]),
+            leave_type_name=str(rule["name"]),
+            credit_frequency=rule.get("credit_frequency"),
+            suggested_credit=onboarding_credited_amount(rule, doj),
+        )
+        for rule in rules
+    ]
+
+
 def _assert_employee_access(scope: dict, employee_id: str, own_emp_id: str | None) -> None:
     if scope["scope"] != "all" and employee_id != own_emp_id and employee_id not in (scope["employee_ids"] or []):
         raise HTTPException(status_code=403, detail="Not authorized to view this employee")
+
+
+async def _get_own_employee_id(db: AsyncSession, user_id: str) -> str | None:
+    user_res = await db.execute(
+        text("SELECT employee_id FROM users WHERE id = :uid"),
+        {"uid": user_id},
+    )
+    user_row = user_res.fetchone()
+    return str(user_row[0]) if user_row and user_row[0] else None
+
+
+def _self_updates_from_body(body: SelfEmployeeUpdate) -> dict:
+    updates: dict = {}
+    if body.email is not None:
+        updates["email"] = body.email
+    if body.personal_email is not None:
+        updates["personal_email"] = body.personal_email
+    if body.mobile is not None:
+        updates["mobile"] = body.mobile
+    if body.alt_mobile is not None:
+        updates["alt_mobile"] = body.alt_mobile
+    if body.father_name is not None:
+        updates["father_name"] = body.father_name.upper()
+    if body.religion is not None:
+        updates["religion"] = body.religion.upper()
+    if body.last_qualification is not None:
+        updates["last_qualification"] = body.last_qualification.upper()
+    if body.marital_status is not None:
+        updates["marital_status"] = body.marital_status
+    if body.blood_group is not None:
+        updates["blood_group"] = body.blood_group
+    if body.initial is not None:
+        updates["initial"] = body.initial
+    if body.address is not None:
+        updates["address"] = body.address
+    if body.permanent_address is not None:
+        updates["permanent_address"] = body.permanent_address
+    return updates
+
+
+@router.patch("/me", response_model=EmployeeResponse)
+async def update_my_profile(
+    body: SelfEmployeeUpdate,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Self-service: update non-critical profile fields on own employee record."""
+    own_emp_id = await _get_own_employee_id(db, current_user["user_id"])
+    if not own_emp_id:
+        raise HTTPException(status_code=400, detail="No employee record linked to this account")
+
+    updates = _self_updates_from_body(body)
+    if not updates:
+        return await _fetch_employee(db, own_emp_id)
+
+    try:
+        await assert_employee_fields_unique(
+            db,
+            {
+                "mobile": updates.get("mobile"),
+                "alt_mobile": updates.get("alt_mobile"),
+                "email": updates.get("email"),
+                "personal_email": updates.get("personal_email"),
+            },
+            exclude_employee_id=own_emp_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    set_clause = ", ".join(f"{k} = :{k}" for k in updates)
+    updates["eid"] = own_emp_id
+    await db.execute(text(f"UPDATE employees SET {set_clause} WHERE id = :eid"), updates)
+    await db.commit()
+    return await _fetch_employee(db, own_emp_id)
 
 
 @router.get("/{employee_id}/eligible-leave-types")
@@ -244,7 +344,7 @@ async def eligible_leave_types(
 @router.post("/{employee_id}/bootstrap-leave-balances")
 async def bootstrap_employee_leave_balances(
     employee_id: str,
-    current_user: dict = Depends(require_role("ADMIN", "ESTABLISHMENT_OFFICER")),
+    current_user: dict = Depends(require_role("ADMIN")),
     db: AsyncSession = Depends(get_db),
 ):
     """Create missing balance rows for an existing employee (backfill / manual run)."""
@@ -270,12 +370,7 @@ async def get_employee(
     scope: dict = Depends(employee_scope),
     db: AsyncSession = Depends(get_db),
 ):
-    user_res = await db.execute(
-        text("SELECT employee_id FROM users WHERE id = :uid"),
-        {"uid": current_user["user_id"]}
-    )
-    user_row = user_res.fetchone()
-    own_emp_id = str(user_row[0]) if user_row and user_row[0] else None
+    own_emp_id = await _get_own_employee_id(db, current_user["user_id"])
 
     _assert_employee_access(scope, employee_id, own_emp_id)
     return await _fetch_employee(db, employee_id)
@@ -299,7 +394,16 @@ async def create_employee(
         raise HTTPException(status_code=400, detail=f"Unknown department: {body.department_code}")
     
     if current_user["role"] in _NODAL_SCOPED_ROLES:
-        await _check_nodal_dept_access(db, current_user["user_id"], dept_row[0])
+        from app.services.nodal_routing import get_nodal_office_for_user
+
+        office = await get_nodal_office_for_user(db, current_user["user_id"], current_user["role"])
+        cat_scheme_row = await db.execute(
+            text("SELECT leave_scheme FROM employee_categories WHERE id = :id"),
+            {"id": cat_row[0]},
+        )
+        cat_scheme = cat_scheme_row.fetchone()
+        if not office or not cat_scheme or office.leave_scheme != cat_scheme[0]:
+            raise HTTPException(status_code=403, detail="Not authorized to onboard this staff category")
 
     des = await db.execute(
         text("SELECT id, grade_pay_level FROM designations WHERE name = :n"),
@@ -322,6 +426,24 @@ async def create_employee(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     pay_level = body.pay_level
+
+    try:
+        await assert_employee_fields_unique(
+            db,
+            {
+                "pan": body.pan,
+                "aadhaar": body.aadhaar,
+                "nps_or_gpf_no": body.nps_or_gpf_no,
+                "mobile": body.mobile,
+                "alt_mobile": body.alt_mobile,
+                "email": body.email,
+                "personal_email": body.personal_email,
+                "bank_account_no": body.bank_account_no,
+                "pfms_code": body.pfms_code,
+            },
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     eid = str(uuid.uuid4())
     try:
@@ -385,6 +507,11 @@ async def create_employee(
         body.doj,
         actor_id=current_user["user_id"],
         impersonated_by=current_user.get("impersonated_by"),
+        credit_overrides=(
+            {item.leave_type_code: item.credited for item in body.onboarding_leave_credits}
+            if body.onboarding_leave_credits
+            else None
+        ),
     )
 
     await db.commit()
@@ -431,7 +558,7 @@ async def update_employee(
             raise HTTPException(status_code=400, detail=f"Unknown department: {body.department_code}")
 
         if current_user["role"] in _NODAL_SCOPED_ROLES:
-            await _check_nodal_dept_access(db, current_user["user_id"], dept_row[0])
+            await _check_nodal_employee_access(db, current_user["user_id"], current_user["role"], employee_id)
 
         updates["department_id"] = str(dept_row[0])
     if body.designation_name is not None:
@@ -440,6 +567,21 @@ async def update_employee(
         if not des_row:
             raise HTTPException(status_code=400, detail=f"Unknown designation: {body.designation_name}")
         updates["designation_id"] = str(des_row[0])
+    if body.category_code is not None:
+        cat = await db.execute(
+            text("SELECT id, leave_scheme FROM employee_categories WHERE code = :c"),
+            {"c": body.category_code},
+        )
+        cat_row = cat.fetchone()
+        if not cat_row:
+            raise HTTPException(status_code=400, detail=f"Unknown category: {body.category_code}")
+        if current_user["role"] in _NODAL_SCOPED_ROLES:
+            from app.services.nodal_routing import get_nodal_office_for_user
+
+            office = await get_nodal_office_for_user(db, current_user["user_id"], current_user["role"])
+            if not office or office.leave_scheme != cat_row.leave_scheme:
+                raise HTTPException(status_code=403, detail="Not authorized to set this staff category")
+        updates["category_id"] = str(cat_row.id)
     if body.email is not None:
         updates["email"] = body.email
     if body.personal_email is not None:
@@ -490,6 +632,21 @@ async def update_employee(
         updates["pay_level"] = body.pay_level.upper()
     if body.is_active is not None:
         updates["is_active"] = body.is_active
+
+    if updates:
+        uniqueness_values: dict[str, str | None] = {}
+        for key in ("pan", "aadhaar", "nps_or_gpf_no", "mobile", "alt_mobile", "email", "personal_email", "bank_account_no", "pfms_code"):
+            if key in updates:
+                uniqueness_values[key] = updates[key]
+        if uniqueness_values:
+            try:
+                await assert_employee_fields_unique(
+                    db,
+                    uniqueness_values,
+                    exclude_employee_id=employee_id,
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     if updates:
         set_clause = ", ".join(f"{k} = :{k}" for k in updates)

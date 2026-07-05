@@ -82,8 +82,7 @@ async def employee_scope(
 
     - STAFF             -> own employee only
     - HOD               -> own department employees
-    - DEAN_ACADEMIC     -> all residents
-    - ESTABLISHMENT_OFFICER / REGISTRAR -> all regular staff
+    - NODAL_OFFICER/OFFICE -> nodal office scope
     - DIRECTOR / ADMIN  -> all
     """
     role = current_user["role"]
@@ -116,45 +115,14 @@ async def employee_scope(
                     {"did": str(dept_row[0])},
                 )
                 res = {"scope": "department", "employee_ids": [str(r[0]) for r in sub_result.fetchall()]}
-    elif role == "DEAN_ACADEMIC":
-        res_result = await db.execute(
-            text("""
-                SELECT e.id FROM employees e
-                JOIN employee_categories c ON e.category_id = c.id
-                WHERE c.leave_scheme = 'RESIDENCY'
-            """),
-        )
-        res = {"scope": "residents", "employee_ids": [str(r[0]) for r in res_result.fetchall()]}
-    elif role == "ESTABLISHMENT_OFFICER":
-        reg_result = await db.execute(
-            text("""
-                SELECT e.id FROM employees e
-                JOIN employee_categories c ON e.category_id = c.id
-                WHERE c.leave_scheme = 'CCS'
-            """),
-        )
-        res = {"scope": "regular", "employee_ids": [str(r[0]) for r in reg_result.fetchall()]}
-    elif role == "REGISTRAR":
-        reg_result = await db.execute(
-            text("""
-                SELECT e.id FROM employees e
-                JOIN employee_categories c ON e.category_id = c.id
-                WHERE c.leave_scheme = 'RESIDENCY'
-            """),
-        )
-        res = {"scope": "residents", "employee_ids": [str(r[0]) for r in reg_result.fetchall()]}
     elif role in ("NODAL_OFFICER", "NODAL_OFFICE"):
-        from app.services.nodal_routing import get_nodal_office_for_user
+        from app.services.nodal_routing import get_nodal_office_for_user, nodal_scope_employee_ids_subquery
 
         office = await get_nodal_office_for_user(db, user_id, role)
         if office:
             nodal_result = await db.execute(
-                text("""
-                    SELECT e.id FROM employees e
-                    JOIN employee_categories c ON e.category_id = c.id
-                    WHERE c.leave_scheme = :scheme
-                """),
-                {"scheme": office.leave_scheme},
+                text(f"SELECT id FROM ({nodal_scope_employee_ids_subquery()}) scoped"),
+                {"nodal_uid": user_id, "nodal_role": role},
             )
             res = {
                 "scope": "nodal_office",

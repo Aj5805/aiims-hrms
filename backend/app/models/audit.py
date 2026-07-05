@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     Column,
     Date,
     DateTime,
@@ -11,6 +12,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import INET, JSONB, UUID
 
@@ -47,7 +49,7 @@ class PayrollExportLog(Base):
 
 
 class AttendanceRaw(Base):
-    """Reserved for v2 biometric integration â€” schema ready, not populated in v1."""
+    """Reserved for v2 biometric integration — schema ready, not populated in v1."""
     __tablename__ = "attendance_raw"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -57,3 +59,27 @@ class AttendanceRaw(Base):
     source = Column(String(20), default="BIOMETRIC")
     device_id = Column(String(50), nullable=True)
     imported_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class AttendanceDaily(Base):
+    """Daily attendance pipeline: leave-derived now; biometric review and finalization later."""
+
+    __tablename__ = "attendance_daily"
+    __table_args__ = (UniqueConstraint("employee_id", "attendance_date"),)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    employee_id = Column(UUID(as_uuid=True), ForeignKey("employees.id"), nullable=False)
+    attendance_date = Column(Date, nullable=False)
+    leave_derived_status = Column(String(20), nullable=True, comment="ON_LEAVE | ON_DUTY")
+    leave_type_code = Column(String(20), nullable=True)
+    leave_application_id = Column(UUID(as_uuid=True), ForeignKey("leave_applications.id"), nullable=True)
+    is_commuted = Column(Boolean, default=False)
+    biometric_status = Column(String(20), nullable=True, comment="PRESENT | ABSENT | LATE | PARTIAL")
+    biometric_raw_id = Column(UUID(as_uuid=True), ForeignKey("attendance_raw.id"), nullable=True)
+    review_status = Column(String(20), default="PENDING", comment="PENDING | MATCHED | CONFLICT | OVERRIDDEN")
+    final_status = Column(String(20), nullable=False, comment="PRESENT | ABSENT | ON_LEAVE | HOLIDAY | WEEKEND | ON_DUTY")
+    finalized_at = Column(DateTime(timezone=True), nullable=True)
+    finalized_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)

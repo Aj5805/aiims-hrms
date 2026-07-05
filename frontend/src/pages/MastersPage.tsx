@@ -31,7 +31,7 @@ function resolveTab(raw: string | null): MasterTabId {
 const TAB_DESCRIPTIONS: Record<MasterTabId, string> = {
   dept: 'Organisational departments used across HR and leave routing.',
   desg: 'Job titles linked to employee categories (pay level is captured per employee at registration).',
-  assignments: 'Nodal offices — add or select an office, pick a staff member as nodal officer, and save.',
+  assignments: 'Nodal offices — assign officer, map departments (HOD groups), and manage clerical logins.',
   'hod-assignments': 'One HOD per department — pick staff from that department and save.',
   'leave-types': 'Core definitions for all available leave types — create and edit each type’s rules.',
   entitlements: 'How leave is credited (frequency and days per year) for each category and leave type.',

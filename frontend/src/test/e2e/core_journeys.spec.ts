@@ -102,8 +102,8 @@ test.describe.serial('Core Journeys E2E', () => {
   });
 
 
-  test('J2: Approve chain (HOD -> ESTAB -> REGISTRAR)', async ({ browser }) => {
-    for (const role of ['hod', 'estab', 'registrar']) {
+  test('J2: Approve chain (HOD -> Nodal Officer)', async ({ browser }) => {
+    for (const role of ['hod', 'nodal']) {
       const context = await newIsolatedContext(browser);
       const page = await context.newPage();
 
@@ -163,15 +163,15 @@ test.describe.serial('Core Journeys E2E', () => {
     await context.close();
   });
 
-  test('J5: Establishment user opens reports and triggers leave-register download', async ({ browser }) => {
+  test('J5: Nodal officer opens reports and triggers leave-register download', async ({ browser }) => {
     const context = await newIsolatedContext(browser);
     const page = await context.newPage();
 
-    await login(page, 'estab', 'password');
+    await login(page, 'nodal', 'password');
     await expect(page.locator('a', { hasText: 'Reports' })).toBeVisible();
 
     await page.goto('/reports');
-    await expect(page.locator('h2', { hasText: 'Reports & Payroll Export' })).toBeVisible();
+    await expect(page.locator('h2', { hasText: 'Reports' })).toBeVisible();
 
     const dateInputs = page.locator('input[type="date"]');
     await dateInputs.nth(0).fill('2026-07-01');
@@ -182,7 +182,7 @@ test.describe.serial('Core Journeys E2E', () => {
     );
     const downloadPromise = page.waitForEvent('download');
 
-    await page.getByRole('button', { name: 'Download XLSX' }).first().click();
+    await page.getByRole('button', { name: 'Export Excel' }).click();
 
     const [response, download] = await Promise.all([responsePromise, downloadPromise]);
     expect(response.ok()).toBeTruthy();

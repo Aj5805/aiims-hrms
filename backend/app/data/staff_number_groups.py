@@ -19,7 +19,7 @@ STAFF_NUMBER_GROUPS: dict[str, StaffGroupDef] = {
     "DEP": {"label": "Administration / Department", "prefix": "DEP", "pad_width": 4},
     "CON": {"label": "College of Nursing", "prefix": "CON", "pad_width": 4},
     "PGJR": {"label": "Junior Resident (Academic)", "prefix": "PGJR", "pad_width": 4},
-    "PGNA": {"label": "P.G. Student / JR (Non-Academic)", "prefix": "PGNA", "pad_width": 4},
+    "PGNA": {"label": "Junior Resident (Non-Academic)", "prefix": "PGNA", "pad_width": 4},
     "SRAC": {"label": "Senior Resident (Academic)", "prefix": "SRAC", "pad_width": 4},
     "SRNA": {"label": "Senior Resident (Non-Academic)", "prefix": "SRNA", "pad_width": 4},
 }
@@ -29,8 +29,13 @@ STAFF_GROUP_CODES = frozenset(STAFF_NUMBER_GROUPS)
 COLLEGE_OF_NURSING_DEPT_CODE = "NURSCOLL"
 
 DESIGNATION_STAFF_GROUP: dict[str, str] = {
+    "Junior Resident (Academic)": "PGJR",
+    "Junior Resident (Non-Academic)": "PGNA",
+    "Senior Resident (Academic)": "SRAC",
+    "Senior Resident (Non-Academic)": "SRNA",
+    # Legacy designation names (pre-2026-07-04 resident rename)
     "P.G. Student": "PGJR",
-    "Junior Resident": "PGJR",
+    "Junior Resident": "PGNA",
     "Senior Resident": "SRAC",
     "SR (Academic)": "SRAC",
     "Nursing Officer": "NUR",
@@ -71,8 +76,6 @@ def resolve_staff_group(
     """Suggest staff group from designation, then department, then leave category."""
     if designation_name and designation_name in DESIGNATION_STAFF_GROUP:
         suggested = DESIGNATION_STAFF_GROUP[designation_name]
-        if designation_name == "P.G. Student" and category_code == "JR_NA":
-            return "PGNA"
         if designation_name == "Senior Resident" and category_code == "SR_NA":
             return "SRNA"
         return suggested

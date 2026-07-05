@@ -11,8 +11,9 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 CL_CODE = "CL"
-DEFAULT_CL_INCOMPATIBLE = frozenset({"EL", "HPL", "COMMUTED", "EOL"})
+DEFAULT_CL_INCOMPATIBLE = frozenset({"EL", "HPL", "EOL"})
 DEFAULT_MAX_ABSENCE_SPAN = 8
+DEFAULT_MAX_RETROSPECTIVE_DAYS = 30
 
 
 def _parse_rules(raw: Any) -> dict:
@@ -40,6 +41,9 @@ def count_leave_days(
 ) -> float:
     if is_half_day:
         return 0.5
+    if from_date == to_date:
+        # Single-day absence: one debited unit (from and to on the same date).
+        return 1.0
     total = 0
     d = from_date
     while d <= to_date:
@@ -325,7 +329,7 @@ async def fetch_entitlement_for_type(
 ) -> dict | None:
     result = await db.execute(
         text("""
-            SELECT ler.max_at_a_stretch, ler.max_in_tenure, ler.special_rules
+            SELECT ler.max_at_a_stretch, ler.max_in_tenure, ler.special_rules, ler.year_ref
             FROM leave_entitlement_rules ler
             JOIN employees e ON e.category_id = ler.category_id
             WHERE e.id = :eid AND ler.leave_type_id = :lid
@@ -335,6 +339,58 @@ async def fetch_entitlement_for_type(
     )
     row = result.fetchone()
     return dict(row._mapping) if row else None
+
+
+async def count_approved_leave_occurrences(
+    db: AsyncSession,
+    employee_id: str,
+    leave_type_code: str,
+    *,
+    exclude_application_ids: list[str] | None = None,
+) -> int:
+    """Count approved NEW applications — for max_times_in_service (ML, PL, etc.)."""
+    exclude_application_ids = exclude_application_ids or []
+    query = """
+        SELECT COUNT(*)::int
+        FROM leave_applications a
+        JOIN leave_types lt ON a.leave_type_id = lt.id
+        WHERE a.employee_id = :eid
+          AND lt.code = :code
+          AND a.status = 'APPROVED'
+          AND a.application_kind = 'NEW'
+    """
+    params: dict = {"eid": employee_id, "code": leave_type_code.upper()}
+    if exclude_application_ids:
+        query += " AND a.id != ALL(:exclude)"
+        params["exclude"] = exclude_application_ids
+    result = await db.execute(text(query), params)
+    row = result.fetchone()
+    return int(row[0] or 0) if row else 0
+
+
+async def check_times_in_service(
+    db: AsyncSession,
+    employee_id: str,
+    leave_type_code: str,
+    special_rules: dict,
+    *,
+    exclude_application_ids: list[str] | None = None,
+) -> str | None:
+    max_times = special_rules.get("max_times_in_service")
+    if max_times is None:
+        return None
+    used = await count_approved_leave_occurrences(
+        db,
+        employee_id,
+        leave_type_code,
+        exclude_application_ids=exclude_application_ids,
+    )
+    if used >= int(max_times):
+        return (
+            f"Maximum {max_times} occasion(s) of {leave_type_code} allowed in entire service; "
+            f"{used} already availed"
+        )
+    return None
 
 
 def build_cl_projection_extras(
@@ -365,6 +421,27 @@ def build_cl_projection_extras(
     }
 
 
+def validate_retrospective_dates(
+    from_date: date,
+    to_date: date,
+    validation_rules: dict,
+    *,
+    mc_attached: bool,
+) -> None:
+    """Past-dated leave — allowed by default; only guard obviously invalid ranges."""
+    today = date.today()
+    if from_date >= today:
+        raise HTTPException(
+            status_code=400,
+            detail="Retrospective leave must start before today",
+        )
+    if to_date > today:
+        raise HTTPException(
+            status_code=400,
+            detail="Retrospective leave cannot extend into the future",
+        )
+
+
 async def validate_leave_application(
     db: AsyncSession,
     *,
@@ -377,6 +454,8 @@ async def validate_leave_application(
     application_kind: str = "NEW",
     parent_applied_days: float | None = None,
     emergency_regular_combo: bool = False,
+    retrospective: bool = False,
+    is_commuted: bool = False,
     exclude_application_ids: list[str] | None = None,
 ) -> float:
     """Run institutional validation rules. Returns computed applied_days."""
@@ -403,6 +482,11 @@ async def validate_leave_application(
     if application_kind == "CANCELLATION":
         return float(parent_applied_days or applied_days)
 
+    if retrospective and application_kind == "NEW":
+        validate_retrospective_dates(
+            from_date, to_date, validation_rules, mc_attached=mc_attached
+        )
+
     prefix_suffix_error = check_prefix_suffix(from_date, to_date, holidays, validation_rules)
     if prefix_suffix_error:
         raise HTTPException(status_code=400, detail=prefix_suffix_error)
@@ -428,6 +512,7 @@ async def validate_leave_application(
 
     max_stretch = validation_rules.get("max_per_stretch")
     entitlement = await fetch_entitlement_for_type(db, employee_id, str(leave_type["id"]))
+    entitlement_rules = _parse_rules(entitlement.get("special_rules")) if entitlement else {}
     if entitlement and entitlement.get("max_at_a_stretch"):
         max_stretch = max_stretch or float(entitlement["max_at_a_stretch"])
     if max_stretch and not is_half_day and applied_days > float(max_stretch):
@@ -436,8 +521,21 @@ async def validate_leave_application(
             detail=f"Maximum {max_stretch} days at a stretch for this leave type",
         )
 
+    if application_kind == "NEW":
+        times_err = await check_times_in_service(
+            db,
+            employee_id,
+            leave_type_code,
+            entitlement_rules,
+            exclude_application_ids=exclude_application_ids,
+        )
+        if times_err:
+            raise HTTPException(status_code=400, detail=times_err)
+
+    # Advance notice applies to new applications only — not changes to approved leave.
+    skip_min_notice = application_kind == "MODIFICATION" or retrospective
     min_notice = validation_rules.get("min_notice_days")
-    if min_notice is not None:
+    if min_notice is not None and not skip_min_notice:
         notice_days = (from_date - date.today()).days
         if notice_days < int(min_notice):
             raise HTTPException(
@@ -445,17 +543,23 @@ async def validate_leave_application(
                 detail=f"Minimum {min_notice} days advance notice required",
             )
 
-    requires_mc = leave_type.get("requires_mc")
-    min_days_for_mc = leave_type.get("min_days_for_mc")
-    if requires_mc and min_days_for_mc is not None and applied_days > float(min_days_for_mc):
-        if not mc_attached:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Medical certificate required for more than {min_days_for_mc} days",
-            )
+    if is_commuted and leave_type_code != "HPL":
+        raise HTTPException(status_code=400, detail="Commutation is only available for Half Pay Leave (HPL)")
 
-    if validation_rules.get("requires_attachment") and not mc_attached:
-        raise HTTPException(status_code=400, detail="Supporting document attachment is required")
+    if leave_type_code == "HPL" and is_commuted and application_kind != "CANCELLATION":
+        from app.services.leave_hpl import validate_hpl_commutation
+
+        await validate_hpl_commutation(
+            db,
+            employee_id=employee_id,
+            leave_type_id=str(leave_type["id"]),
+            from_date=from_date,
+            applied_days=applied_days,
+            is_commuted=True,
+            is_half_day=is_half_day,
+            mc_attached=mc_attached,
+            exclude_application_ids=exclude_application_ids,
+        )
 
     return applied_days
 
@@ -464,6 +568,8 @@ async def validate_workflow_day_limits(
     db: AsyncSession,
     config_id: str,
     applied_days: float,
+    *,
+    is_half_day: bool = False,
 ) -> None:
     result = await db.execute(
         text("SELECT min_days, max_days FROM workflow_configs WHERE id = :cid"),
@@ -473,10 +579,13 @@ async def validate_workflow_day_limits(
     if not row:
         return
     min_days, max_days = row[0], row[1]
-    if min_days is not None and applied_days < float(min_days):
+    effective_min = float(min_days) if min_days is not None else 0.0
+    if is_half_day:
+        effective_min = min(effective_min, 0.5)
+    if applied_days < effective_min:
         raise HTTPException(
             status_code=400,
-            detail=f"Minimum {min_days} days required for this workflow",
+            detail=f"Minimum {effective_min:g} days required for this workflow",
         )
     if max_days is not None and applied_days > float(max_days):
         raise HTTPException(

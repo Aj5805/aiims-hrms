@@ -4,6 +4,7 @@ import { employeesApi, designationsApi } from '../api/endpoints';
 import { useAuthStore } from '../stores';
 import AddStaffForm from '../components/AddStaffForm';
 import { PageHeader } from '../components/PageHeader';
+import { hasSystemRole, HR_EDITOR_ROLES } from '../constants/roles';
 
 interface Employee {
   id: string;
@@ -47,7 +48,7 @@ export default function EmployeeListPage() {
   const [onboardDirty, setOnboardDirty] = useState(false);
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
-  const canEdit = ['ADMIN', 'ESTABLISHMENT_OFFICER', 'REGISTRAR', 'NODAL_OFFICER'].includes(user?.role ?? '');
+  const canEdit = hasSystemRole(user?.role, HR_EDITOR_ROLES);
   const canOnboard = canEdit;
 
   const requestTab = (tab: EmployeeTab) => {

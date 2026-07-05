@@ -30,11 +30,11 @@ SAMPLE_STAFF = [
     ("Shri. Sanjay Gupta", "MALE", "1984-08-19", "2011-02-01", "ADMIN", "Accounts Officer", "DEP", "Level 8", "9876501008", "sanjay.gupta", "Mohan Gupta", "B+", "H"),
     ("Smt. Priya Thomas", "FEMALE", "1992-03-30", "2017-09-01", "FINANCE", "Junior Administrative Officer", "DEP", "Level 6", "9876501009", "priya.thomas", "Thomas Mathew", "O-", "J"),
     ("Shri. Amit Singh", "MALE", "1986-07-07", "2012-11-01", "MSO", "Medical Record Officer", "DEP", "Level 7", "9876501010", "amit.singh", "Harinder Singh", "A-", "K"),
-    ("Dr. Rohit Malhotra", "MALE", "1993-01-18", "2020-07-01", "ANAES", "Junior Resident", "PGJR", "Level 10", "9876501011", "rohit.malhotra", "Anil Malhotra", "B+", "L"),
-    ("Dr. Neha Kapoor", "FEMALE", "1992-10-05", "2021-07-01", "RADIODX", "Junior Resident", "PGJR", "Level 10", "9876501012", "neha.kapoor", "Raj Kapoor", "O+", "M"),
-    ("Dr. Karan Joshi", "MALE", "1990-04-22", "2018-07-01", "PATH", "Senior Resident", "SRAC", "Level 11", "9876501013", "karan.joshi", "Dev Joshi", "AB+", "N"),
-    ("Dr. Divya Menon", "FEMALE", "1989-09-11", "2017-07-01", "PSYCH", "Senior Resident", "SRAC", "Level 11", "9876501014", "divya.menon", "Vijay Menon", "A+", "P"),
-    ("Dr. Aditya Bose", "MALE", "1994-06-16", "2022-07-01", "NEURO", "P.G. Student", "PGJR", "Level 10", "9876501015", "aditya.bose", "Subhash Bose", "B-", "Q"),
+    ("Dr. Rohit Malhotra", "MALE", "1993-01-18", "2020-07-01", "ANAES", "Junior Resident (Non-Academic)", "PGNA", "Level 10", "9876501011", "rohit.malhotra", "Anil Malhotra", "B+", "L"),
+    ("Dr. Neha Kapoor", "FEMALE", "1992-10-05", "2021-07-01", "RADIODX", "Junior Resident (Non-Academic)", "PGNA", "Level 10", "9876501012", "neha.kapoor", "Raj Kapoor", "O+", "M"),
+    ("Dr. Karan Joshi", "MALE", "1990-04-22", "2018-07-01", "PATH", "Senior Resident (Academic)", "SRAC", "Level 11", "9876501013", "karan.joshi", "Dev Joshi", "AB+", "N"),
+    ("Dr. Divya Menon", "FEMALE", "1989-09-11", "2017-07-01", "PSYCH", "Senior Resident (Academic)", "SRAC", "Level 11", "9876501014", "divya.menon", "Vijay Menon", "A+", "P"),
+    ("Dr. Aditya Bose", "MALE", "1994-06-16", "2022-07-01", "NEURO", "Junior Resident (Academic)", "PGJR", "Level 10", "9876501015", "aditya.bose", "Subhash Bose", "B-", "Q"),
     ("Shri. Manoj Yadav", "MALE", "1988-02-28", "2013-01-10", "ENGINE", "Junior Engineer", "DEP", "Level 6", "9876501016", "manoj.yadav", "Ram Yadav", "O+", "R"),
     ("Smt. Rekha Pillai", "FEMALE", "1990-11-09", "2014-05-20", "LIBRARY", "Library & Information Officer", "DEP", "Level 7", "9876501017", "rekha.pillai", "Krishna Pillai", "A+", "S"),
     ("Shri. Deepak Verma", "MALE", "1987-08-04", "2012-03-15", "STORES", "Store Keeper", "DEP", "Level 4", "9876501018", "deepak.verma", "Shyam Verma", "B+", "T"),
@@ -202,6 +202,9 @@ def run(session):
         print("Skipping sample staff seed in production.")
         return
 
-    _purge_test_data(session)
+    if os.environ.get("PURGE_DEV_STAFF") == "1":
+        _purge_test_data(session)
+    else:
+        print("  Skipping purge (set PURGE_DEV_STAFF=1 to wipe employees).")
     _seed_sample_staff(session)
-    print("Seed 012 complete — test data removed, sample staff registered.")
+    print("Seed 012 complete.")

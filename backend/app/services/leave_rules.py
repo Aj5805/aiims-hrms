@@ -1,7 +1,9 @@
 """Leave entitlement and credit calculation helpers."""
 
+import json
 from datetime import date
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,9 +12,10 @@ _ELIGIBLE_LEAVE_TYPES_SQL = """
     SELECT lt.id, lt.code, lt.name, lt.scheme, lt.is_half_day_allowed, lt.requires_mc,
            lt.min_days_for_mc, lt.count_holidays, lt.is_accumulating, lt.max_accumulation,
            lt.validation_rules,
-           ler.year_ref, ler.days_per_year, ler.prorata_rate,
+           ler.year_ref, ler.credit_frequency, ler.days_per_year, ler.prorata_rate,
            ler.max_at_a_stretch, ler.max_in_tenure, ler.special_rules,
-           c.code AS category_code, c.leave_scheme
+           c.code AS category_code, c.leave_scheme,
+           e.gender AS employee_gender
     FROM employees e
     JOIN employee_categories c ON e.category_id = c.id
     JOIN leave_entitlement_rules ler ON ler.category_id = c.id
@@ -23,10 +26,72 @@ _ELIGIBLE_LEAVE_TYPES_SQL = """
     ORDER BY lt.code
 """
 
+_CATEGORY_LEAVE_ENTITLEMENTS_SQL = """
+    SELECT lt.id, lt.code, lt.name, lt.scheme,
+           ler.year_ref, ler.credit_frequency, ler.days_per_year, ler.prorata_rate,
+           ler.max_at_a_stretch, ler.max_in_tenure, ler.special_rules,
+           c.code AS category_code, c.leave_scheme
+    FROM employee_categories c
+    JOIN leave_entitlement_rules ler ON ler.category_id = c.id
+    JOIN leave_types lt ON lt.id = ler.leave_type_id
+    WHERE c.code = :cat_code
+      AND COALESCE(lt.is_active, true) = true
+      AND (lt.scheme = 'BOTH' OR lt.scheme = c.leave_scheme)
+    ORDER BY lt.code
+"""
+
+
+def _parse_special_rules(raw: Any) -> dict:
+    if not raw:
+        return {}
+    if isinstance(raw, dict):
+        return raw
+    try:
+        return json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return {}
+
+
+def gender_eligibility_allowed(special_rules: Any, employee_gender: str | None) -> bool:
+    """Filter leave types by gender_eligibility in entitlement special_rules."""
+    rules = _parse_special_rules(special_rules)
+    elig = str(rules.get("gender_eligibility", "ALL")).upper()
+    gender = str(employee_gender or "").upper()
+    if elig in ("", "ALL"):
+        return True
+    if elig == "NONE":
+        return False
+    if elig == "FEMALE_ONLY":
+        return gender == "FEMALE"
+    if elig == "MALE_ONLY":
+        return gender == "MALE"
+    return True
+
 
 async def fetch_eligible_leave_types(db: AsyncSession, employee_id: str) -> list[dict]:
     result = await db.execute(text(_ELIGIBLE_LEAVE_TYPES_SQL), {"eid": employee_id})
-    return [dict(row._mapping) for row in result.fetchall()]
+    rows = [dict(row._mapping) for row in result.fetchall()]
+    return [
+        row for row in rows
+        if gender_eligibility_allowed(row.get("special_rules"), row.get("employee_gender"))
+    ]
+
+
+async def fetch_category_leave_entitlements(
+    db: AsyncSession,
+    category_code: str,
+    *,
+    gender: str | None = None,
+) -> list[dict]:
+    result = await db.execute(
+        text(_CATEGORY_LEAVE_ENTITLEMENTS_SQL),
+        {"cat_code": category_code},
+    )
+    rows = [dict(row._mapping) for row in result.fetchall()]
+    return [
+        row for row in rows
+        if gender_eligibility_allowed(row.get("special_rules"), gender)
+    ]
 
 
 async def is_leave_type_eligible(

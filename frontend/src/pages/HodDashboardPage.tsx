@@ -49,20 +49,12 @@ export default function HodDashboardPage() {
   return (
     <div className="page">
       <PageHeader
-        title={user?.role === 'HOD' ? 'HOD Dashboard' : user?.role === 'NODAL_OFFICER' ? 'Nodal Officer Dashboard' : 'Approver Dashboard'}
-        description="Command center for department availability and pending approval tasks."
+        title={user?.role === 'HOD' ? 'Nodal Desk' : user?.role === 'NODAL_OFFICER' ? 'Nodal Desk' : 'Approver Desk'}
+        description="Pending approvals and team availability at a glance."
         breadcrumbs={[
-          { label: 'Home', to: '/' },
-          { label: 'Nodal Desk' }
+          { label: 'Desk', to: '/hod' },
+          { label: 'Nodal Desk' },
         ]}
-        rightContent={
-          <div className="hidden sm:block text-right">
-            <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">Acting As</div>
-            <div className="inline-block bg-indigo-50 text-indigo-700 px-3 py-1 rounded-lg text-sm font-bold border border-indigo-100 whitespace-nowrap">
-              {(user?.role ?? '').replace('_', ' ')}
-            </div>
-          </div>
-        }
       />
 
       {/* Quick Metrics */}

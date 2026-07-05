@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import require_role, get_current_user
 from app.auth.jwt import hash_password
+from app.auth.roles import is_assignable_role, normalize_role
 from app.core.database import get_db
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -25,22 +26,10 @@ async def create_user(
     if not username or not role:
         raise HTTPException(status_code=400, detail="username and role are required")
 
-    allowed_roles = {
-        "STAFF",
-        "HOD",
-        "DEAN_ACADEMIC",
-        "REGISTRAR",
-        "ESTABLISHMENT",
-        "ESTABLISHMENT_OFFICER",
-        "DIRECTOR",
-        "ADMIN",
-        "NODAL_OFFICER",
-        "NODAL_OFFICE",
-    }
-    if role not in allowed_roles:
+    if not is_assignable_role(role):
         raise HTTPException(status_code=400, detail=f"Invalid role: {role}")
 
-    normalized_role = "ESTABLISHMENT_OFFICER" if role == "ESTABLISHMENT" else role
+    normalized_role = normalize_role(role)
     password = body.get("password") or username
     employee_id = body.get("employee_id")
     must_change_password = body.get("must_change_password", False)
@@ -132,7 +121,7 @@ async def update_user(
     user_id: str,
     body: dict,
     current_user: dict = Depends(get_current_user),
-    _: dict = Depends(require_role("ADMIN", "ESTABLISHMENT_OFFICER", "NODAL_OFFICER")),
+    _: dict = Depends(require_role("ADMIN", "NODAL_OFFICER")),
     db: AsyncSession = Depends(get_db),
 ):
     """Update user role, active status, or force password reset flag."""
@@ -149,13 +138,17 @@ async def update_user(
             raise HTTPException(status_code=403, detail="Not authorized to modify this user's role type")
         if "role" in body and body["role"] not in ("STAFF", "HOD"):
             raise HTTPException(status_code=403, detail="Not authorized to assign this role")
-            
-        nodal_check = await db.execute(
-            text("SELECT 1 FROM dept_nodal_assignments WHERE nodal_user_id = :uid AND department_id = :did AND is_active = true"),
-            {"uid": current_user["user_id"], "did": target_user.department_id}
+        from app.services.nodal_routing import employee_in_nodal_scope
+
+        target_emp = await db.execute(
+            text("SELECT employee_id FROM users WHERE id = :uid"),
+            {"uid": user_id},
         )
-        if not nodal_check.fetchone():
-            raise HTTPException(status_code=403, detail="Not authorized to modify users in this department")
+        emp_row = target_emp.fetchone()
+        if not emp_row or not emp_row[0]:
+            raise HTTPException(status_code=403, detail="Not authorized to modify this user")
+        if not await employee_in_nodal_scope(db, current_user["user_id"], "NODAL_OFFICER", str(emp_row[0])):
+            raise HTTPException(status_code=403, detail="Not authorized to modify users outside your nodal office scope")
 
     allowed = ["role", "is_active", "must_change_password", "parent_nodal_user_id"]
     updates = {k: v for k, v in body.items() if k in allowed}

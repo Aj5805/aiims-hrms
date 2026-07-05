@@ -13,7 +13,7 @@ from app.core.database import get_db
 router = APIRouter(prefix="/leave-types", tags=["leave-types"])
 
 
-_MASTER_VIEWER_ROLES = ("ADMIN", "ESTABLISHMENT_OFFICER", "REGISTRAR", "DIRECTOR", "HOD", "DEAN_ACADEMIC", "NODAL_OFFICER", "NODAL_OFFICE")
+_MASTER_VIEWER_ROLES = ("ADMIN", "DIRECTOR", "HOD", "NODAL_OFFICER", "NODAL_OFFICE", "STAFF")
 _STAFF_APPLY_ROLES = ("STAFF",)
 
 
@@ -37,7 +37,7 @@ async def list_leave_types(
 @router.post("", status_code=201)
 async def create_leave_type(
     body: dict,
-    _: dict = Depends(require_role("ADMIN", "ESTABLISHMENT_OFFICER")),
+    _: dict = Depends(require_role("ADMIN")),
     db: AsyncSession = Depends(get_db),
 ):
     lid = str(uuid.uuid4())
@@ -65,7 +65,7 @@ async def create_leave_type(
 async def update_leave_type(
     leave_type_id: str,
     body: dict,
-    _: dict = Depends(require_role("ADMIN", "ESTABLISHMENT_OFFICER")),
+    _: dict = Depends(require_role("ADMIN")),
     db: AsyncSession = Depends(get_db),
 ):
     editable = ["name", "scheme", "is_accumulating", "max_accumulation", "requires_mc",

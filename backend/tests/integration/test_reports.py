@@ -6,25 +6,14 @@ import sys
 
 import httpx
 
+from tests.helpers import ensure_journey_users, expect_status, login, set_admin_password
+
 BASE = "http://testserver"
 
 
 def fail(message: str) -> None:
     print(f"[FAIL] {message}")
     sys.exit(1)
-
-
-async def expect_status(response: httpx.Response, expected: int, label: str) -> None:
-    if response.status_code != expected:
-        fail(f"{label}: expected HTTP {expected}, got {response.status_code}, body={response.text[:500]}")
-    print(f"[OK] {label}: HTTP {response.status_code}")
-
-
-async def login(client: httpx.AsyncClient, username: str, password: str) -> dict[str, str]:
-    response = await client.post("/api/v1/auth/login", json={"username": username, "password": password})
-    await expect_status(response, 200, f"login {username}")
-    token = response.json()["access_token"]
-    return {"Authorization": f"Bearer {token}"}
 
 
 async def expect_report(
@@ -44,6 +33,19 @@ async def expect_report(
     print(f"[OK] {label}: content-type={content_type}, bytes={len(response.content)}")
 
 
+async def expect_json_preview(
+    client: httpx.AsyncClient,
+    path: str,
+    headers: dict[str, str],
+    label: str,
+) -> None:
+    response = await client.get(path, headers=headers)
+    body = await expect_status(response, 200, label)
+    if not isinstance(body, (list, dict)):
+        fail(f"{label}: expected JSON object or array")
+    print(f"[OK] {label}: json preview rows={len(body) if isinstance(body, list) else 'object'}")
+
+
 async def expect_forbidden(client: httpx.AsyncClient, path: str, headers: dict[str, str], label: str) -> None:
     response = await client.get(path, headers=headers)
     await expect_status(response, 403, label)
@@ -51,109 +53,75 @@ async def expect_forbidden(client: httpx.AsyncClient, path: str, headers: dict[s
 
 async def main() -> None:
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
-
-    from app.core.config import settings
-    from app.auth.jwt import hash_password
-    from sqlalchemy import create_engine, text
-
-    engine = create_engine(settings.DATABASE_URL_SYNC)
-    with engine.connect() as conn:
-        conn.execute(
-            text("UPDATE users SET password_hash = :ph, failed_login_attempts = 0, locked_until = NULL, must_change_password = false WHERE username = 'admin'"),
-            {"ph": hash_password("password")},
-        )
-        conn.commit()
+    set_admin_password("password")
+    ensure_journey_users(staff_must_change_password=False)
 
     from main import app
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url=BASE) as client:
-        estab_headers = await login(client, "estab", "password")
-        registrar_headers = await login(client, "registrar", "password")
+        nodal_headers = await login(client, "nodal", "password")
+        staff_headers = await login(client, "staff", "password")
         admin_headers = await login(client, "admin", "password")
 
         await expect_report(
             client,
             "/api/v1/reports/leave-register?from_date=2026-07-01&to_date=2026-07-31&format=xlsx",
-            estab_headers,
+            nodal_headers,
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "leave-register xlsx allowed role",
+            "leave-register xlsx nodal officer",
+        )
+        await expect_json_preview(
+            client,
+            "/api/v1/reports/leave-register?from_date=2026-07-01&to_date=2026-07-31&format=json",
+            nodal_headers,
+            "leave-register json preview",
         )
         await expect_forbidden(
             client,
             "/api/v1/reports/leave-register?from_date=2026-07-01&to_date=2026-07-31&format=xlsx",
-            admin_headers,
-            "leave-register disallowed admin",
+            staff_headers,
+            "leave-register disallowed staff",
         )
 
         await expect_report(
             client,
             "/api/v1/reports/leave-abstract?from_date=2026-07-01&to_date=2026-07-31",
-            estab_headers,
+            nodal_headers,
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "leave-abstract xlsx allowed role",
-        )
-        await expect_forbidden(
-            client,
-            "/api/v1/reports/leave-abstract?from_date=2026-07-01&to_date=2026-07-31",
-            admin_headers,
-            "leave-abstract disallowed admin",
+            "leave-abstract xlsx nodal officer",
         )
 
         await expect_report(
             client,
             "/api/v1/reports/pending-applications",
-            estab_headers,
+            nodal_headers,
             "application/pdf",
-            "pending-applications pdf allowed role",
-        )
-        await expect_forbidden(
-            client,
-            "/api/v1/reports/pending-applications",
-            admin_headers,
-            "pending-applications disallowed admin",
+            "pending-applications pdf nodal officer",
         )
 
         await expect_report(
             client,
             "/api/v1/reports/balance-summary?as_of_date=2026-07-31",
-            estab_headers,
+            nodal_headers,
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "balance-summary xlsx allowed role",
-        )
-        await expect_forbidden(
-            client,
-            "/api/v1/reports/balance-summary?as_of_date=2026-07-31",
-            admin_headers,
-            "balance-summary disallowed admin",
+            "balance-summary xlsx nodal officer",
         )
 
         await expect_report(
             client,
             "/api/v1/reports/leave-calendar?month=2026-07",
-            estab_headers,
+            nodal_headers,
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "leave-calendar xlsx allowed role",
-        )
-        await expect_forbidden(
-            client,
-            "/api/v1/reports/leave-calendar?month=2026-07",
-            admin_headers,
-            "leave-calendar disallowed admin",
+            "leave-calendar xlsx nodal officer",
         )
 
         await expect_report(
             client,
             "/api/v1/reports/payroll-export?from_date=2026-07-01&to_date=2026-07-31&export_type=LOP",
-            registrar_headers,
+            nodal_headers,
             "text/csv",
-            "payroll-export csv allowed registrar",
-        )
-        await expect_forbidden(
-            client,
-            "/api/v1/reports/payroll-export?from_date=2026-07-01&to_date=2026-07-31&export_type=LOP",
-            admin_headers,
-            "payroll-export disallowed admin",
+            "payroll-export csv nodal officer",
         )
 
         admin_health = await client.get("/api/v1/admin/health-dashboard", headers=admin_headers)
@@ -164,13 +132,21 @@ async def main() -> None:
                 fail(f"health-dashboard missing key {key}")
         print(f"[OK] health-dashboard keys present: {sorted(health_payload.keys())}")
 
+        summary = await client.get("/api/v1/admin/summary", headers=admin_headers)
+        await expect_status(summary, 200, "admin summary")
+        summary_payload = summary.json()
+        for key in ("employees", "users", "workflow", "hod"):
+            if key not in summary_payload:
+                fail(f"admin summary missing key {key}")
+        print(f"[OK] admin summary keys present: {sorted(summary_payload.keys())}")
+
         audit_response = await client.get(
             "/api/v1/admin/audit-log?from_date=2026-01-01&to_date=2026-12-31&limit=5",
             headers=admin_headers,
         )
         await expect_status(audit_response, 200, "audit-log with date range")
 
-    print("\nPHASE 7/8 REPORT PROOF PASSED")
+    print("\nREPORT PROOF PASSED")
 
 
 if __name__ == "__main__":

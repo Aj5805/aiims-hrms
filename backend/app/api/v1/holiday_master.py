@@ -14,7 +14,7 @@ from app.core.database import get_db
 router = APIRouter(prefix="/holiday-master", tags=["holiday-master"])
 
 
-_MASTER_VIEWER_ROLES = ("ADMIN", "ESTABLISHMENT_OFFICER", "REGISTRAR", "DIRECTOR", "HOD", "DEAN_ACADEMIC")
+_MASTER_VIEWER_ROLES = ("ADMIN", "DIRECTOR", "HOD", "NODAL_OFFICER", "NODAL_OFFICE")
 
 
 @router.get("")
@@ -36,7 +36,7 @@ async def list_holidays(
 @router.post("", status_code=201)
 async def create_holiday(
     body: dict,
-    _: dict = Depends(require_role("ADMIN", "ESTABLISHMENT_OFFICER")),
+    _: dict = Depends(require_role("ADMIN")),
     db: AsyncSession = Depends(get_db),
 ):
     hid = str(uuid.uuid4())
@@ -62,7 +62,7 @@ async def create_holiday(
 async def update_holiday(
     holiday_id: str,
     body: dict,
-    _: dict = Depends(require_role("ADMIN", "ESTABLISHMENT_OFFICER")),
+    _: dict = Depends(require_role("ADMIN")),
     db: AsyncSession = Depends(get_db),
 ):
     editable = ["holiday_name", "holiday_type", "applicable_to"]
@@ -80,7 +80,7 @@ async def update_holiday(
 @router.delete("/{holiday_id}")
 async def delete_holiday(
     holiday_id: str,
-    _: dict = Depends(require_role("ADMIN", "ESTABLISHMENT_OFFICER")),
+    _: dict = Depends(require_role("ADMIN")),
     db: AsyncSession = Depends(get_db),
 ):
     await db.execute(text("DELETE FROM holiday_master WHERE id = :id"), {"id": holiday_id})

@@ -35,6 +35,7 @@ import asyncio
 import json
 import os
 import sys
+import uuid
 
 import httpx
 from sqlalchemy import create_engine, text as sa_text
@@ -89,16 +90,69 @@ def set_deterministic_admin_password():
     ph = hash_password(FIXED_ADMIN_PASS)
     with engine.connect() as conn:
         # Clean up stale data from previous E2E test runs to ensure repeatability
-        conn.execute(sa_text("DELETE FROM notification_queue WHERE application_id IN (SELECT id FROM leave_applications WHERE employee_id IN (SELECT id FROM employees WHERE emp_code LIKE 'HRMS%'))"))
-        conn.execute(sa_text("DELETE FROM leave_approvals WHERE application_id IN (SELECT id FROM leave_applications WHERE employee_id IN (SELECT id FROM employees WHERE emp_code LIKE 'HRMS%'))"))
-        conn.execute(sa_text("DELETE FROM leave_approvals WHERE approver_id IN (SELECT id FROM users WHERE username IN ('hod_user', 'estab_user', 'reg_user', 'HRMS004') OR employee_id IN (SELECT id FROM employees WHERE emp_code LIKE 'HRMS%'))"))
-        conn.execute(sa_text("DELETE FROM leave_applications WHERE employee_id IN (SELECT id FROM employees WHERE emp_code LIKE 'HRMS%')"))
-        conn.execute(sa_text("DELETE FROM leave_balances WHERE employee_id IN (SELECT id FROM employees WHERE emp_code LIKE 'HRMS%')"))
-        conn.execute(sa_text("DELETE FROM workflow_steps WHERE config_id NOT IN (SELECT id FROM workflow_configs WHERE config_name = 'Regular Staff — Default (All Types, All Durations)' OR config_name LIKE 'Resident — Default (%)')"))
-        conn.execute(sa_text("DELETE FROM workflow_configs WHERE config_name NOT IN ('Regular Staff — Default (All Types, All Durations)') AND config_name NOT LIKE 'Resident — Default (%)'"))
-        conn.execute(sa_text("DELETE FROM token_blacklist WHERE user_id IN (SELECT id FROM users WHERE username IN ('hod_user', 'estab_user', 'reg_user', 'HRMS004') OR employee_id IN (SELECT id FROM employees WHERE emp_code LIKE 'HRMS%'))"))
-        conn.execute(sa_text("DELETE FROM users WHERE username IN ('hod_user', 'estab_user', 'reg_user', 'HRMS004') OR employee_id IN (SELECT id FROM employees WHERE emp_code LIKE 'HRMS%')"))
-        conn.execute(sa_text("DELETE FROM employees WHERE emp_code LIKE 'HRMS%'"))
+        conn.execute(sa_text("DELETE FROM notification_queue WHERE application_id IN (SELECT id FROM leave_applications WHERE employee_id IN (SELECT id FROM employees WHERE emp_code LIKE 'HRMS%' OR emp_code = 'RES001'))"))
+        conn.execute(sa_text("""
+            DELETE FROM notification_queue
+            WHERE recipient_id IN (
+                SELECT id FROM users
+                WHERE username IN ('hod_user', 'nodal_user', 'registrar_nodal', 'HRMS004', 'RES001')
+                   OR employee_id IN (SELECT id FROM employees WHERE emp_code LIKE 'HRMS%')
+            )
+        """))
+        conn.execute(sa_text("DELETE FROM leave_approvals WHERE application_id IN (SELECT id FROM leave_applications WHERE employee_id IN (SELECT id FROM employees WHERE emp_code LIKE 'HRMS%' OR emp_code = 'RES001'))"))
+        conn.execute(sa_text("DELETE FROM leave_approvals WHERE approver_id IN (SELECT id FROM users WHERE username IN ('hod_user', 'nodal_user', 'registrar_nodal', 'HRMS004') OR employee_id IN (SELECT id FROM employees WHERE emp_code LIKE 'HRMS%' OR emp_code = 'RES001'))"))
+        conn.execute(sa_text("DELETE FROM leave_applications WHERE employee_id IN (SELECT id FROM employees WHERE emp_code LIKE 'HRMS%' OR emp_code = 'RES001')"))
+        conn.execute(sa_text("TRUNCATE leave_balance_ledger"))
+        conn.execute(sa_text("DELETE FROM leave_balances WHERE employee_id IN (SELECT id FROM employees WHERE emp_code LIKE 'HRMS%' OR emp_code = 'RES001')"))
+        conn.execute(sa_text("""
+            UPDATE workflow_configs SET is_active = false
+            WHERE config_name NOT IN ('Regular Staff — Default (All Types, All Durations)')
+              AND config_name NOT LIKE 'Resident — Default (%)'
+        """))
+        conn.execute(sa_text("""
+            UPDATE workflow_configs SET is_active = true
+            WHERE config_name = 'Regular Staff — Default (All Types, All Durations)'
+               OR config_name LIKE 'Resident — Default (%)'
+        """))
+        conn.execute(sa_text("""
+            WITH cfg AS (
+                SELECT id FROM workflow_configs
+                WHERE config_name = 'Regular Staff — Default (All Types, All Durations)'
+                LIMIT 1
+            )
+            UPDATE workflow_steps SET approver_role = 'HOD', is_final_authority = false
+            WHERE config_id = (SELECT id FROM cfg) AND step_order = 1
+        """))
+        conn.execute(sa_text("""
+            WITH cfg AS (
+                SELECT id FROM workflow_configs
+                WHERE config_name = 'Regular Staff — Default (All Types, All Durations)'
+                LIMIT 1
+            )
+            UPDATE workflow_steps SET approver_role = 'NODAL_OFFICER', is_final_authority = true
+            WHERE config_id = (SELECT id FROM cfg) AND step_order = 2
+        """))
+        conn.execute(sa_text("""
+            DELETE FROM workflow_steps ws
+            WHERE ws.step_order > 2
+              AND ws.config_id IN (
+                  SELECT id FROM workflow_configs
+                  WHERE config_name = 'Regular Staff — Default (All Types, All Durations)'
+                     OR config_name LIKE 'Resident — Default (%)'
+              )
+              AND NOT EXISTS (SELECT 1 FROM leave_approvals la WHERE la.step_id = ws.id)
+        """))
+        conn.execute(sa_text("DELETE FROM token_blacklist WHERE user_id IN (SELECT id FROM users WHERE username IN ('hod_user', 'nodal_user', 'registrar_nodal', 'HRMS004', 'RES001') OR employee_id IN (SELECT id FROM employees WHERE emp_code LIKE 'HRMS%' OR emp_code = 'RES001'))"))
+        conn.execute(sa_text("""
+            UPDATE workflow_steps SET specific_approver_id = NULL
+            WHERE specific_approver_id IN (
+                SELECT id FROM users
+                WHERE username IN ('hod_user', 'nodal_user', 'registrar_nodal', 'HRMS004', 'RES001')
+                   OR employee_id IN (SELECT id FROM employees WHERE emp_code LIKE 'HRMS%' OR emp_code = 'RES001')
+            )
+        """))
+        conn.execute(sa_text("DELETE FROM users WHERE username IN ('hod_user', 'nodal_user', 'registrar_nodal', 'HRMS004', 'RES001') OR employee_id IN (SELECT id FROM employees WHERE emp_code LIKE 'HRMS%' OR emp_code = 'RES001')"))
+        conn.execute(sa_text("DELETE FROM employees WHERE emp_code LIKE 'HRMS%' OR emp_code = 'RES001'"))
         conn.execute(sa_text("DELETE FROM holiday_master WHERE holiday_date = '2026-07-15'::date"))
         conn.execute(sa_text("UPDATE users SET failed_login_attempts = 0, locked_until = NULL, is_active = true"))
         
@@ -144,9 +198,8 @@ async def main():
         # ── S2a ─────────────────────────────────────────────────────────────
         print("\n=== S2a: Create approver users ===")
         for uname, role, pwd in [
-            ("hod_user",   "HOD",                  "hod_pass123"),
-            ("estab_user", "ESTABLISHMENT_OFFICER", "estab_pass123"),
-            ("reg_user",   "REGISTRAR",             "reg_pass123"),
+            ("hod_user",   "HOD",           "hod_pass123"),
+            ("nodal_user", "NODAL_OFFICER", "nodal_pass123"),
         ]:
             r = await client.post(
                 "/api/v1/users",
@@ -158,6 +211,22 @@ async def main():
                 print(f"  [OK]  {uname} already exists")
             else:
                 ok(f"create {uname}", r, 201)
+
+        # Assign nodal officer to Establishment office (CCS scheme)
+        r = await client.get("/api/v1/nodal-offices", headers=admin_headers)
+        offices = ok("list nodal offices", r, 200)
+        estab_office = next((o for o in offices if o.get("leave_scheme") == "CCS"), None)
+        if estab_office:
+            r = await client.get("/api/v1/users", headers=admin_headers)
+            users = ok("list users for nodal assign", r, 200)
+            nodal_uid = next((u["id"] for u in users if u["username"] == "nodal_user"), None)
+            if nodal_uid:
+                r = await client.put(
+                    f"/api/v1/nodal-offices/{estab_office['id']}",
+                    json={"officer_user_id": nodal_uid},
+                    headers=admin_headers,
+                )
+                ok("assign nodal_user to Establishment office", r, 200)
 
         # ── S2b ─────────────────────────────────────────────────────────────
         print("\n=== S2b: Create departments, designations, employees ===")
@@ -189,6 +258,7 @@ async def main():
                 ok(f"create designation {des['name']}", r, 201)
 
         emp_ids = {}
+        _staff_groups = {"ADMIN": "DEP", "FACULTY": "FAC", "NURSING": "NUR"}
         for emp in [
             {"emp_code": "HRMS001", "name": "Alice Kumar", "gender": "FEMALE",
              "doj": "2020-01-15", "category_code": "ADMIN",
@@ -203,6 +273,7 @@ async def main():
              "doj": "2018-08-20", "category_code": "ADMIN",
              "department_code": "EST", "designation_name": "Section Officer"},
         ]:
+            emp = {**emp, "staff_group": _staff_groups[emp["category_code"]]}
             r = await client.post("/api/v1/employees", json=emp, headers=admin_headers)
             if r.status_code == 201:
                 body = r.json()
@@ -326,6 +397,7 @@ async def main():
             "emp_code": "HRMS004", "name": "David Rao Dupe", "gender": "MALE",
             "doj": "2018-08-20", "category_code": "ADMIN",
             "department_code": "EST", "designation_name": "Section Officer",
+            "staff_group": "DEP",
         }, headers=admin_headers)
         if r.status_code == 409:
             print("  [OK]  GAP B employee dupe -> 409")
@@ -355,26 +427,26 @@ async def main():
             print(f"  [FAIL] GAP B leave_type dupe: expected 409, got HTTP {r.status_code}: {r.text[:200]}")
             sys.exit(1)
 
-        # B6: duplicate workflow_config
+        # B6: duplicate workflow_config (unique name per run — avoids version/FK cleanup)
+        dupe_cfg_name = f"E2E_ASCII_DUPE_{uuid.uuid4().hex[:8]}"
         r = await client.post("/api/v1/workflow-configs", json={
-            "config_name": "ASCII Test Config"
+            "config_name": dupe_cfg_name,
+            "is_active": False,
         }, headers=admin_headers)
         if r.status_code != 201:
             print(f"  [FAIL] GAP B workflow_config create setup failed: {r.status_code}")
             sys.exit(1)
-        test_cfg_id = r.json()["id"]
 
         r = await client.post("/api/v1/workflow-configs", json={
-            "config_name": "ASCII Test Config"
+            "config_name": dupe_cfg_name
         }, headers=admin_headers)
         if r.status_code == 409:
             print("  [OK]  GAP B workflow_config dupe -> 409")
         else:
             print(f"  [FAIL] GAP B workflow_config dupe: expected 409, got HTTP {r.status_code}: {r.text[:200]}")
             sys.exit(1)
-            
-        await client.put(f"/api/v1/workflow-configs/{test_cfg_id}", json={"is_active": False}, headers=admin_headers)
 
+        # Cleanup test config (deactivate API bumps version and can collide on re-runs)
         # B7: duplicate user
         r = await client.post("/api/v1/users", json={
             "username": ADMIN_USER, "password": "dupepassword", "role": "ADMIN"
@@ -456,73 +528,6 @@ async def main():
         print(f"  [OK]  GAP C PASS: STAFF GET returned HTTP 200, rows={len(body)}")
         print(f"         (No AmbiguousParameter/ANY-array error)")
 
-        # 🚀 GAP D: SPECIFIC_USER approval 🚀
-        print("\n=== GAP D: SPECIFIC_USER workflow test ===")
-        
-        # Authenticate approvers to get their headers and IDs
-        r = await client.post("/api/v1/auth/login", json={"username": "estab_user", "password": "estab_pass123"})
-        estab_data = r.json()
-        estab_headers = {"Authorization": f"Bearer {estab_data['access_token']}"}
-
-        r = await client.post("/api/v1/auth/login", json={"username": "reg_user", "password": "reg_pass123"})
-        reg_data = r.json()
-        reg_headers = {"Authorization": f"Bearer {reg_data['access_token']}"}
-        reg_user_id = reg_data["user"]["id"]
-
-        # 1. Create a config with SPECIFIC_USER assigned to REGISTRAR user_id
-        r = await client.get("/api/v1/leave-types", headers=admin_headers)
-        cl_type_id = next(t["id"] for t in r.json() if t["code"] == "CL")
-        r = await client.post("/api/v1/workflow-configs", json={
-            "leave_type_id": cl_type_id,
-            "category_id": None,
-            "config_name": "E2E_TEMP_SPECIFIC_USER",
-            "is_active": True
-        }, headers=admin_headers)
-        temp_config_id = ok("Create TEMP SPECIFIC_USER config", r, 201)["id"]
-
-        # 1.1 Add the step
-        r = await client.post(f"/api/v1/workflow-configs/{temp_config_id}/steps", json={
-            "step_order": 1,
-            "approver_role": "SPECIFIC_USER",
-            "specific_approver_id": reg_user_id,
-            "sla_hours": 24,
-            "is_final_authority": True
-        }, headers=admin_headers)
-        ok("Add step to TEMP config", r, 201)
-
-        # 2. HRMS004 (STAFF) applies for CL, it will resolve to this TEMP config
-        r = await client.post("/api/v1/leave-applications", json={
-            "employee_id": hrms004_id, "leave_type_code": "CL",
-            "from_date": "2026-11-01", "to_date": "2026-11-01",
-            "reason": "Specific test", "address_during_leave": "Home"
-        }, headers=staff_headers)
-        spec_app_id = ok("Submit app for SPECIFIC_USER", r, 201)["id"]
-
-        # 3. Assert ESTAB (hrms002) cannot approve it and doesn't see it
-        r = await client.get("/api/v1/leave-approvals/inbox", headers=estab_headers)
-        estab_inbox = r.json()
-        if any(a["id"] == spec_app_id for a in estab_inbox):
-            print("  [FAIL] ESTAB saw SPECIFIC_USER app in inbox")
-            sys.exit(1)
-        r = await client.post(f"/api/v1/leave-approvals/{spec_app_id}/action", json={"action": "APPROVED", "remarks": "Test estab"}, headers=estab_headers)
-        if r.status_code != 403:
-            print(f"  [FAIL] Expected 403 when ESTAB approves SPECIFIC_USER step, got {r.status_code}: {r.text}")
-            sys.exit(1)
-            
-        # 4. Assert REGISTRAR (hrms003) DOES see it and CAN approve it
-        r = await client.get("/api/v1/leave-approvals/inbox", headers=reg_headers)
-        reg_inbox = r.json()
-        if not any(a["id"] == spec_app_id for a in reg_inbox):
-            print("  [FAIL] REGISTRAR (specific user) did NOT see app in inbox")
-            sys.exit(1)
-        r = await client.post(f"/api/v1/leave-approvals/{spec_app_id}/action", json={"action": "APPROVED", "remarks": "Test reg"}, headers=reg_headers)
-        ok("SPECIFIC_USER approval", r, 200)
-
-        # 5. Cleanup the config
-        r = await client.put(f"/api/v1/workflow-configs/{temp_config_id}", json={"is_active": False}, headers=admin_headers)
-        ok("Deactivate TEMP config", r, 200)
-        print("  [OK] GAP D PASS: SPECIFIC_USER inbox + auth enforced correctly")
-
         # 🚀 S6 🚀──────────────────────────────────────────────────────────────
         print("\n=== S6: HOD login and approve (step 1, non-final -> UNDER_REVIEW) ===")
         r = await client.post("/api/v1/auth/login",
@@ -545,44 +550,23 @@ async def main():
         print("  [OK]  status=UNDER_REVIEW after HOD approval")
 
         # ── S7 ──────────────────────────────────────────────────────────────
-        print("\n=== S7: ESTAB approve (step 2, non-final -> UNDER_REVIEW) ===")
+        print("\n=== S7: NODAL_OFFICER approve (step 2, final -> APPROVED + balance deducted) ===")
         r = await client.post("/api/v1/auth/login",
-                              json={"username": "estab_user", "password": "estab_pass123"})
-        estab_data = ok("ESTAB login", r, 200)
-        estab_headers = {"Authorization": f"Bearer {estab_data['access_token']}"}
+                              json={"username": "nodal_user", "password": "nodal_pass123"})
+        nodal_data = ok("NODAL login", r, 200)
+        nodal_headers = {"Authorization": f"Bearer {nodal_data['access_token']}"}
 
         r = await client.post(f"/api/v1/leave-approvals/{app_id}/action",
-                              json={"action": "APPROVED", "remarks": "Approved by Establishment"},
-                              headers=estab_headers)
-        body = ok("ESTAB approve", r, 200)
+                              json={"action": "APPROVED", "remarks": "Sanctioned by Nodal Officer"},
+                              headers=nodal_headers)
+        body = ok("NODAL approve (final)", r, 200)
         print(f"  result: {body}")
 
         r = await client.get(f"/api/v1/leave-applications/{app_id}", headers=admin_headers)
-        app_body = ok("get application after ESTAB", r, 200)
-        print(f"  status={app_body['status']}, current_step_order={app_body['current_step_order']}")
-        if app_body["status"] != "UNDER_REVIEW":
-            print(f"  [FAIL] Expected UNDER_REVIEW after ESTAB, got {app_body['status']}")
-            sys.exit(1)
-        print("  [OK]  status=UNDER_REVIEW after ESTAB approval")
-
-        # ── S8 ──────────────────────────────────────────────────────────────
-        print("\n=== S8: REGISTRAR approve (step 3, final -> APPROVED + balance deducted) ===")
-        r = await client.post("/api/v1/auth/login",
-                              json={"username": "reg_user", "password": "reg_pass123"})
-        reg_data = ok("REGISTRAR login", r, 200)
-        reg_headers = {"Authorization": f"Bearer {reg_data['access_token']}"}
-
-        r = await client.post(f"/api/v1/leave-approvals/{app_id}/action",
-                              json={"action": "APPROVED", "remarks": "Sanctioned by Registrar"},
-                              headers=reg_headers)
-        body = ok("REGISTRAR approve (final)", r, 200)
-        print(f"  result: {body}")
-
-        r = await client.get(f"/api/v1/leave-applications/{app_id}", headers=admin_headers)
-        app_body = ok("get application after REGISTRAR", r, 200)
+        app_body = ok("get application after NODAL", r, 200)
         print(f"  status={app_body['status']}")
         if app_body["status"] != "APPROVED":
-            print(f"  [FAIL] Expected APPROVED after REGISTRAR, got {app_body['status']}")
+            print(f"  [FAIL] Expected APPROVED after NODAL, got {app_body['status']}")
             sys.exit(1)
         print("  [OK]  status=APPROVED")
 
@@ -604,6 +588,67 @@ async def main():
             print(f"  [FAIL] Expected availed=2, got {availed}")
             sys.exit(1)
         print(f"  [OK]  closing_balance={closing}, availed={availed} — balance deduction confirmed")
+
+        # 🚀 GAP D: SPECIFIC_USER approval (after balance check — avoids extra CL debit) 🚀
+        print("\n=== GAP D: SPECIFIC_USER workflow test ===")
+
+        r = await client.post("/api/v1/auth/login", json={"username": "hod_user", "password": "hod_pass123"})
+        hod_gap_data = r.json()
+        hod_gap_headers = {"Authorization": f"Bearer {hod_gap_data['access_token']}"}
+
+        r = await client.post("/api/v1/auth/login", json={"username": "nodal_user", "password": "nodal_pass123"})
+        nodal_data = r.json()
+        nodal_headers = {"Authorization": f"Bearer {nodal_data['access_token']}"}
+        nodal_user_id = nodal_data["user"]["id"]
+
+        r = await client.get("/api/v1/leave-types", headers=admin_headers)
+        cl_type_id = next(t["id"] for t in r.json() if t["code"] == "CL")
+        temp_cfg_name = f"E2E_TEMP_SPECIFIC_USER_{uuid.uuid4().hex[:8]}"
+        r = await client.post("/api/v1/workflow-configs", json={
+            "leave_type_id": cl_type_id,
+            "category_id": None,
+            "config_name": temp_cfg_name,
+            "is_active": True
+        }, headers=admin_headers)
+        temp_config_id = ok("Create TEMP SPECIFIC_USER config", r, 201)["id"]
+
+        r = await client.post(f"/api/v1/workflow-configs/{temp_config_id}/steps", json={
+            "step_order": 1,
+            "approver_role": "SPECIFIC_USER",
+            "specific_approver_id": nodal_user_id,
+            "sla_hours": 24,
+            "is_final_authority": True
+        }, headers=admin_headers)
+        ok("Add step to TEMP config", r, 201)
+
+        r = await client.post("/api/v1/leave-applications", json={
+            "employee_id": hrms004_id, "leave_type_code": "CL",
+            "from_date": "2026-11-01", "to_date": "2026-11-01",
+            "reason": "Specific test", "address_during_leave": "Home"
+        }, headers=staff_headers)
+        spec_app_id = ok("Submit app for SPECIFIC_USER", r, 201)["id"]
+
+        r = await client.get("/api/v1/leave-approvals/inbox", headers=hod_gap_headers)
+        hod_inbox = r.json()
+        if any(a["id"] == spec_app_id for a in hod_inbox):
+            print("  [FAIL] HOD saw SPECIFIC_USER app in inbox")
+            sys.exit(1)
+        r = await client.post(f"/api/v1/leave-approvals/{spec_app_id}/action", json={"action": "APPROVED", "remarks": "Test hod"}, headers=hod_gap_headers)
+        if r.status_code != 403:
+            print(f"  [FAIL] Expected 403 when HOD approves SPECIFIC_USER step, got {r.status_code}: {r.text}")
+            sys.exit(1)
+
+        r = await client.get("/api/v1/leave-approvals/inbox", headers=nodal_headers)
+        nodal_inbox = r.json()
+        if not any(a["id"] == spec_app_id for a in nodal_inbox):
+            print("  [FAIL] NODAL (specific user) did NOT see app in inbox")
+            sys.exit(1)
+        r = await client.post(f"/api/v1/leave-approvals/{spec_app_id}/action", json={"action": "APPROVED", "remarks": "Test nodal"}, headers=nodal_headers)
+        ok("SPECIFIC_USER approval", r, 200)
+
+        r = await client.put(f"/api/v1/workflow-configs/{temp_config_id}", json={"is_active": False}, headers=admin_headers)
+        ok("Deactivate TEMP config", r, 200)
+        print("  [OK] GAP D PASS: SPECIFIC_USER inbox + auth enforced correctly")
 
         # ── S10 ─────────────────────────────────────────────────────────────
         print("\n=== S10: GET leave-register report ===")
@@ -663,19 +708,36 @@ async def main():
 
         # ── SCENARIO 1: RESIDENT CHAIN ──────────────────────────────────────
         print("\n=== SCENARIO 1: RESIDENT chain routing ===")
-        # 1. Create DEAN_ACADEMIC user
-        r = await client.post("/api/v1/users", json={"username": "dean_acad", "role": "DEAN_ACADEMIC", "password": "dean_pass123", "must_change_password": False}, headers=admin_headers)
+        r = await client.post("/api/v1/users", json={
+            "username": "registrar_nodal", "role": "NODAL_OFFICER",
+            "password": "registrar_pass123", "must_change_password": False,
+        }, headers=admin_headers)
         if r.status_code not in (201, 409):
-            print(f"  [FAIL] create dean_acad failed: {r.status_code}")
+            print(f"  [FAIL] create registrar_nodal failed: {r.status_code}")
             sys.exit(1)
-        r = await client.post("/api/v1/auth/login", json={"username": "dean_acad", "password": "dean_pass123"})
-        dean_headers = {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+        r = await client.get("/api/v1/nodal-offices", headers=admin_headers)
+        registrar_office = next((o for o in r.json() if o.get("leave_scheme") == "RESIDENCY"), None)
+        if registrar_office:
+            r = await client.get("/api/v1/users", headers=admin_headers)
+            registrar_uid = next((u["id"] for u in r.json() if u["username"] == "registrar_nodal"), None)
+            if registrar_uid:
+                r = await client.put(
+                    f"/api/v1/nodal-offices/{registrar_office['id']}",
+                    json={"officer_user_id": registrar_uid},
+                    headers=admin_headers,
+                )
+                ok("assign registrar_nodal to Registrar office", r, 200)
+
+        r = await client.post("/api/v1/auth/login", json={"username": "registrar_nodal", "password": "registrar_pass123"})
+        registrar_headers = {"Authorization": f"Bearer {r.json()['access_token']}"}
 
         # 2. Create Resident employee
         r = await client.post("/api/v1/employees", json={
             "emp_code": "RES001", "name": "Resident Doc", "gender": "FEMALE",
             "doj": "2025-01-01", "category_code": "JR_ACAD",
-            "department_code": "ANAT", "designation_name": "Section Officer", # Reuse designation
+            "department_code": "ANAT", "designation_name": "Junior Resident (Academic)",
+            "staff_group": "PGJR",
         }, headers=admin_headers)
         if r.status_code not in (201, 409):
             print(f"  [FAIL] create resident failed: {r.status_code}")
@@ -687,12 +749,12 @@ async def main():
         if res_items: res_id = res_items[0]["id"]
         
         # 3. Add balance
-        await client.post("/api/v1/leave-balances/opening", json=[{"emp_code": "RES001", "leave_type_code": "CL", "opening_balance": 10}], headers=admin_headers)
+        await client.post("/api/v1/leave-balances/opening", json=[{"emp_code": "RES001", "leave_type_code": "ANNUAL_RES", "opening_balance": 10}], headers=admin_headers)
         
         # 4. Submit leave
         r = await client.post("/api/v1/leave-applications", json={
-            "employee_id": res_id, "leave_type_code": "CL",
-            "from_date": "2026-08-01", "to_date": "2026-08-02",
+            "employee_id": res_id, "leave_type_code": "ANNUAL_RES",
+            "from_date": "2026-08-03", "to_date": "2026-08-04",
             "reason": "Resident leave", "address_during_leave": "Hostel"
         }, headers=admin_headers)
         res_app = ok("Resident leave submit", r, 201)
@@ -702,15 +764,15 @@ async def main():
         r = await client.post(f"/api/v1/leave-approvals/{res_app_id}/action", json={"action": "APPROVED", "remarks": "OK HOD"}, headers=hod_headers)
         ok("HOD approve resident", r, 200)
 
-        # 6. DEAN_ACADEMIC approve (FINAL)
-        r = await client.post(f"/api/v1/leave-approvals/{res_app_id}/action", json={"action": "APPROVED", "remarks": "OK DEAN"}, headers=dean_headers)
-        ok("DEAN approve resident", r, 200)
+        # 6. Registrar nodal officer approve (FINAL)
+        r = await client.post(f"/api/v1/leave-approvals/{res_app_id}/action", json={"action": "APPROVED", "remarks": "OK Registrar Nodal"}, headers=registrar_headers)
+        ok("Registrar nodal approve resident", r, 200)
         
         r = await client.get(f"/api/v1/leave-applications/{res_app_id}", headers=admin_headers)
         if r.json()["status"] != "APPROVED":
-            print("  [FAIL] Resident leave not APPROVED after Dean.")
+            print("  [FAIL] Resident leave not APPROVED after Registrar nodal officer.")
             sys.exit(1)
-        print("  [OK] Resident routed HOD -> DEAN_ACADEMIC successfully.")
+        print("  [OK] Resident routed HOD -> NODAL_OFFICER (Registrar) successfully.")
 
         # ── SCENARIO 2: REJECT ──────────────────────────────────────────────
         print("\n=== SCENARIO 2: REJECT with/without remarks ===")
@@ -779,10 +841,8 @@ async def main():
             sys.exit(1)
         print("  [OK] MODIFIED correctly advanced current_step_order and set UNDER_REVIEW")
         
-        r = await client.post(f"/api/v1/leave-approvals/{mod_app_id}/action", json={"action": "APPROVED", "remarks": "OK"}, headers=estab_headers)
-        ok("ESTAB approve modified", r, 200)
-        r = await client.post(f"/api/v1/leave-approvals/{mod_app_id}/action", json={"action": "APPROVED", "remarks": "OK"}, headers=reg_headers)
-        ok("REGISTRAR approve modified", r, 200)
+        r = await client.post(f"/api/v1/leave-approvals/{mod_app_id}/action", json={"action": "APPROVED", "remarks": "OK"}, headers=nodal_headers)
+        ok("NODAL approve modified", r, 200)
 
         # Check balance
         r_bal_after3 = await client.get(f"/api/v1/leave-balances/{hrms004_id}", headers=admin_headers)
@@ -812,11 +872,15 @@ async def main():
 
         r = await client.get(f"/api/v1/leave-balances/{hrms004_id}", headers=admin_headers)
         cl_bal = next((b for b in r.json()["balances"] if b["leave_type_code"] == "CL"), None)
-        # Restored 2 days, closing should be 6.0
-        if float(cl_bal["closing_balance"]) != 6.0:
-            print(f"  [FAIL] Expected closing 6.0 after RECALL, got {cl_bal['closing_balance']}")
+        expected_closing = c_a3 + 2.0
+        expected_availed = a_a3 - 2.0
+        if float(cl_bal["closing_balance"]) != expected_closing:
+            print(f"  [FAIL] Expected closing {expected_closing} after RECALL, got {cl_bal['closing_balance']}")
             sys.exit(1)
-        print("  [OK] RECALL restored balance.")
+        if float(cl_bal["availed"]) != expected_availed:
+            print(f"  [FAIL] Expected availed {expected_availed} after RECALL, got {cl_bal['availed']}")
+            sys.exit(1)
+        print(f"  [OK] RECALL restored balance (closing={expected_closing}, availed={expected_availed}).")
 
         # 🚀 GAP E: Refresh Token Invalidation 🚀
         print("\n=== GAP E: Refresh token invalidation ===")
@@ -871,16 +935,17 @@ async def main():
 
         # ── SCENARIO 5: CL BUSINESS RULES ───────────────────────────────────
         print("\n=== SCENARIO 5: CL BUSINESS RULES ===")
-        # 5a. Adjacent to holiday 2026-07-15
+        # 5a. CL adjacent to holiday — allowed under DoPT (weekends/holidays may attach)
         r = await client.post("/api/v1/leave-applications", json={
             "employee_id": hrms004_id, "leave_type_code": "CL",
-            "from_date": "2026-07-16", "to_date": "2026-07-16", # Suffixed to 07-15
+            "from_date": "2026-07-16", "to_date": "2026-07-16",
             "reason": "Adj", "address_during_leave": "Home"
         }, headers=admin_headers)
-        if r.status_code != 400:
-            print(f"  [FAIL] CL adjacent to holiday should 400, got {r.status_code}")
+        body = ok("CL adjacent to holiday", r, 201)
+        if float(body.get("applied_days", 0)) <= 0:
+            print(f"  [FAIL] Expected debited CL days > 0, got {body.get('applied_days')}")
             sys.exit(1)
-        print("  [OK] CL adjacent holiday rejected.")
+        print("  [OK] CL adjacent to holiday allowed (DoPT).")
 
         # 5b. Exceeds max stretch
         r = await client.post("/api/v1/leave-applications", json={
@@ -941,14 +1006,22 @@ async def main():
         r = await client.post("/api/v1/auth/login", json={"username": "HRMS004", "password": "NewStrongPassword123!"})
         new_staff_data = ok("Staff login after reset", r, 200)
         new_staff_headers = {"Authorization": f"Bearer {new_staff_data['access_token']}"}
-        mcp_before = new_staff_data["user"]["must_change_password"]
-
-        # Call protected route -> 403
-        r = await client.get("/api/v1/leave-applications", headers=new_staff_headers)
-        if r.status_code != 403 or "PASSWORD_CHANGE_REQUIRED" not in r.text:
-            print(f"  [FAIL] Expected 403 PASSWORD_CHANGE_REQUIRED, got {r.status_code}")
+        if not new_staff_data["user"]["must_change_password"]:
+            print("  [FAIL] Admin reset should set must_change_password=true")
             sys.exit(1)
-        print("  [OK] Protected route blocked with 403 PASSWORD_CHANGE_REQUIRED")
+
+        from app.core.config import settings
+
+        # Call protected route — blocked only when FORCE_PASSWORD_CHANGE_ON_LOGIN is enabled
+        r = await client.get("/api/v1/leave-applications", headers=new_staff_headers)
+        if settings.FORCE_PASSWORD_CHANGE_ON_LOGIN:
+            if r.status_code != 403 or "PASSWORD_CHANGE_REQUIRED" not in r.text:
+                print(f"  [FAIL] Expected 403 PASSWORD_CHANGE_REQUIRED, got {r.status_code}")
+                sys.exit(1)
+            print("  [OK] Protected route blocked with 403 PASSWORD_CHANGE_REQUIRED")
+        else:
+            ok("Protected route while enforcement disabled", r, 200)
+            print("  [OK] must_change_password flag set (enforcement disabled in config)")
 
         # Wrong current password -> 400
         r = await client.post("/api/v1/auth/change-my-password", json={
@@ -969,12 +1042,14 @@ async def main():
         r = await client.post("/api/v1/auth/login", json={"username": "HRMS004", "password": "AnotherNewPassword123!"})
         final_staff_data = ok("Staff login after self change", r, 200)
         final_staff_headers = {"Authorization": f"Bearer {final_staff_data['access_token']}"}
-        mcp_after = final_staff_data["user"]["must_change_password"]
+        if final_staff_data["user"]["must_change_password"]:
+            print("  [FAIL] must_change_password should be false after self change")
+            sys.exit(1)
 
         # Re-call protected route -> 200
         r = await client.get("/api/v1/leave-applications", headers=final_staff_headers)
         ok("Protected route after self change", r, 200)
-        print(f"  [OK] must_change_password before={mcp_before}, after={mcp_after}")
+        print("  [OK] must_change_password cleared after self-service change")
 
         # ── DONE ────────────────────────────────────────────────────────────
         print("\n" + "=" * 65)
@@ -993,8 +1068,7 @@ async def main():
         print("  S5  submit leave application applied_days==2           PASS")
         print("  GC  STAFF GET /leave-applications -> 200               PASS")
         print("  S6  HOD approve -> UNDER_REVIEW                        PASS")
-        print("  S7  ESTAB approve -> UNDER_REVIEW                      PASS")
-        print("  S8  REGISTRAR approve (final) -> APPROVED              PASS")
+        print("  S7  NODAL approve (final) -> APPROVED                      PASS")
         print("  S9  closing_balance==6, availed==2                     PASS")
         print("  S10 leave-register report                              PASS")
         print("  S11 payroll-export CSV                                 PASS")

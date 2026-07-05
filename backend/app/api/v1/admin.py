@@ -10,6 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import require_role
+from app.auth.roles import is_assignable_role, normalize_role
 from app.core.config import settings
 from app.core.database import engine, get_db
 
@@ -50,6 +51,145 @@ async def audit_log(
     query += " ORDER BY created_at DESC LIMIT :limit OFFSET :skip"
     result = await db.execute(text(query), params)
     return [dict(row._mapping) for row in result.fetchall()]
+
+
+POLICY_CATEGORY_CODES = ("FACULTY", "NURSING", "ADMIN", "JR_ACAD", "SR_ACAD", "JR_NA", "SR_NA")
+
+
+async def _scalar_count(db: AsyncSession, query: str, params: dict | None = None) -> int:
+    result = await db.execute(text(query), params or {})
+    return int(result.scalar() or 0)
+
+
+@router.get("/summary")
+async def admin_summary(
+    _: dict = Depends(require_role("ADMIN")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Institution-wide counts for the admin dashboard — one round-trip."""
+    employees_total = await _scalar_count(db, "SELECT COUNT(*) FROM employees")
+    employees_active = await _scalar_count(db, "SELECT COUNT(*) FROM employees WHERE is_active = true")
+    pending_leaves = await _scalar_count(
+        db,
+        "SELECT COUNT(*) FROM leave_applications WHERE status IN ('SUBMITTED', 'UNDER_REVIEW')",
+    )
+    departments_without_hod = await _scalar_count(
+        db,
+        """
+        SELECT COUNT(*) FROM departments d
+        WHERE d.is_active = true
+          AND NOT EXISTS (
+            SELECT 1 FROM dept_hod_assignments dha
+            WHERE dha.department_id = d.id AND dha.is_active = true
+          )
+        """,
+    )
+    policy_gaps = await _scalar_count(
+        db,
+        """
+        SELECT COUNT(*) FROM (
+            SELECT c.code AS category_code, lt.code AS leave_type_code
+            FROM employee_categories c
+            CROSS JOIN leave_types lt
+            WHERE (
+                (c.leave_scheme = 'CCS' AND lt.scheme IN ('CCS', 'BOTH'))
+                OR (c.leave_scheme = 'RESIDENCY' AND lt.scheme IN ('RESIDENCY', 'BOTH'))
+            )
+            AND COALESCE(lt.is_active, true) = true
+            AND NOT EXISTS (
+                SELECT 1 FROM leave_entitlement_rules ler
+                WHERE ler.category_id = c.id AND ler.leave_type_id = lt.id
+            )
+        ) missing
+        """,
+    )
+
+    role_rows = await db.execute(
+        text("""
+            SELECT role, COUNT(*) AS cnt
+            FROM users
+            WHERE COALESCE(is_active, true) = true
+            GROUP BY role
+            ORDER BY role
+        """)
+    )
+    users_by_role = {row.role: int(row.cnt) for row in role_rows.fetchall()}
+
+    users_unmapped = await _scalar_count(
+        db,
+        "SELECT COUNT(*) FROM users WHERE employee_id IS NULL AND COALESCE(is_active, true) = true",
+    )
+    users_reset_pending = await _scalar_count(
+        db,
+        "SELECT COUNT(*) FROM users WHERE must_change_password = true AND COALESCE(is_active, true) = true",
+    )
+    users_inactive = await _scalar_count(
+        db,
+        "SELECT COUNT(*) FROM users WHERE COALESCE(is_active, true) = false",
+    )
+    users_active = sum(users_by_role.values())
+
+    async def _master_counts(table: str) -> dict[str, int]:
+        active = await _scalar_count(
+            db,
+            f"SELECT COUNT(*) FROM {table} WHERE COALESCE(is_active, true) = true",
+        )
+        inactive = await _scalar_count(
+            db,
+            f"SELECT COUNT(*) FROM {table} WHERE COALESCE(is_active, true) = false",
+        )
+        return {"active": active, "inactive": inactive, "total": active + inactive}
+
+    departments = await _master_counts("departments")
+    designations = await _master_counts("designations")
+    leave_types = await _master_counts("leave_types")
+    nodal_offices = await _master_counts("nodal_offices")
+
+    nodal_scheme_rows = await db.execute(
+        text("""
+            SELECT leave_scheme, COUNT(*) AS cnt
+            FROM nodal_offices
+            WHERE COALESCE(is_active, true) = true
+            GROUP BY leave_scheme
+        """)
+    )
+    nodal_by_scheme = {row.leave_scheme: int(row.cnt) for row in nodal_scheme_rows.fetchall()}
+
+    maintenance_res = await db.execute(text("SELECT value FROM system_settings WHERE key = 'maintenance_mode'"))
+    maintenance_row = maintenance_res.fetchone()
+    maintenance_mode = bool(maintenance_row and maintenance_row.value == "true")
+
+    attention_count = (
+        users_unmapped
+        + users_reset_pending
+        + policy_gaps
+        + pending_leaves
+        + departments_without_hod
+        + (1 if maintenance_mode else 0)
+    )
+
+    return {
+        "employees": {"total": employees_total, "active": employees_active},
+        "users": {
+            "active": users_active,
+            "inactive": users_inactive,
+            "unmapped": users_unmapped,
+            "reset_pending": users_reset_pending,
+            "by_role": users_by_role,
+        },
+        "workflow": {"pending_applications": pending_leaves},
+        "hod": {"departments_without_hod": departments_without_hod},
+        "policy": {"missing_rules": policy_gaps, "categories": list(POLICY_CATEGORY_CODES)},
+        "masters": {
+            "departments": departments,
+            "designations": designations,
+            "leave_types": leave_types,
+            "nodal_offices": nodal_offices,
+            "nodal_by_scheme": nodal_by_scheme,
+        },
+        "maintenance_mode": maintenance_mode,
+        "attention_items": attention_count,
+    }
 
 
 @router.get("/health-dashboard")
@@ -244,12 +384,13 @@ async def bulk_update_roles(
 ):
     updates = 0
     for assignment in req.assignments:
-        if assignment.role not in ["ADMIN", "DIRECTOR", "ESTABLISHMENT_OFFICER", "DEAN_ACADEMIC", "REGISTRAR", "HOD", "STAFF"]:
+        if not is_assignable_role(assignment.role):
             raise HTTPException(status_code=400, detail=f"Invalid role: {assignment.role}")
-            
+
+        normalized_role = normalize_role(assignment.role)
         res = await db.execute(
             text("UPDATE users SET role = :role WHERE id = :id"),
-            {"role": assignment.role, "id": assignment.user_id}
+            {"role": normalized_role, "id": assignment.user_id}
         )
         updates += res.rowcount
         
@@ -264,7 +405,7 @@ async def bulk_update_roles(
                     "user_id": assignment.user_id,
                     "actor_id": admin_user["user_id"],
                     "impersonated_by": admin_user.get("impersonated_by"),
-                    "changes": f'{{"role": "{assignment.role}"}}'
+                    "changes": f'{{"role": "{normalized_role}"}}'
                 }
             )
 

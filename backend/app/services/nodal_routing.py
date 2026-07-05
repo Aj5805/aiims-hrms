@@ -1,4 +1,4 @@
-"""Nodal office routing — CCS staff → Establishment, residents → Registrar."""
+"""Nodal office routing — leave scheme (staff category) based."""
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,11 +32,16 @@ async def get_nodal_office_for_scheme(db: AsyncSession, leave_scheme: str):
     return result.fetchone()
 
 
-async def get_nodal_officer_for_employee(db: AsyncSession, employee_id: str) -> str | None:
+async def get_nodal_office_for_employee(db: AsyncSession, employee_id: str):
+    """Resolve nodal office from employee leave scheme (CCS → Establishment, RESIDENCY → Registrar)."""
     scheme = await get_employee_leave_scheme(db, employee_id)
     if not scheme:
         return None
-    office = await get_nodal_office_for_scheme(db, scheme)
+    return await get_nodal_office_for_scheme(db, scheme)
+
+
+async def get_nodal_officer_for_employee(db: AsyncSession, employee_id: str) -> str | None:
+    office = await get_nodal_office_for_employee(db, employee_id)
     if office and office.officer_user_id:
         return str(office.officer_user_id)
     return None
@@ -92,16 +97,14 @@ async def employee_in_nodal_scope(db: AsyncSession, nodal_user_id: str, role: st
 
 
 def nodal_scope_employee_ids_subquery() -> str:
-    """SQL fragment: employees whose leave_scheme matches the nodal office for :nodal_uid / :nodal_role."""
+    """SQL fragment: employees visible to nodal user (:nodal_uid / :nodal_role)."""
     return """
         SELECT e.id FROM employees e
         JOIN employee_categories c ON c.id = e.category_id
-        WHERE c.leave_scheme IN (
-            SELECT no.leave_scheme FROM nodal_offices no
-            WHERE no.is_active = true AND (
-                no.officer_user_id = :nodal_uid
-                OR no.id IN (SELECT nodal_office_id FROM users WHERE id = :nodal_uid AND nodal_office_id IS NOT NULL)
-                OR no.officer_user_id IN (SELECT parent_nodal_user_id FROM users WHERE id = :nodal_uid)
-            )
+        JOIN nodal_offices no ON no.is_active = true AND (
+            no.officer_user_id = :nodal_uid
+            OR no.id IN (SELECT nodal_office_id FROM users WHERE id = :nodal_uid AND nodal_office_id IS NOT NULL)
+            OR no.officer_user_id IN (SELECT parent_nodal_user_id FROM users WHERE id = :nodal_uid)
         )
+        WHERE c.leave_scheme = no.leave_scheme
     """

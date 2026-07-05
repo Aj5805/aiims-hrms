@@ -4,6 +4,7 @@ Credit frequency (leave_entitlement_rules.credit_frequency):
   ANNUAL       — full days_per_year once per calendar year (H1 run)
   HALF_YEARLY  — half of days_per_year at start of each calendar half (Jan 1 + Jul 1)
   MONTHLY      — prorata_rate each month (handled via prorata_rate; annual job skips)
+  NONE         — no scheduled credit (tenure pools; balance set at onboarding)
 """
 
 from datetime import date

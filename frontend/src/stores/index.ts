@@ -7,11 +7,13 @@ interface AuthState {
   user: { id: string; role: string; name: string; username?: string; must_change_password?: boolean; employee_id?: string | null; emp_code?: string | null } | null;
   adminToken: string | null;
   adminUser: AuthState['user'];
+  workMode: 'staff' | 'desk';
   passwordChangeDismissed: boolean;
   setAuth: (token: string, user: AuthState['user']) => void;
   clearAuth: () => void;
   startImpersonation: (token: string, user: AuthState['user']) => void;
   stopImpersonation: () => void;
+  setWorkMode: (mode: 'staff' | 'desk') => void;
   dismissPasswordChange: () => void;
 }
 
@@ -22,14 +24,15 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       adminToken: null,
       adminUser: null,
+      workMode: 'desk',
       passwordChangeDismissed: false,
       setAuth: (token, user) => {
         localStorage.setItem('access_token', token);
-        set({ token, user, adminToken: null, adminUser: null, passwordChangeDismissed: false });
+        set({ token, user, adminToken: null, adminUser: null, workMode: 'desk', passwordChangeDismissed: false });
       },
       clearAuth: () => {
         localStorage.removeItem('access_token');
-        set({ token: null, user: null, adminToken: null, adminUser: null, passwordChangeDismissed: false });
+        set({ token: null, user: null, adminToken: null, adminUser: null, workMode: 'desk', passwordChangeDismissed: false });
       },
       startImpersonation: (targetToken, targetUser) => {
         const currentToken = get().token;
@@ -49,6 +52,7 @@ export const useAuthStore = create<AuthState>()(
           },
           adminToken: currentToken,
           adminUser: currentUser,
+          workMode: 'desk' as const,
           passwordChangeDismissed: true,
         };
         set(nextState);
@@ -63,6 +67,7 @@ export const useAuthStore = create<AuthState>()(
           user: adminUser,
           adminToken: null,
           adminUser: null,
+          workMode: 'desk' as const,
           passwordChangeDismissed: false,
         };
         set(nextState);
@@ -76,6 +81,7 @@ export const useAuthStore = create<AuthState>()(
           user: { ...user, must_change_password: false },
         });
       },
+      setWorkMode: (mode) => set({ workMode: mode }),
     }),
     {
       name: 'auth-storage',

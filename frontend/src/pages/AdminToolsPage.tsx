@@ -3,7 +3,7 @@ import { useParams, Navigate, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores';
 import { usersApi, authApi, adminApi, broadcastsApi } from '../api/endpoints';
 import { PageHeader } from '../components/PageHeader';
-import { ASSIGNABLE_ROLES } from '../constants/roles';
+import { ASSIGNABLE_ROLES, roleLabel } from '../constants/roles';
 
 function formatDateTime(value?: string | null): string {
   if (!value) return '-';
@@ -588,8 +588,8 @@ export default function AdminToolsPage() {
                                   isChanged ? 'border-indigo-300 bg-indigo-50 text-indigo-900 font-medium' : 'border-slate-200 bg-white'
                                 }`}
                               >
-                                {ASSIGNABLE_ROLES.map(r => (
-                                  <option key={r} value={r}>{r}</option>
+                                {ASSIGNABLE_ROLES.map((r) => (
+                                  <option key={r} value={r}>{roleLabel(r)} ({r})</option>
                                 ))}
                               </select>
                               {isChanged && <span className="ml-2 text-[10px] text-indigo-600 font-bold uppercase">Modified</span>}

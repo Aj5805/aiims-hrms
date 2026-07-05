@@ -29,7 +29,7 @@ class User(Base):
     role = Column(
         String(30),
         nullable=False,
-        comment="STAFF | HOD | NODAL_OFFICER | NODAL_OFFICE | DEAN_ACADEMIC | REGISTRAR | ESTABLISHMENT | DIRECTOR | ADMIN",
+        comment="STAFF | HOD | NODAL_OFFICER | NODAL_OFFICE | DIRECTOR | ADMIN",
     )
     is_active = Column(Boolean, default=True)
     must_change_password = Column(Boolean, default=False)

@@ -10,6 +10,7 @@ from app.utils.employee_validation import (
     normalize_name,
     normalize_address_field,
     validate_calendar_date,
+    validate_bank_account_optional,
     validate_email_optional,
     validate_grade_group,
     validate_mobile_optional,
@@ -108,8 +109,21 @@ class EmployeeBase(BaseModel):
     pay_level: Optional[str] = Field(None, max_length=20)
 
 
+class OnboardingLeaveCreditItem(BaseModel):
+    leave_type_code: str = Field(..., min_length=1, max_length=20)
+    credited: float = Field(..., ge=0)
+
+
+class OnboardingLeaveCreditPreview(BaseModel):
+    leave_type_code: str
+    leave_type_name: str
+    credit_frequency: Optional[str] = None
+    suggested_credit: float
+
+
 class EmployeeCreate(EmployeeBase):
     staff_group: str = Field(..., max_length=50)
+    onboarding_leave_credits: Optional[list[OnboardingLeaveCreditItem]] = None
 
     @field_validator("name")
     @classmethod
@@ -140,6 +154,11 @@ class EmployeeCreate(EmployeeBase):
     @classmethod
     def _validate_ifsc(cls, v):
         return validate_ifsc_optional(v)
+
+    @field_validator("bank_account_no")
+    @classmethod
+    def _validate_bank_account_create(cls, v):
+        return validate_bank_account_optional(v)
 
     @field_validator("grade")
     @classmethod
@@ -255,6 +274,7 @@ class EmployeeUpdate(BaseModel):
     grade: Optional[str] = Field(None, max_length=20)
     pay_level: Optional[str] = Field(None, max_length=20)
     reporting_officer_code: Optional[str] = None
+    category_code: Optional[str] = Field(None, max_length=20)
     is_active: Optional[bool] = None
     model_config = ConfigDict(extra="forbid")
 
@@ -287,6 +307,11 @@ class EmployeeUpdate(BaseModel):
     @classmethod
     def _validate_ifsc(cls, v):
         return validate_ifsc_optional(v)
+
+    @field_validator("bank_account_no")
+    @classmethod
+    def _validate_bank_account_update(cls, v):
+        return validate_bank_account_optional(v)
 
     @field_validator("grade")
     @classmethod
@@ -328,9 +353,40 @@ class EmployeeUpdate(BaseModel):
 
 
 class SelfEmployeeUpdate(BaseModel):
+    """Non-critical fields staff may update on their own profile."""
     email: Optional[str] = None
     personal_email: Optional[str] = None
+    mobile: Optional[str] = Field(None, max_length=15)
+    alt_mobile: Optional[str] = Field(None, max_length=15)
+    father_name: Optional[str] = Field(None, max_length=200)
+    religion: Optional[str] = Field(None, max_length=50)
+    last_qualification: Optional[str] = Field(None, max_length=200)
+    marital_status: Optional[str] = Field(None, max_length=20)
+    blood_group: Optional[str] = Field(None, max_length=10)
+    initial: Optional[str] = Field(None, max_length=20)
+    address: Optional[str] = None
+    permanent_address: Optional[str] = None
     model_config = ConfigDict(extra="forbid")
+
+    @field_validator("email", "personal_email")
+    @classmethod
+    def _validate_email(cls, v):
+        return validate_email_optional(v)
+
+    @field_validator("mobile")
+    @classmethod
+    def _validate_mobile(cls, v):
+        return validate_mobile_optional(v, "Mobile")
+
+    @field_validator("alt_mobile")
+    @classmethod
+    def _validate_alt_mobile(cls, v):
+        return validate_mobile_optional(v, "Alt mobile")
+
+    @field_validator("address", "permanent_address")
+    @classmethod
+    def _validate_address(cls, v):
+        return normalize_address_field(v)
 
 
 class EmployeeResponse(BaseModel):

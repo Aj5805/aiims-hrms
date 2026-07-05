@@ -19,10 +19,15 @@ export const employeesApi = {
     api.get('/employees', { params }),
   get: (id: string) => api.get(`/employees/${id}`),
   staffGroups: () => api.get('/employees/staff-groups'),
-  suggestStaffGroup: (params: { designation_name: string; department_code: string; category_code?: string }) =>
-    api.get('/employees/suggest-staff-group', { params }),
+  suggestStaffGroup: (params: {
+    designation_name: string;
+    department_code?: string;
+    category_code?: string;
+  }) => api.get('/employees/suggest-staff-group', { params }),
   nextStaffNumber: (staff_group: string) =>
     api.get('/employees/next-staff-number', { params: { staff_group } }),
+  onboardingLeaveCredits: (params: { category_code: string; doj: string; gender?: string }) =>
+    api.get('/employees/onboarding-leave-credits', { params }),
   eligibleLeaveTypes: (id: string) => api.get(`/employees/${id}/eligible-leave-types`),
   bootstrapLeaveBalances: (id: string) => api.post(`/employees/${id}/bootstrap-leave-balances`),
   create: (data: Record<string, unknown>) => api.post('/employees', data),
@@ -68,12 +73,18 @@ export const notificationsApi = {
 export const reportsApi = {
   leaveRegister: (params: Record<string, string>) =>
     api.get('/reports/leave-register', { params, responseType: 'blob' }),
+  leaveRegisterPreview: (params: Record<string, string>) =>
+    api.get('/reports/leave-register', { params: { ...params, format: 'json' } }),
   leaveAbstract: (params: Record<string, string>) =>
     api.get('/reports/leave-abstract', { params, responseType: 'blob' }),
+  leaveAbstractPreview: (params: Record<string, string>) =>
+    api.get('/reports/leave-abstract', { params: { ...params, format: 'json' } }),
   leaveAbstractDepartment: (params: Record<string, string>) =>
-    api.get('/reports/leave-abstract-department', { params, responseType: 'blob' }),
-  pendingApplications: () =>
-    api.get('/reports/pending-applications', { responseType: 'blob' }),
+    api.get('/reports/leave-abstract-department', { params }),
+  pendingApplications: (params?: Record<string, string>) =>
+    api.get('/reports/pending-applications', { params, responseType: 'blob' }),
+  pendingApplicationsPreview: () =>
+    api.get('/reports/pending-applications', { params: { format: 'json' } }),
   balanceSummary: (params: Record<string, string>) =>
     api.get('/reports/balance-summary', { params, responseType: 'blob' }),
   balanceOverview: (params: Record<string, string>) =>
@@ -82,14 +93,25 @@ export const reportsApi = {
     api.get(`/reports/sanction-pdf/${applicationId}`, { responseType: 'blob' }),
   leaveCalendar: (params: Record<string, string>) =>
     api.get('/reports/leave-calendar', { params, responseType: 'blob' }),
+  leaveCalendarPreview: (params: Record<string, string>) =>
+    api.get('/reports/leave-calendar', { params: { ...params, format: 'json' } }),
   payrollExport: (params: Record<string, string>) =>
     api.get('/reports/payroll-export', { params, responseType: 'blob' }),
+  payrollExportPreview: (params: Record<string, string>) =>
+    api.get('/reports/payroll-export', { params: { ...params, format: 'json' } }),
+};
+
+export const attendanceApi = {
+  report: (params: Record<string, string | boolean>) => api.get('/attendance/report', { params }),
+  syncFromLeave: (data: Record<string, unknown>) => api.post('/attendance/sync-from-leave', data),
+  pipelineStatus: () => api.get('/attendance/pipeline-status'),
 };
 
 export const adminApi = {
   auditLog: (params: Record<string, string | number>) =>
     api.get('/admin/audit-log', { params }),
   healthDashboard: () => api.get('/admin/health-dashboard'),
+  summary: () => api.get('/admin/summary'),
   forceLogout: (userId: string) => api.post(`/admin/force-logout/${userId}`),
   getMaintenanceMode: () => api.get('/admin/maintenance-mode'),
   toggleMaintenanceMode: (enable: boolean) => api.post(`/admin/maintenance-mode?enable=${enable}`),
@@ -195,8 +217,4 @@ export const approvalsApi = {
   teamAvailability: () => api.get('/leave-approvals/team-availability'),
   availabilityForecast: (params: Record<string, string>) =>
     api.get('/leave-approvals/availability-forecast', { params }),
-};
-
-export const leaveFormTemplatesApi = {
-  list: (params?: Record<string, string>) => api.get('/leave-form-templates', { params }),
 };

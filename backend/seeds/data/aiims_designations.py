@@ -48,9 +48,9 @@ AIIMS_DESIGNATIONS = [
     ("Assistant Officer", "ADMIN"),
     ("Executive", "ADMIN"),
     ("Registrar", "ADMIN"),
-    # Residents (RESIDENCY)
-    ("P.G. Student", "JR_ACAD"),
-    ("Junior Resident", "JR_ACAD"),
-    ("Senior Resident", "SR_ACAD"),
-    ("SR (Academic)", "SR_ACAD"),
+    # Residents (RESIDENCY) — names match staff groups / employee categories
+    ("Junior Resident (Academic)", "JR_ACAD"),
+    ("Junior Resident (Non-Academic)", "JR_NA"),
+    ("Senior Resident (Academic)", "SR_ACAD"),
+    ("Senior Resident (Non-Academic)", "SR_NA"),
 ]

@@ -61,7 +61,7 @@ class LeaveEntitlementRule(Base):
         String(20),
         nullable=False,
         default="ANNUAL",
-        comment="ANNUAL | HALF_YEARLY | MONTHLY",
+        comment="ANNUAL | HALF_YEARLY | MONTHLY | NONE",
     )
     days_per_year = Column(Numeric(5, 2), nullable=True)
     prorata_rate = Column(Numeric(4, 2), nullable=True, comment="days per month (residency: 2.5)")

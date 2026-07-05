@@ -1,7 +1,7 @@
 """Leave application -- submit, list, detail, withdraw, cancel/modify requests."""
 
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, employee_scope
 from app.core.database import get_db
+from app.services.leave_hpl import balance_debit_days
 from app.services.leave_rules import is_leave_type_eligible
 from app.services.leave_transaction import assert_sufficient_balance
 from app.services.leave_validation import validate_leave_application, validate_workflow_day_limits
@@ -108,10 +109,14 @@ async def _check_date_overlap(
 async def _generate_app_number(db: AsyncSession) -> str:
     yr = datetime.utcnow().year
     count_result = await db.execute(
-        text("SELECT COUNT(*) FROM leave_applications WHERE app_number LIKE :pat"),
+        text("""
+            SELECT COALESCE(MAX(CAST(SPLIT_PART(app_number, '/', 3) AS INTEGER)), 0)
+            FROM leave_applications
+            WHERE app_number LIKE :pat
+        """),
         {"pat": f"HRMS/{yr}/%"},
     )
-    seq = count_result.fetchone()[0] + 1
+    seq = int(count_result.scalar() or 0) + 1
     return f"HRMS/{yr}/{seq:05d}"
 
 
@@ -131,6 +136,7 @@ async def _insert_application(
     application_kind: str,
     parent_application_id: str | None,
     mc_attached: bool,
+    is_commuted: bool = False,
 ) -> tuple[str, str]:
     app_id = str(uuid.uuid4())
     app_number = await _generate_app_number(db)
@@ -139,9 +145,9 @@ async def _insert_application(
             INSERT INTO leave_applications
                 (id, app_number, config_id, employee_id, leave_type_id, from_date, to_date, applied_days,
                  is_half_day, half_day_session, reason, address_during_leave, status, submitted_at,
-                 application_kind, parent_application_id, mc_attached)
+                 application_kind, parent_application_id, mc_attached, is_commuted)
             VALUES (:id, :an, :cid, :eid, :lid, :fd, :td, :ad, :hd, :hds, :reason, :addr, 'SUBMITTED', now(),
-                    :kind, :parent, :mc)
+                    :kind, :parent, :mc, :ic)
         """),
         {
             "id": app_id,
@@ -159,6 +165,7 @@ async def _insert_application(
             "kind": application_kind,
             "parent": parent_application_id,
             "mc": mc_attached,
+            "ic": is_commuted,
         },
     )
     return app_id, app_number
@@ -181,12 +188,12 @@ async def submit_application(
     reason = body["reason"]
     address = body.get("address_during_leave", "")
     mc_attached = bool(body.get("mc_attached", False))
+    is_commuted = bool(body.get("is_commuted", False))
     emergency_regular_combo = bool(body.get("emergency_regular_combo", False))
+    retrospective = from_date < date.today()
 
-    await _authorize_employee(scope, current_user, emp_id, db)
-
-    if from_date < date.today():
-        raise HTTPException(status_code=400, detail="Backdated applications not allowed")
+    if is_commuted and leave_type_code != "HPL":
+        raise HTTPException(status_code=400, detail="Commutation is only available for HPL")
 
     lt = await db.execute(text("SELECT * FROM leave_types WHERE code = :c"), {"c": leave_type_code})
     lt_row = lt.fetchone()
@@ -211,6 +218,9 @@ async def submit_application(
     if is_half_day and not lt_dict.get("is_half_day_allowed"):
         raise HTTPException(status_code=400, detail="Half-day is not allowed for this leave type")
 
+    if is_half_day and is_commuted:
+        raise HTTPException(status_code=400, detail="Commuted HPL must be whole days")
+
     applied_days = await validate_leave_application(
         db,
         employee_id=emp_id,
@@ -221,12 +231,18 @@ async def submit_application(
         mc_attached=mc_attached,
         application_kind="NEW",
         emergency_regular_combo=emergency_regular_combo,
+        retrospective=retrospective,
+        is_commuted=is_commuted,
     )
 
     wf_id = await _resolve_workflow(db, emp_dict["cat_code"], leave_type_code)
-    await validate_workflow_day_limits(db, wf_id, applied_days)
+    await validate_workflow_day_limits(db, wf_id, applied_days, is_half_day=is_half_day)
 
-    await assert_sufficient_balance(db, emp_id, str(lt_row.id), from_date, applied_days)
+    debit_days = balance_debit_days(applied_days, leave_type_code, is_commuted=is_commuted)
+    if is_commuted:
+        pass  # validate_hpl_commutation already checked balance
+    else:
+        await assert_sufficient_balance(db, emp_id, str(lt_row.id), from_date, debit_days)
     await _check_date_overlap(db, emp_id, from_date, to_date)
 
     app_id, app_number = await _insert_application(
@@ -244,6 +260,7 @@ async def submit_application(
         application_kind="NEW",
         parent_application_id=None,
         mc_attached=mc_attached,
+        is_commuted=is_commuted,
     )
 
     try:
@@ -274,7 +291,7 @@ async def submit_application(
         await db.rollback()
         raise HTTPException(status_code=409, detail="Dates overlap with an existing approved leave (concurrent submission)")
 
-    return {"id": app_id, "app_number": app_number, "status": "SUBMITTED", "applied_days": applied_days}
+    return {"id": app_id, "app_number": app_number, "status": "SUBMITTED", "applied_days": applied_days, "balance_debit_days": debit_days}
 
 
 @router.post("/change-request", status_code=201)
@@ -337,11 +354,37 @@ async def submit_change_request(
         is_half_day = bool(parent_row.is_half_day)
         half_day_session = parent_row.half_day_session
         applied_days = float(parent_row.applied_days)
+        is_commuted = bool(parent_row.is_commuted)
     else:
-        from_date = date.fromisoformat(body["from_date"])
-        to_date = date.fromisoformat(body["to_date"])
-        is_half_day = body.get("is_half_day", False)
-        half_day_session = body.get("half_day_session")
+        rejoin_date_str = body.get("rejoin_date")
+        if rejoin_date_str:
+            rejoin_date = date.fromisoformat(rejoin_date_str)
+            from_date = parent_row.from_date
+            if rejoin_date <= from_date:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Rejoin date must be after the leave start date",
+                )
+            if rejoin_date > parent_row.to_date + timedelta(days=1):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Rejoin date is after sanctioned end — use Modify to extend leave",
+                )
+            if rejoin_date == parent_row.to_date + timedelta(days=1):
+                raise HTTPException(
+                    status_code=400,
+                    detail="You are rejoining as sanctioned — no change needed",
+                )
+            to_date = rejoin_date - timedelta(days=1)
+            is_half_day = bool(parent_row.is_half_day)
+            half_day_session = parent_row.half_day_session
+            is_commuted = bool(parent_row.is_commuted)
+        else:
+            from_date = date.fromisoformat(body["from_date"])
+            to_date = date.fromisoformat(body["to_date"])
+            is_half_day = body.get("is_half_day", False)
+            half_day_session = body.get("half_day_session")
+            is_commuted = bool(body.get("is_commuted", parent_row.is_commuted))
         applied_days = await validate_leave_application(
             db,
             employee_id=emp_id,
@@ -354,15 +397,19 @@ async def submit_change_request(
             parent_applied_days=float(parent_row.applied_days),
             emergency_regular_combo=emergency_regular_combo,
             exclude_application_ids=[parent_id],
+            is_commuted=is_commuted,
         )
         delta = applied_days - float(parent_row.applied_days)
-        if delta > 0:
-            await assert_sufficient_balance(db, emp_id, str(parent_row.leave_type_id), from_date, delta)
+        debit_delta = balance_debit_days(applied_days, parent_row.leave_type_code, is_commuted=is_commuted) - balance_debit_days(
+            float(parent_row.applied_days), parent_row.leave_type_code, is_commuted=bool(parent_row.is_commuted)
+        )
+        if debit_delta > 0:
+            await assert_sufficient_balance(db, emp_id, str(parent_row.leave_type_id), from_date, debit_delta)
         await _check_date_overlap(db, emp_id, from_date, to_date, exclude_ids=[parent_id])
 
     wf_id = await _resolve_workflow(db, parent_row.cat_code, parent_row.leave_type_code)
     if request_kind == "MODIFICATION":
-        await validate_workflow_day_limits(db, wf_id, applied_days)
+        await validate_workflow_day_limits(db, wf_id, applied_days, is_half_day=is_half_day)
 
     app_id, app_number = await _insert_application(
         db,
@@ -379,6 +426,7 @@ async def submit_change_request(
         application_kind=request_kind,
         parent_application_id=parent_id,
         mc_attached=mc_attached,
+        is_commuted=is_commuted,
     )
 
     applicant_user_id = await _resolve_user_for_employee(db, emp_id)

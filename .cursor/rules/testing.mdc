@@ -1,0 +1,26 @@
+---
+description: Keep automated tests aligned with product changes
+alwaysApply: true
+---
+
+# Test Maintenance
+
+When you ship or change behaviour in these areas, update tests in the same session:
+
+| Area changed | Update |
+|---|---|
+| Leave rules / validation | `backend/tests/unit/test_*validation*.py`, `test_cl_validation.py`, `test_hpl_commutation.py` |
+| Employee onboarding / profile fields | `test_employee_validation.py`, `test_employee_uniqueness.py`, `frontend/src/test/employeeForm.test.ts` |
+| Roles / RBAC / nodal routing | `test_roles.py`, `tests/integration/test_auth_and_rbac.py`, `tools/ensure_e2e_users.py` |
+| Reports / admin dashboard | `tests/integration/test_reports.py` |
+| Approval workflow | `tests/e2e_test.py`, `frontend/src/test/e2e/core_journeys.spec.ts` |
+| Staff vs Desk navigation | `frontend/src/test/workMode.test.ts` |
+
+## Before marking work done
+
+1. Run `cd backend && python -m pytest tests/unit -q` (always).
+2. Run `cd backend && python -m pytest tests/integration -q` when touching APIs, auth, reports, or leave transactions.
+3. Run `cd frontend && npm run test` when touching UI helpers or auth flow.
+4. Update `docs/TESTING.md` if commands, users, or journey IDs change.
+
+Journey users for Playwright/integration: `python tools/ensure_e2e_users.py` (does **not** purge manual data).

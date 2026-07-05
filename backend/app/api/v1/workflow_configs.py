@@ -13,7 +13,7 @@ from app.core.database import get_db
 router = APIRouter(prefix="/workflow-configs", tags=["workflow-configs"])
 
 
-_MASTER_VIEWER_ROLES = ("ADMIN", "ESTABLISHMENT_OFFICER", "REGISTRAR", "DIRECTOR", "HOD", "DEAN_ACADEMIC")
+_MASTER_VIEWER_ROLES = ("ADMIN", "DIRECTOR", "HOD", "NODAL_OFFICER", "NODAL_OFFICE")
 
 
 @router.get("")
@@ -69,7 +69,7 @@ async def create_config(
 async def update_config(
     config_id: str,
     body: dict,
-    _: dict = Depends(require_role("ADMIN", "ESTABLISHMENT_OFFICER")),
+    _: dict = Depends(require_role("ADMIN")),
     db: AsyncSession = Depends(get_db),
 ):
     editable = ["config_name", "category_id", "leave_type_id", "min_days", "max_days", "is_active"]
@@ -90,7 +90,7 @@ async def update_config(
 async def add_step(
     config_id: str,
     body: dict,
-    _: dict = Depends(require_role("ADMIN", "ESTABLISHMENT_OFFICER")),
+    _: dict = Depends(require_role("ADMIN")),
     db: AsyncSession = Depends(get_db),
 ):
     sid = str(uuid.uuid4())
@@ -112,7 +112,7 @@ async def update_step(
     config_id: str,
     step_id: str,
     body: dict,
-    _: dict = Depends(require_role("ADMIN", "ESTABLISHMENT_OFFICER")),
+    _: dict = Depends(require_role("ADMIN")),
     db: AsyncSession = Depends(get_db),
 ):
     editable = ["step_order", "approver_role", "approver_office", "sla_hours", "is_final_authority", "skip_if_self_applicant"]
@@ -132,7 +132,7 @@ async def update_step(
 async def delete_step(
     config_id: str,
     step_id: str,
-    _: dict = Depends(require_role("ADMIN", "ESTABLISHMENT_OFFICER")),
+    _: dict = Depends(require_role("ADMIN")),
     db: AsyncSession = Depends(get_db),
 ):
     await db.execute(

@@ -2,35 +2,35 @@
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import require_role, get_current_user
+from app.auth.dependencies import require_role
 from app.core.database import get_db
 from app.schemas import DepartmentCreate, DepartmentResponse, DepartmentUpdate
 
 router = APIRouter(prefix="/departments", tags=["departments"])
 
 
-_MASTER_VIEW_ROLES = ("ADMIN", "ESTABLISHMENT_OFFICER", "REGISTRAR", "DIRECTOR", "NODAL_OFFICER", "NODAL_OFFICE")
+_MASTER_VIEW_ROLES = ("ADMIN", "DIRECTOR", "NODAL_OFFICER", "NODAL_OFFICE", "HOD", "STAFF")
 
 
 @router.get("", response_model=list[DepartmentResponse])
 async def list_departments(
     include_inactive: bool = Query(False),
-    current_user: dict = Depends(require_role(*_MASTER_VIEW_ROLES)),
+    _: dict = Depends(require_role(*_MASTER_VIEW_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
-    inactive_clause = "" if include_inactive else " AND is_active = true"
+    inactive_clause = "" if include_inactive else " AND d.is_active = true"
     result = await db.execute(
         text(f"""
-            SELECT id, code, name, parent_dept_id, managing_office, is_active
-            FROM departments
+            SELECT d.id, d.code, d.name, d.parent_dept_id, d.managing_office, d.is_active
+            FROM departments d
             WHERE 1=1{inactive_clause}
-            ORDER BY name
-        """)
+            ORDER BY d.name
+        """),
     )
     return [
         DepartmentResponse(
@@ -46,7 +46,7 @@ async def list_departments(
 @router.post("", response_model=DepartmentResponse, status_code=201)
 async def create_department(
     body: DepartmentCreate,
-    _: dict = Depends(require_role("ADMIN", "ESTABLISHMENT_OFFICER")),
+    _: dict = Depends(require_role("ADMIN")),
     db: AsyncSession = Depends(get_db),
 ):
     parent_id = None
@@ -84,7 +84,7 @@ async def create_department(
 async def update_department(
     department_id: str,
     body: DepartmentUpdate,
-    _: dict = Depends(require_role("ADMIN", "ESTABLISHMENT_OFFICER")),
+    _: dict = Depends(require_role("ADMIN")),
     db: AsyncSession = Depends(get_db),
 ):
     updates: dict = {}
@@ -108,7 +108,7 @@ async def update_department(
         await db.commit()
 
     result = await db.execute(
-        text("SELECT id, code, name, parent_dept_id, managing_office FROM departments WHERE id = :id"),
+        text("SELECT id, code, name, parent_dept_id, managing_office, is_active FROM departments WHERE id = :id"),
         {"id": department_id},
     )
     r = result.fetchone()

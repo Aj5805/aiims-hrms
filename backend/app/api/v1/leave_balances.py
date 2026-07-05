@@ -26,7 +26,7 @@ from app.services.leave_validation import (
 
 router = APIRouter(prefix="/leave-balances", tags=["leave-balances"])
 
-_ADMIN_BALANCE_ROLES = ("ADMIN", "ESTABLISHMENT_OFFICER")
+_ADMIN_BALANCE_ROLES = ("ADMIN",)
 _NODAL_ADJUST_ROLES = ("NODAL_OFFICER", "NODAL_OFFICE")
 _ADJUSTABLE_FIELDS = {"opening_balance", "credited", "availed", "lop_days"}
 
@@ -385,12 +385,16 @@ async def project_balance(
     from_date: str = Query(),
     to_date: str = Query(),
     leave_type_code: str = Query(),
+    is_commuted: bool = Query(False),
+    is_half_day: bool = Query(False),
     current_user: dict = Depends(get_current_user),
     scope: dict = Depends(employee_scope),
     db: AsyncSession = Depends(get_db),
 ):
     _require_employee_scope(scope, employee_id)
     cache_key = _projection_cache_key(employee_id, leave_type_code, from_date, to_date)
+    if is_commuted:
+        cache_key += ":commuted"
     cached_projection = cached(cache_key)
     if cached_projection is not None:
         return {**cached_projection, "cache_ttl_seconds": 300, "cached": True}
@@ -411,7 +415,10 @@ async def project_balance(
     holiday_dates = await load_holidays_in_range(db, pad_start, pad_end)
     holiday_dates.update(await load_holidays_in_range(db, fd, td))
     count_holidays = bool(lt_row[1])
-    days = count_leave_days(fd, td, holiday_dates, count_holidays=count_holidays, is_half_day=False)
+    days = count_leave_days(fd, td, holiday_dates, count_holidays=count_holidays, is_half_day=is_half_day)
+    from app.services.leave_hpl import balance_debit_days
+
+    debit_days = balance_debit_days(days, leave_type_code, is_commuted=is_commuted)
     current = await get_effective_available_balance(db, employee_id, lt_id, fd)
     pending = await get_pending_committed_days(db, employee_id, lt_id, fd.year)
     payload = {
@@ -419,7 +426,9 @@ async def project_balance(
         "pending_commitments": pending,
         "effective_balance": current,
         "requested_days": days,
-        "projected_balance": max(0, current - days),
+        "balance_debit_days": debit_days,
+        "projected_balance": max(0, current - debit_days),
+        "is_commuted": is_commuted,
     }
     if leave_type_code.upper() == "CL":
         validation_rules = _parse_rules(lt_row[2])

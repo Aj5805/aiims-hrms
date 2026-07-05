@@ -4,7 +4,7 @@ from sqlalchemy import text
 
 CL_RULES = (
     '{"no_combination": true, '
-    '"incompatible_types": ["EL", "HPL", "COMMUTED", "EOL"], '
+    '"incompatible_types": ["EL", "HPL", "EOL"], '
     '"max_absence_span": 8, "max_per_stretch": 8}'
 )
 

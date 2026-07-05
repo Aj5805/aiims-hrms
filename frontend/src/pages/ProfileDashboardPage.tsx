@@ -34,8 +34,8 @@ export default function ProfileDashboardPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <DashboardCard 
-          title="e-Service Book" 
-          desc="View your official personal and professional details, including joining date, designation, and scheme." 
+          title="View Profile" 
+          desc="See your official e-Service Book and update contact details, address, and other non-critical information." 
           icon="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
           to="/profile" 
         />

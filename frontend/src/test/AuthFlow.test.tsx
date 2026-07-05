@@ -22,8 +22,22 @@ const server = setupServer(
     return HttpResponse.json({ detail: 'Invalid credentials' }, { status: 401 });
   }),
   http.post('*/api/v1/auth/change-my-password', async () => {
-    return HttpResponse.json({ message: 'Password changed successfully' });
+    return HttpResponse.json({
+      access_token: 'fake-token-123',
+      user: {
+        id: 'uuid-1',
+        username: 'HRMS001',
+        role: 'STAFF',
+        name: 'HRMS001',
+        must_change_password: false,
+      },
+    });
   }),
+  http.get('*/api/v1/auth/me', () => {
+    return HttpResponse.json({ id: 'uuid-1', username: 'HRMS001', role: 'STAFF', must_change_password: false });
+  }),
+  http.get('*/api/v1/broadcasts/active', () => HttpResponse.json([])),
+  http.get('*/api/v1/notifications/unread-count', () => HttpResponse.json({ count: 0 })),
   http.get('*/api/v1/employees', () => {
     // Return 403 to trigger interceptor
     return HttpResponse.json({ detail: 'PASSWORD_CHANGE_REQUIRED' }, { status: 403 });

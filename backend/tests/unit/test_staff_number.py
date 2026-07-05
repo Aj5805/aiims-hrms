@@ -28,10 +28,41 @@ def test_resolve_from_designation():
         department_code="NURSING",
     ) == "NUR"
     assert resolve_staff_group(
-        designation_name="P.G. Student",
+        designation_name="Junior Resident (Academic)",
+        category_code="JR_ACAD",
+        department_code="GENMED",
+    ) == "PGJR"
+    assert resolve_staff_group(
+        designation_name="Junior Resident (Non-Academic)",
         category_code="JR_NA",
         department_code="GENMED",
     ) == "PGNA"
+    assert resolve_staff_group(
+        designation_name="Senior Resident (Academic)",
+        category_code="SR_ACAD",
+        department_code="GENMED",
+    ) == "SRAC"
+    assert resolve_staff_group(
+        designation_name="Senior Resident (Non-Academic)",
+        category_code="SR_NA",
+        department_code="GENMED",
+    ) == "SRNA"
+    # Legacy designation names
+    assert resolve_staff_group(
+        designation_name="P.G. Student",
+        category_code="JR_ACAD",
+        department_code="GENMED",
+    ) == "PGJR"
+    assert resolve_staff_group(
+        designation_name="Junior Resident",
+        category_code="JR_NA",
+        department_code="GENMED",
+    ) == "PGNA"
+    assert resolve_staff_group(
+        designation_name="Senior Resident",
+        category_code="SR_NA",
+        department_code="GENMED",
+    ) == "SRNA"
 
 
 def test_validate_staff_group_rejects_unknown():

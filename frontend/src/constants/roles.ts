@@ -1,20 +1,50 @@
-/** Canonical system roles — keep in sync with backend users.py allowed_roles and RBAC. */
+/** Canonical system roles — keep in sync with backend app/auth/roles.py */
+
 export const SYSTEM_ROLES = [
-  { code: 'ADMIN', label: 'Super Admin', description: 'Full system access, admin console, impersonation' },
-  { code: 'DIRECTOR', label: 'Director', description: 'Read-only institutional view across the hospital' },
-  { code: 'ESTABLISHMENT_OFFICER', label: 'Establishment Officer', description: 'CCS staff HR, leave config, reports' },
-  { code: 'REGISTRAR', label: 'Registrar', description: 'Resident HR, reports, employee master access' },
-  { code: 'NODAL_OFFICER', label: 'Nodal Officer', description: 'Final leave approver for assigned departments' },
-  { code: 'NODAL_OFFICE', label: 'Nodal Office (Clerical)', description: 'Onboarding, directory, reports, manual leave entries — no leave approval' },
-  { code: 'DEAN_ACADEMIC', label: 'Dean Academic', description: 'Resident leave final approver' },
+  { code: 'ADMIN', label: 'Super Admin', description: 'Full system access, admin console, impersonation, all masters' },
+  { code: 'DIRECTOR', label: 'Executive Director', description: 'Read-only institutional view across all staff and reports' },
+  { code: 'NODAL_OFFICER', label: 'Nodal Officer', description: 'Final leave approver for staff in assigned nodal office (Establishment/CCS or Registrar/residents)' },
+  { code: 'NODAL_OFFICE', label: 'Nodal Office (Clerical)', description: 'Clerical staff under a nodal officer — onboarding, directory, reports, profile edit, manual leave entries; no leave approval' },
   { code: 'HOD', label: 'Head of Department', description: 'First-stage leave approver for own department' },
-  { code: 'STAFF', label: 'Staff', description: 'Apply leave, view own balances and profile' },
+  { code: 'STAFF', label: 'Staff', description: 'Apply leave, view own balances and profile, edit non-critical personal fields' },
 ] as const;
 
-export const ASSIGNABLE_ROLES = SYSTEM_ROLES.map((r) => r.code);
+export type SystemRoleCode = (typeof SYSTEM_ROLES)[number]['code'];
 
-export function formatApiError(detail: unknown): string {
-  if (!detail) return 'Request failed';
+export const ASSIGNABLE_ROLES: SystemRoleCode[] = SYSTEM_ROLES.map((r) => r.code);
+
+/** Workflow step approver roles (Masters → Workflows) */
+export const WORKFLOW_APPROVER_ROLES = ['HOD', 'NODAL_OFFICER', 'SPECIFIC_USER'] as const;
+
+export const REPORT_ROLES = ['ADMIN', 'DIRECTOR', 'NODAL_OFFICER', 'NODAL_OFFICE'] as const;
+export const PAYROLL_EXPORT_ROLES = ['ADMIN', 'DIRECTOR', 'NODAL_OFFICER'] as const;
+export const CONFIG_ROLES = ['ADMIN'] as const;
+export const HR_EDITOR_ROLES = ['ADMIN', 'NODAL_OFFICER', 'NODAL_OFFICE'] as const;
+export const EMPLOYEE_MASTER_ROLES = ['ADMIN', 'DIRECTOR', 'NODAL_OFFICER', 'NODAL_OFFICE'] as const;
+export const APPROVER_ROLES = ['ADMIN', 'HOD', 'NODAL_OFFICER'] as const;
+export const TEAM_VIEW_ROLES = ['HOD', 'NODAL_OFFICER', 'ADMIN'] as const;
+
+const ROLE_BY_CODE = Object.fromEntries(SYSTEM_ROLES.map((r) => [r.code, r])) as Record<
+  string,
+  (typeof SYSTEM_ROLES)[number]
+>;
+
+export function hasSystemRole(role: string | undefined | null, allowed: readonly SystemRoleCode[]): boolean {
+  return !!role && (allowed as readonly string[]).includes(role);
+}
+
+export function roleLabel(code: string | undefined | null): string {
+  if (!code) return '—';
+  return ROLE_BY_CODE[code]?.label ?? code;
+}
+
+export function roleDescription(code: string | undefined | null): string {
+  if (!code) return '';
+  return ROLE_BY_CODE[code]?.description ?? '';
+}
+
+export function formatApiError(detail: unknown): string | null {
+  if (detail === null || detail === undefined || detail === '') return null;
   if (typeof detail === 'string') return detail;
   if (Array.isArray(detail)) {
     return detail
@@ -29,4 +59,26 @@ export function formatApiError(detail: unknown): string {
       .join('; ');
   }
   return String(detail);
+}
+
+/** Prefer API detail, then HTTP status, then a plain fallback (never raw axios boilerplate). */
+export function formatHttpError(err: unknown, fallback: string): string {
+  const ax = err as {
+    message?: string;
+    code?: string;
+    response?: { status?: number; data?: { detail?: unknown; message?: string } };
+  };
+  const fromDetail = formatApiError(ax.response?.data?.detail);
+  if (fromDetail) return fromDetail;
+  const fromMessage = formatApiError(ax.response?.data?.message);
+  if (fromMessage) return fromMessage;
+  if (ax.response?.status) return `${fallback} (server returned ${ax.response.status})`;
+  if (ax.message === 'Network Error' || ax.code === 'ERR_NETWORK') {
+    return `${fallback} Check that the HRMS server is running and try again.`;
+  }
+  if (ax.message?.startsWith('Request failed with status code')) {
+    return fallback;
+  }
+  if (ax.message && ax.message !== 'Network Error') return ax.message;
+  return fallback;
 }

@@ -67,7 +67,7 @@ def test_sandwich_cl_then_weekend_then_el_blocked():
         new_to=date(2026, 6, 10),
         existing=existing,
         holidays=holidays,
-        incompatible=frozenset({"EL", "HPL", "COMMUTED", "EOL"}),
+        incompatible=frozenset({"EL", "HPL", "EOL"}),
         allow_emergency_continuation=False,
     )
     assert err is not None
@@ -87,7 +87,7 @@ def test_sandwich_allowed_with_emergency_half_day_cl():
         new_to=date(2026, 6, 10),
         existing=existing,
         holidays=holidays,
-        incompatible=frozenset({"EL", "HPL", "COMMUTED", "EOL"}),
+        incompatible=frozenset({"EL", "HPL", "EOL"}),
         allow_emergency_continuation=True,
     )
     assert err is None
@@ -107,7 +107,7 @@ def test_working_day_between_cl_and_el_not_sandwich():
         new_to=date(2026, 6, 9),
         existing=existing,
         holidays=holidays,
-        incompatible=frozenset({"EL", "HPL", "COMMUTED", "EOL"}),
+        incompatible=frozenset({"EL", "HPL", "EOL"}),
         allow_emergency_continuation=False,
     )
     assert err is None

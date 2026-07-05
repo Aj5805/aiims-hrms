@@ -1,8 +1,15 @@
 """Unit tests for leave validation rules."""
 
-from datetime import date
+from datetime import date, timedelta
 
-from app.services.leave_validation import check_prefix_suffix, count_leave_days
+import pytest
+from fastapi import HTTPException
+
+from app.services.leave_validation import (
+    check_prefix_suffix,
+    count_leave_days,
+    validate_retrospective_dates,
+)
 
 
 def test_count_working_days_excludes_weekends():
@@ -36,3 +43,30 @@ def test_suffix_holiday_blocked_when_configured():
     rules = {"no_prefix_suffix_holidays": True}
     err = check_prefix_suffix(wed, thu, holidays, rules)
     assert err == "Leave cannot be suffixed to a holiday"
+
+
+def test_single_day_same_from_to_counts_one():
+    sat = date(2026, 7, 4)  # Saturday
+    assert count_leave_days(sat, sat, set(), count_holidays=True, is_half_day=False) == 1.0
+
+
+def test_retrospective_no_mc_required():
+    today = date.today()
+    from_d = today - timedelta(days=3)
+    to_d = today - timedelta(days=1)
+    validate_retrospective_dates(from_d, to_d, {}, mc_attached=False)
+
+
+def test_retrospective_rejects_future_end():
+    today = date.today()
+    from_d = today - timedelta(days=3)
+    with pytest.raises(HTTPException) as exc:
+        validate_retrospective_dates(from_d, today + timedelta(days=1), {}, mc_attached=True)
+    assert "future" in exc.value.detail.lower()
+
+
+def test_retrospective_allows_long_backdate():
+    today = date.today()
+    from_d = today - timedelta(days=400)
+    to_d = today - timedelta(days=395)
+    validate_retrospective_dates(from_d, to_d, {}, mc_attached=False)

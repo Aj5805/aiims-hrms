@@ -1,18 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { entitlementRulesApi, leaveTypesApi, workflowApi } from '../api/endpoints';
-import { formatApiError } from '../constants/roles';
+import { formatApiError, WORKFLOW_APPROVER_ROLES } from '../constants/roles';
 import type { LeaveTypeRow } from './LeaveTypesPanel';
 
 const CATEGORY_CODES = ['FACULTY', 'NURSING', 'ADMIN', 'JR_ACAD', 'SR_ACAD', 'JR_NA', 'SR_NA'] as const;
-const APPROVER_ROLES = [
-  'HOD',
-  'NODAL_OFFICER',
-  'DEAN_ACADEMIC',
-  'ESTABLISHMENT_OFFICER',
-  'REGISTRAR',
-  'DIRECTOR',
-  'SPECIFIC_USER',
-] as const;
+const APPROVER_ROLES = WORKFLOW_APPROVER_ROLES;
 
 type WorkflowStepRow = {
   id: string;

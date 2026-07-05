@@ -61,7 +61,7 @@ DEPARTMENTS = [
 
 DESIGNATIONS = [
     {"name": "Administrative Officer", "grade_pay_level": "Level 8", "category_code": "ADMIN"},
-    {"name": "Junior Resident", "grade_pay_level": "Level 10", "category_code": "JR_ACAD"},
+    {"name": "Junior Resident (Non-Academic)", "grade_pay_level": "Level 10", "category_code": "JR_NA"},
 ]
 
 EMPLOYEES = [
@@ -130,9 +130,9 @@ EMPLOYEES = [
         name="Karan Reddy",
         gender="MALE",
         doj=date(2025, 7, 1),
-        category_code="JR_ACAD",
+        category_code="JR_NA",
         department_code="ANAES",
-        designation_name="Junior Resident",
+        designation_name="Junior Resident (Non-Academic)",
         email="karan.reddy@aiims-demo.local",
         leave_type_code="ANNUAL_RES",
         opening_balance=24,

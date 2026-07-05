@@ -87,6 +87,8 @@ async def admin_headers(ip: str) -> dict[str, str]:
 async def main() -> None:
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
+    from tests.helpers import ensure_journey_users, reset_staff_lockout_account, set_admin_password
+
     print("\n=== Phase 8 Security Proof ===")
     
     # Explicitly enable rate limiting for the security proof checks
@@ -96,8 +98,9 @@ async def main() -> None:
     from main import app
 
     print("\n--- Lockout check ---")
-    reset_admin_account()
-    reset_staff_account()
+    set_admin_password("password")
+    ensure_journey_users(staff_must_change_password=False)
+    reset_staff_lockout_account()
     for index in range(5):
         response = await login_with_ip("staff", "wrong-pass", f"10.0.1.{index + 1}")
         if response.status_code != 401:

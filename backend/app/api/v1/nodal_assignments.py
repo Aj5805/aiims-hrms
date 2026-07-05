@@ -12,7 +12,7 @@ from app.core.database import get_db
 
 router = APIRouter(prefix="/nodal-assignments", tags=["nodal-assignments"])
 
-_ADMIN_ROLES = ("ADMIN", "ESTABLISHMENT_OFFICER")
+_ADMIN_ROLES = ("ADMIN",)
 _NODAL_USER_ROLES = ("NODAL_OFFICER", "NODAL_OFFICE")
 
 
@@ -21,7 +21,7 @@ async def list_assignments(
     department_code: str | None = None,
     nodal_user_id: str | None = None,
     active_only: bool = True,
-    _: dict = Depends(require_role(*_ADMIN_ROLES, "REGISTRAR")),
+    _: dict = Depends(require_role(*_ADMIN_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
     query = """
@@ -125,7 +125,7 @@ async def update_assignment(
 
 @router.get("/nodal-users")
 async def list_nodal_users(
-    _: dict = Depends(require_role(*_ADMIN_ROLES, "REGISTRAR")),
+    _: dict = Depends(require_role(*_ADMIN_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
     """Users eligible for department assignment."""

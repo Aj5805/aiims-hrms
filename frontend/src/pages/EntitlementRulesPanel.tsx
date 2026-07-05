@@ -7,6 +7,14 @@ const CREDIT_FREQUENCY_OPTIONS = [
   { value: 'MONTHLY', label: 'Monthly (prorata)' },
 ] as const;
 
+function creditFrequencyLabel(yearRef: string | null | undefined, creditFrequency: string | null | undefined): string {
+  if (yearRef === 'TENURE' || creditFrequency === 'NONE') {
+    return 'Tenure pool (full balance on join)';
+  }
+  return CREDIT_FREQUENCY_OPTIONS.find((opt) => opt.value === creditFrequency)?.label
+    || 'Annual (once per year)';
+}
+
 export function EntitlementRulesPanel() {
   const [items, setItems] = useState<Record<string, unknown>[]>([]);
   const [categoryFilter, setCategoryFilter] = useState('');
@@ -40,8 +48,10 @@ export function EntitlementRulesPanel() {
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-700">{message}</div>
       )}
       <p className="text-sm text-slate-600">
-        Defines how leave is credited to balances. Example: <strong>EL</strong> is typically{' '}
-        <strong>half-yearly</strong> — 15 days at the start of January and 15 days at the start of July (30 days per calendar year).
+        Defines how leave is credited to balances. <strong>EL</strong> and <strong>HPL</strong> are{' '}
+        <strong>half-yearly</strong> (15+15 and 10+10 days per calendar year).{' '}
+        <strong>ML / PL / CCL / EOL</strong> use a <strong>tenure pool</strong> — the full allowance is
+        available once at join, not credited annually.
       </p>
       <div className="flex flex-wrap gap-3 items-center">
         <label className="text-sm text-slate-600">Category</label>
@@ -57,6 +67,7 @@ export function EntitlementRulesPanel() {
               <tr>
                 <th>Category</th>
                 <th>Leave Type</th>
+                <th>Year Basis</th>
                 <th>Credit Frequency</th>
                 <th className="text-center">Days/Yr</th>
                 <th className="text-center">Per Month</th>
@@ -65,24 +76,35 @@ export function EntitlementRulesPanel() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((r) => (
+              {filtered.map((r) => {
+                const yearRef = r.year_ref as string | undefined;
+                const creditFrequency = (r.credit_frequency as string) || 'ANNUAL';
+                const isTenure = yearRef === 'TENURE';
+                return (
                 <tr key={r.id as string}>
                   <td className="font-mono text-xs">{r.category_code as string}</td>
                   <td className="font-mono text-xs">{r.leave_type_code as string}</td>
+                  <td className="text-xs">{isTenure ? 'Tenure / service' : 'Calendar'}</td>
                   <td>
-                    <select
-                      value={(r.credit_frequency as string) || 'ANNUAL'}
-                      onChange={(e) => void saveFrequency(r.id as string, e.target.value)}
-                      className="form-select text-xs py-1.5 min-w-[10rem]"
-                    >
-                      {CREDIT_FREQUENCY_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value}>{opt.label}</option>
-                      ))}
-                    </select>
-                    {(r.credit_frequency as string) === 'HALF_YEARLY' && r.days_per_year != null && (
-                      <div className="text-[11px] text-slate-500 mt-1">
-                        {Number(r.days_per_year) / 2} days per half
-                      </div>
+                    {isTenure ? (
+                      <span className="text-xs text-slate-600">{creditFrequencyLabel(yearRef, creditFrequency)}</span>
+                    ) : (
+                      <>
+                        <select
+                          value={creditFrequency}
+                          onChange={(e) => void saveFrequency(r.id as string, e.target.value)}
+                          className="form-select text-xs py-1.5 min-w-[10rem]"
+                        >
+                          {CREDIT_FREQUENCY_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
+                        </select>
+                        {creditFrequency === 'HALF_YEARLY' && r.days_per_year != null && (
+                          <div className="text-[11px] text-slate-500 mt-1">
+                            {Number(r.days_per_year) / 2} days per half
+                          </div>
+                        )}
+                      </>
                     )}
                   </td>
                   <td className="text-right">{r.days_per_year != null ? String(r.days_per_year) : '—'}</td>
@@ -90,9 +112,9 @@ export function EntitlementRulesPanel() {
                   <td className="text-right">{r.max_at_a_stretch != null ? String(r.max_at_a_stretch) : '—'}</td>
                   <td className="text-right">{r.max_in_tenure != null ? String(r.max_in_tenure) : '—'}</td>
                 </tr>
-              ))}
+              );})}
               {filtered.length === 0 && (
-                <tr><td colSpan={7} className="py-10 text-center text-slate-400">No entitlement rules configured.</td></tr>
+                <tr><td colSpan={8} className="py-10 text-center text-slate-400">No entitlement rules configured.</td></tr>
               )}
             </tbody>
           </table>

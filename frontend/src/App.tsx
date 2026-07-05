@@ -12,12 +12,14 @@ import MastersPage from './pages/MastersPage';
 import { OpeningBalancePage } from './pages/OpeningBalancePage';
 import { MastersRedirect } from './components/MastersRedirect';
 import { ApplyLeavePage } from './pages/ApplyLeavePage';
+import { AttendancePage } from './pages/AttendancePage';
 import { MyApplicationsPage } from './pages/MyApplicationsPage';
 import { ApprovalInboxPage } from './pages/ApprovalInboxPage';
-import { LeaveFormsPage } from './pages/LeaveFormsPage';
 import { MyLeaveAccountPage } from './pages/MyLeaveAccountPage';
 import { YearEndProcessingPage } from './pages/YearEndProcessingPage';
 import { NotificationBell } from './components/NotificationBell';
+import { usePageMetaStore } from './stores/pageMeta';
+import { Breadcrumbs } from './components/PageHeader';
 import { ReportsPage } from './pages/ReportsPage';
 import { AdminDashboardPage } from './pages/AdminDashboardPage';
 import ChangePasswordPage from './pages/ChangePasswordPage';
@@ -36,19 +38,31 @@ import { PageHeader } from './components/PageHeader';
 import AdminToolsPage from './pages/AdminToolsPage';
 import { MaintenancePage } from './pages/MaintenancePage';
 import { BroadcastBanner } from './components/BroadcastBanner';
-const REPORT_ROLES = ['ADMIN', 'ESTABLISHMENT_OFFICER', 'REGISTRAR', 'DIRECTOR', 'NODAL_OFFICER', 'NODAL_OFFICE'] as const;
+import { ToastContainer } from './components/ToastContainer';
+import {
+  APPROVER_ROLES,
+  CONFIG_ROLES,
+  EMPLOYEE_MASTER_ROLES,
+  hasSystemRole,
+  HR_EDITOR_ROLES,
+  REPORT_ROLES,
+  TEAM_VIEW_ROLES,
+} from './constants/roles';
+import {
+  canToggleWorkMode,
+  effectiveWorkMode,
+  homePathForWorkMode,
+  isDeskPath,
+  isStaffPersonalPath,
+} from './utils/workMode';
 const ADMIN_ROLES = ['ADMIN'] as const;
-const CONFIG_ROLES = ['ADMIN', 'ESTABLISHMENT_OFFICER', 'REGISTRAR'] as const;
-const EMPLOYEE_MASTER_ROLES = ['ADMIN', 'ESTABLISHMENT_OFFICER', 'REGISTRAR', 'DIRECTOR', 'NODAL_OFFICER', 'NODAL_OFFICE'] as const;
-const APPROVER_ROLES = ['ADMIN', 'ESTABLISHMENT_OFFICER', 'REGISTRAR', 'DIRECTOR', 'HOD', 'DEAN_ACADEMIC', 'NODAL_OFFICER'] as const;
-const TEAM_VIEW_ROLES = ['HOD', 'NODAL_OFFICER', 'ADMIN', 'ESTABLISHMENT_OFFICER'] as const;
 
 function hasRole(role: string | undefined, allowed: readonly string[]) {
   return !!role && allowed.includes(role);
 }
 
 function canEditHrLifecycle(role: string | undefined) {
-  return !!role && ['ADMIN', 'ESTABLISHMENT_OFFICER', 'REGISTRAR', 'NODAL_OFFICER'].includes(role);
+  return hasSystemRole(role, HR_EDITOR_ROLES);
 }
 
 function UnderConstructionPage({ title, breadcrumbs }: { title: string, breadcrumbs: { label: string, to?: string }[] }) {
@@ -192,15 +206,115 @@ function RoleRoute({
   allowedRoles,
   children,
   fallback,
+  requireDeskMode = false,
+  requireStaffMode = false,
 }: {
   allowedRoles: readonly string[];
   children: ReactNode;
   fallback: string;
+  requireDeskMode?: boolean;
+  requireStaffMode?: boolean;
 }) {
   const user = useAuthStore((s) => s.user);
+  const workMode = useAuthStore((s) => s.workMode);
   if (!user) return <Navigate to="/login" replace />;
   if (!hasRole(user.role, allowedRoles)) return <RouteDenied message={fallback} />;
+  if (requireDeskMode && canToggleWorkMode(user.role, user.employee_id) && workMode !== 'desk') {
+    return <RouteDenied message="Switch to Desk View to access approver pages." />;
+  }
+  if (requireStaffMode && canToggleWorkMode(user.role, user.employee_id) && workMode !== 'staff') {
+    return <RouteDenied message="Switch to Staff View to access personal pages." />;
+  }
   return <>{children}</>;
+}
+
+function StaffPersonalNav() {
+  return (
+    <>
+      <NavDropdown title="My Profile" landingPath="/profile-dashboard" items={[
+        { label: 'View Profile', path: '/profile' },
+        { label: 'Login Activity', path: '/login-activity' },
+        { label: 'Family & Dependents', path: '/dependents' }
+      ]} />
+      <NavDropdown title="Leave & Attendance" landingPath="/leave-dashboard" items={[
+        { label: 'Apply for Leave', path: '/apply' },
+        { label: 'My Applications', path: '/my-apps' },
+        { label: 'Leave Ledger', path: '/leave-account' },
+        { label: 'Holiday Calendar', path: '/holidays-calendar' },
+        { label: 'My Attendance', path: '/attendance' },
+        { label: 'Punch History', path: '/punches' }
+      ]} />
+      <NavDropdown title="Claims & Advances" landingPath="/claims" items={[
+        { label: 'LTC Claim', path: '/claims/ltc' },
+        { label: 'CEA (Education)', path: '/claims/cea' },
+        { label: 'EHS Reimbursement', path: '/claims/ehs' },
+        { label: 'TA/DA', path: '/claims/ta' },
+        { label: 'Telephone', path: '/claims/telephone' }
+      ]} />
+      <NavDropdown title="Payroll & Finance" landingPath="/payroll" items={[
+        { label: 'Salary Slips', path: '/payroll/slips' },
+        { label: 'Annual Summary', path: '/payroll/summary' },
+        { label: 'Form 16 & Tax', path: '/payroll/form16' }
+      ]} />
+      <NavDropdown title="Performance" landingPath="/performance" items={[
+        { label: 'My APAR', path: '/performance/apar' },
+        { label: 'Training Logs', path: '/performance/training' }
+      ]} />
+    </>
+  );
+}
+
+function DeskNav({ role }: { role: string }) {
+  return (
+    <>
+      <NavDropdown title="Nodal Desk" landingPath="/hod" items={[
+        { label: 'Desk Dashboard', path: '/hod' },
+        { label: 'Approval Inbox', path: '/approvals' },
+        ...(hasRole(role, TEAM_VIEW_ROLES) ? [
+          { label: 'Team Balances', path: '/team-leave' },
+          { label: 'Availability Forecast', path: '/forecast' },
+        ] : []),
+        { label: 'Team Calendar', path: '/team-calendar' },
+        { label: 'Delegation', path: '/delegation' }
+      ]} />
+      {hasRole(role, EMPLOYEE_MASTER_ROLES) && (
+        <NavDropdown title="HR Operations" items={[
+          { label: 'Employee Directory', path: '/employees?tab=directory' },
+          { label: 'Onboard Employee', path: '/employees?tab=onboard' },
+          ...(canEditHrLifecycle(role) ? [
+            { label: 'Employee Lifecycle', path: '/employees?tab=lifecycle' },
+          ] : []),
+          ...(hasRole(role, REPORT_ROLES) ? [{ label: 'Balance Overview', path: '/balance-overview' }] : []),
+        ]} />
+      )}
+      {hasRole(role, EMPLOYEE_MASTER_ROLES) && (
+        <NavDropdown title="Reports & Data" items={[
+          { label: 'Reports', path: '/reports' },
+        ]} />
+      )}
+    </>
+  );
+}
+
+function StaffPersonalRoute({ children }: { children: ReactNode }) {
+  const user = useAuthStore((s) => s.user);
+  const workMode = useAuthStore((s) => s.workMode);
+  if (!user) return <Navigate to="/login" replace />;
+  if (canToggleWorkMode(user.role, user.employee_id) && workMode !== 'staff') {
+    return <RouteDenied message="Switch to Staff View to access personal pages." />;
+  }
+  return <>{children}</>;
+}
+
+function HomeRoute() {
+  const user = useAuthStore((s) => s.user);
+  const workMode = useAuthStore((s) => s.workMode);
+  const role = user?.role;
+  if (role === 'ADMIN') return <Navigate to="/admin" replace />;
+  if (effectiveWorkMode(role, user?.employee_id, workMode) === 'desk' && canToggleWorkMode(role, user?.employee_id)) {
+    return <Navigate to="/hod" replace />;
+  }
+  return <HomeDashboardPage />;
 }
 
 function Layout({ children }: { children: ReactNode }) {
@@ -210,11 +324,24 @@ function Layout({ children }: { children: ReactNode }) {
   const adminUser = useAuthStore((s) => s.adminUser);
   const passwordChangeDismissed = useAuthStore((s) => s.passwordChangeDismissed);
   const stopImpersonation = useAuthStore((s) => s.stopImpersonation);
+  const workMode = useAuthStore((s) => s.workMode);
+  const setWorkMode = useAuthStore((s) => s.setWorkMode);
   const navigate = useNavigate();
   const location = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const role = user?.role;
+  const toggleEligible = canToggleWorkMode(role, user?.employee_id);
+  const effectiveMode = effectiveWorkMode(role, user?.employee_id, workMode);
+  const inDeskMode = effectiveMode === 'desk';
+  const inStaffPersonalMode = toggleEligible && effectiveMode === 'staff';
   const showNotificationBell = !!user && !user.must_change_password && location.pathname !== '/change-password';
+  const headerBreadcrumbs = usePageMetaStore((s) => s.breadcrumbs);
+
+  const switchWorkMode = (mode: 'staff' | 'desk') => {
+    if (!toggleEligible || mode === workMode) return;
+    setWorkMode(mode);
+    navigate(homePathForWorkMode(role, user?.employee_id, mode), { replace: true });
+  };
 
   useEffect(() => {
     const impersonating = isImpersonatingSession(adminToken);
@@ -229,7 +356,25 @@ function Layout({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setIsSidebarOpen(false);
+    usePageMetaStore.getState().setFormMessage(null, 0);
   }, [location.pathname]);
+
+  useEffect(() => {
+    if (!toggleEligible) return;
+    if (workMode === 'desk' && isStaffPersonalPath(location.pathname)) {
+      navigate('/hod', { replace: true });
+      return;
+    }
+    if (workMode === 'staff' && isDeskPath(location.pathname)) {
+      navigate('/', { replace: true });
+    }
+  }, [toggleEligible, workMode, location.pathname, navigate]);
+
+  useEffect(() => {
+    if (!toggleEligible && workMode !== 'desk') {
+      setWorkMode('desk');
+    }
+  }, [toggleEligible, workMode, setWorkMode]);
 
   const logout = async () => {
     try {
@@ -284,7 +429,7 @@ function Layout({ children }: { children: ReactNode }) {
       <aside className={`fixed inset-y-0 left-0 z-30 w-56 bg-slate-900 border-r border-slate-800 flex flex-col transition-transform duration-300 ease-in-out md:static md:transform-none shadow-xl ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         {/* Logo Area */}
         <div className="h-14 flex items-center px-5 border-b border-slate-800 shrink-0">
-          <Link to="/" className="text-sm font-bold text-white tracking-tight truncate">
+          <Link to={toggleEligible && inDeskMode ? '/hod' : '/'} className="text-sm font-bold text-white tracking-tight truncate">
             {isAdminRoute ? 'HRMS (Admin)' : 'HRMS'}
           </Link>
         </div>
@@ -297,59 +442,57 @@ function Layout({ children }: { children: ReactNode }) {
             </Link>
           ) : user && (
             <>
-              {role !== 'ADMIN' && (
+              {toggleEligible ? (
+                inStaffPersonalMode ? (
+                  <StaffPersonalNav />
+                ) : (
+                  <DeskNav role={role ?? ''} />
+                )
+              ) : (
                 <>
-                  <NavDropdown title="My Profile" landingPath="/profile-dashboard" items={[
-                    { label: 'e-Service Book', path: '/profile' },
-                    { label: 'Login Activity', path: '/login-activity' },
-                    { label: 'Family & Dependents', path: '/dependents' }
-                  ]} />
-                  <NavDropdown title="Leave & Attendance" landingPath="/leave-dashboard" items={[
-                    { label: 'Apply for Leave', path: '/apply' },
-                    { label: 'Leave Forms', path: '/leave-forms' },
-                    { label: 'My Applications', path: '/my-apps' },
-                    { label: 'Leave Ledger', path: '/leave-account' },
-                    { label: 'Holiday Calendar', path: '/holidays-calendar' },
-                    { label: 'My Attendance', path: '/attendance' },
-                    { label: 'Punch History', path: '/punches' }
-                  ]} />
-                  <NavDropdown title="Claims & Advances" landingPath="/claims" items={[
-                    { label: 'LTC Claim', path: '/claims/ltc' },
-                    { label: 'CEA (Education)', path: '/claims/cea' },
-                    { label: 'EHS Reimbursement', path: '/claims/ehs' },
-                    { label: 'TA/DA', path: '/claims/ta' },
-                    { label: 'Telephone', path: '/claims/telephone' }
-                  ]} />
-                  <NavDropdown title="Payroll & Finance" landingPath="/payroll" items={[
-                    { label: 'Salary Slips', path: '/payroll/slips' },
-                    { label: 'Annual Summary', path: '/payroll/summary' },
-                    { label: 'Form 16 & Tax', path: '/payroll/form16' }
-                  ]} />
-                  <NavDropdown title="Performance" landingPath="/performance" items={[
-                    { label: 'My APAR', path: '/performance/apar' },
-                    { label: 'Training Logs', path: '/performance/training' }
-                  ]} />
+                  {role !== 'ADMIN' && <StaffPersonalNav />}
+
+                  {inDeskMode && role !== 'STAFF' && role !== 'ADMIN' && (
+                    <NavDropdown title="Nodal Desk" landingPath="/hod" items={[
+                      { label: 'HOD Dashboard', path: '/hod' },
+                      { label: 'Approval Inbox', path: '/approvals' },
+                      ...(hasRole(role, TEAM_VIEW_ROLES) ? [
+                        { label: 'Team Balances', path: '/team-leave' },
+                        { label: 'Availability Forecast', path: '/forecast' },
+                      ] : []),
+                      { label: 'Team Calendar', path: '/team-calendar' },
+                      { label: 'Delegation', path: '/delegation' }
+                    ]} />
+                  )}
+
+                  {hasRole(role, EMPLOYEE_MASTER_ROLES) && role !== 'ADMIN' && <div className="border-t border-slate-800 my-1.5" />}
+
+                  {hasRole(role, EMPLOYEE_MASTER_ROLES) && (
+                    <NavDropdown title="HR Operations" items={[
+                      { label: 'Employee Directory', path: '/employees?tab=directory' },
+                      { label: 'Onboard Employee', path: '/employees?tab=onboard' },
+                      ...(canEditHrLifecycle(role) ? [
+                        { label: 'Employee Lifecycle', path: '/employees?tab=lifecycle' },
+                      ] : []),
+                      ...(hasRole(role, REPORT_ROLES) ? [{ label: 'Balance Overview', path: '/balance-overview' }] : []),
+                    ]} />
+                  )}
+
+                  {hasRole(role, EMPLOYEE_MASTER_ROLES) && (
+                    <NavDropdown title="Reports & Data" items={[
+                      { label: 'Reports', path: '/reports' },
+                      ...(hasRole(role, CONFIG_ROLES) ? [
+                        { label: 'Year-End', path: '/year-end' },
+                        { label: 'Opening Balances', path: '/balances' },
+                      ] : []),
+                    ]} />
+                  )}
                 </>
               )}
 
-              {role !== 'STAFF' && role !== 'ADMIN' && (
-                <NavDropdown title="Nodal Desk" landingPath="/hod" items={[
-                  { label: 'HOD Dashboard', path: '/hod' },
-                  { label: 'Approval Inbox', path: '/approvals' },
-                  ...(hasRole(role, TEAM_VIEW_ROLES) ? [
-                    { label: 'Team Balances', path: '/team-leave' },
-                    { label: 'Availability Forecast', path: '/forecast' },
-                  ] : []),
-                  { label: 'Team Calendar', path: '/team-calendar' },
-                  { label: 'Delegation', path: '/delegation' }
-                ]} />
-              )}
-
-              {/* Divider */}
-              {hasRole(role, EMPLOYEE_MASTER_ROLES) && role !== 'ADMIN' && <div className="border-t border-slate-800 my-1.5" />}
-
               {hasRole(role, ADMIN_ROLES) && role === 'ADMIN' && (
                 <NavDropdown title="Admin Console" landingPath="/admin" items={[
+                  { label: 'Dashboard', path: '/admin' },
                   { label: 'Leave Policy Matrix', path: '/admin?module=policy' },
                   { label: 'Users & Roles', path: '/admin?module=users' },
                   { label: 'Login As User', path: '/admin?module=users' },
@@ -357,14 +500,13 @@ function Layout({ children }: { children: ReactNode }) {
                 ]} />
               )}
 
-              {hasRole(role, EMPLOYEE_MASTER_ROLES) && (
+              {!toggleEligible && hasRole(role, EMPLOYEE_MASTER_ROLES) && (
                 <NavDropdown title="HR Operations" items={[
                   { label: 'Employee Directory', path: '/employees?tab=directory' },
                   { label: 'Onboard Employee', path: '/employees?tab=onboard' },
                   ...(canEditHrLifecycle(role) ? [
                     { label: 'Employee Lifecycle', path: '/employees?tab=lifecycle' },
                   ] : []),
-                  { label: 'Leave Forms', path: '/leave-forms' },
                   ...(hasRole(role, REPORT_ROLES) ? [{ label: 'Balance Overview', path: '/balance-overview' }] : []),
                 ]} />
               )}
@@ -382,7 +524,7 @@ function Layout({ children }: { children: ReactNode }) {
                 ]} />
               )}
 
-              {hasRole(role, EMPLOYEE_MASTER_ROLES) && (
+              {!toggleEligible && hasRole(role, EMPLOYEE_MASTER_ROLES) && (
                 <NavDropdown title="Reports & Data" items={[
                   { label: 'Reports', path: '/reports' },
                   ...(hasRole(role, CONFIG_ROLES) ? [
@@ -422,22 +564,53 @@ function Layout({ children }: { children: ReactNode }) {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Top Header */}
-        <header className="h-14 border-b flex items-center justify-between px-5 shrink-0 z-10 sticky top-0 shadow-sm" style={{ background: 'var(--color-surface-alt)', borderColor: 'var(--color-border)' }}>
-          <div className="flex items-center gap-3">
-            <button onClick={() => setIsSidebarOpen(true)} className="text-slate-500 hover:text-slate-800 md:hidden transition-colors">
+        <header className="h-12 border-b flex items-center justify-between px-4 md:px-5 shrink-0 z-10 sticky top-0 shadow-sm gap-3" style={{ background: 'var(--color-surface-alt)', borderColor: 'var(--color-border)' }}>
+          <div className="flex items-center gap-2 md:gap-3 flex-1 min-w-0">
+            <button onClick={() => setIsSidebarOpen(true)} className="text-slate-500 hover:text-slate-800 md:hidden transition-colors shrink-0">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
             </button>
-            <span className="font-bold text-slate-800 text-sm md:hidden">{isAdminRoute ? 'Admin Console' : 'HRMS'}</span>
+            {headerBreadcrumbs.length > 0 ? (
+              <Breadcrumbs items={headerBreadcrumbs} className="hidden sm:flex" />
+            ) : (
+              <span className="font-semibold text-slate-700 text-sm truncate hidden sm:block">
+                {isAdminRoute ? 'Admin Console' : 'HRMS'}
+              </span>
+            )}
+            <span className="font-semibold text-slate-700 text-sm truncate sm:hidden">
+              {headerBreadcrumbs.length > 0
+                ? headerBreadcrumbs[headerBreadcrumbs.length - 1]?.label
+                : (isAdminRoute ? 'Admin' : 'HRMS')}
+            </span>
           </div>
 
           {/* Right controls */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
+            {toggleEligible && (
+              <div className="flex items-center rounded-lg border border-slate-200 bg-white p-0.5 text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => switchWorkMode('staff')}
+                  className={`px-2 py-1 rounded ${!inDeskMode ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:text-slate-900'}`}
+                >
+                  Staff View
+                </button>
+                <button
+                  type="button"
+                  onClick={() => switchWorkMode('desk')}
+                  className={`px-2 py-1 rounded ${inDeskMode ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:text-slate-900'}`}
+                >
+                  Desk View
+                </button>
+              </div>
+            )}
             {showNotificationBell && <NotificationBell />}
             {user && (
               <div className="flex items-center gap-3 pl-3 border-l border-slate-200">
                 <div className="hidden sm:block text-right">
                   <p className="text-sm font-semibold text-slate-800 leading-none">{(user as any).username}</p>
-                  <p className="text-xs text-slate-500 mt-0.5 uppercase tracking-wide">{(user as any).role?.replace(/_/g, ' ')}</p>
+                  <p className="text-xs text-slate-500 mt-0.5 uppercase tracking-wide">
+                    {(user as any).role?.replace(/_/g, ' ')}{toggleEligible ? ` · ${inDeskMode ? 'DESK VIEW' : 'STAFF VIEW'}` : ''}
+                  </p>
                 </div>
                 <div className="h-7 w-7 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold text-xs shadow-sm shrink-0">
                   {((user as any).username || 'U')[0].toUpperCase()}
@@ -452,7 +625,7 @@ function Layout({ children }: { children: ReactNode }) {
 
         {/* Page Content — single consistent wrapper, no per-page overrides */}
         <main className="flex-1 overflow-y-auto">
-          <div className="w-full max-w-screen-xl mx-auto px-5 py-6 md:px-8">
+          <div className="w-full max-w-screen-xl mx-auto px-4 py-4 md:px-6 md:py-5">
             {children}
           </div>
         </main>
@@ -464,7 +637,6 @@ function Layout({ children }: { children: ReactNode }) {
 
 export default function App() {
   const token = useAuthStore((s) => s.token);
-  const role = useAuthStore((s) => s.user?.role);
   const clearAuth = useAuthStore((s) => s.clearAuth);
   
   useEffect(() => {
@@ -476,7 +648,9 @@ export default function App() {
   }, [token, clearAuth]);
 
   return (
-    <Routes>
+    <>
+      <ToastContainer />
+      <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/admin-login" element={<AdminLoginPage />} />
       <Route path="/maintenance" element={<MaintenancePage />} />
@@ -484,63 +658,62 @@ export default function App() {
         token ? (
           <Layout>
             <Routes>
-            <Route path="/" element={role === 'ADMIN' ? <Navigate to="/admin" replace /> : <HomeDashboardPage />} />
-            <Route path="/employees" element={<RoleRoute allowedRoles={EMPLOYEE_MASTER_ROLES} fallback="Access restricted."><EmployeeListPage /></RoleRoute>} />
-            <Route path="/employees/:employeeId" element={<RoleRoute allowedRoles={EMPLOYEE_MASTER_ROLES} fallback="Access restricted."><EmployeeProfilePage /></RoleRoute>} />
-            <Route path="/masters" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Masters access is limited to ADMIN, ESTABLISHMENT_OFFICER, and REGISTRAR."><MastersPage /></RoleRoute>} />
-            <Route path="/apply" element={<ApplyLeavePage />} />
-            <Route path="/leave-forms" element={<LeaveFormsPage />} />
-            <Route path="/my-apps" element={<MyApplicationsPage />} />
+            <Route path="/" element={<HomeRoute />} />
+            <Route path="/employees" element={<RoleRoute allowedRoles={EMPLOYEE_MASTER_ROLES} requireDeskMode fallback="Access restricted."><EmployeeListPage /></RoleRoute>} />
+            <Route path="/employees/:employeeId" element={<RoleRoute allowedRoles={EMPLOYEE_MASTER_ROLES} requireDeskMode fallback="Access restricted."><EmployeeProfilePage /></RoleRoute>} />
+            <Route path="/masters" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Masters access is limited to Super Admin."><MastersPage /></RoleRoute>} />
+            <Route path="/apply" element={<StaffPersonalRoute><ApplyLeavePage /></StaffPersonalRoute>} />
+            <Route path="/my-apps" element={<StaffPersonalRoute><MyApplicationsPage /></StaffPersonalRoute>} />
             <Route path="/approver-dashboard" element={<RoleRoute allowedRoles={APPROVER_ROLES} fallback="Only approvers have an Approver Dashboard."><ApproverDashboardPage /></RoleRoute>} />
-            <Route path="/hod" element={<RoleRoute allowedRoles={APPROVER_ROLES} fallback="Only approvers have a Nodal Dashboard."><HodDashboardPage /></RoleRoute>} />
-            <Route path="/approvals" element={<RoleRoute allowedRoles={APPROVER_ROLES} fallback="Only approvers have an Inbox."><ApprovalInboxPage /></RoleRoute>} />
-            <Route path="/leave-account" element={<MyLeaveAccountPage />} />
-            <Route path="/login-activity" element={<LoginActivityPage />} />
-            <Route path="/team-leave" element={<RoleRoute allowedRoles={TEAM_VIEW_ROLES} fallback="Team balances are for HOD and Nodal Officer roles."><TeamLeavePage /></RoleRoute>} />
-            <Route path="/forecast" element={<RoleRoute allowedRoles={TEAM_VIEW_ROLES} fallback="Forecast is for HOD and Nodal Officer roles."><ForecastingPage /></RoleRoute>} />
-            <Route path="/balance-overview" element={<RoleRoute allowedRoles={REPORT_ROLES} fallback="Balance overview requires report access."><BalanceOverviewPage /></RoleRoute>} />
-            <Route path="/year-end" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Year-End processing is limited to ADMIN and ESTABLISHMENT_OFFICER."><YearEndProcessingPage /></RoleRoute>} />
-            <Route path="/reports" element={<RoleRoute allowedRoles={REPORT_ROLES} fallback="Reports require HR or admin access."><ReportsPage /></RoleRoute>} />
+            <Route path="/hod" element={<RoleRoute allowedRoles={APPROVER_ROLES} requireDeskMode fallback="Only approvers have a Nodal Dashboard."><HodDashboardPage /></RoleRoute>} />
+            <Route path="/approvals" element={<RoleRoute allowedRoles={APPROVER_ROLES} requireDeskMode fallback="Only approvers have an Inbox."><ApprovalInboxPage /></RoleRoute>} />
+            <Route path="/leave-account" element={<StaffPersonalRoute><MyLeaveAccountPage /></StaffPersonalRoute>} />
+            <Route path="/login-activity" element={<StaffPersonalRoute><LoginActivityPage /></StaffPersonalRoute>} />
+            <Route path="/team-leave" element={<RoleRoute allowedRoles={TEAM_VIEW_ROLES} requireDeskMode fallback="Team balances are for HOD and Nodal Officer roles."><TeamLeavePage /></RoleRoute>} />
+            <Route path="/forecast" element={<RoleRoute allowedRoles={TEAM_VIEW_ROLES} requireDeskMode fallback="Forecast is for HOD and Nodal Officer roles."><ForecastingPage /></RoleRoute>} />
+            <Route path="/balance-overview" element={<RoleRoute allowedRoles={REPORT_ROLES} requireDeskMode fallback="Balance overview requires report access."><BalanceOverviewPage /></RoleRoute>} />
+            <Route path="/year-end" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Year-End processing is limited to Super Admin."><YearEndProcessingPage /></RoleRoute>} />
+            <Route path="/reports" element={<RoleRoute allowedRoles={REPORT_ROLES} requireDeskMode fallback="Reports require HR or admin access."><ReportsPage /></RoleRoute>} />
             <Route path="/admin" element={<RoleRoute allowedRoles={ADMIN_ROLES} fallback="Admin dashboard access is limited to ADMIN."><AdminDashboardPage /></RoleRoute>} />
             <Route path="/admin/tools/:tool" element={<RoleRoute allowedRoles={ADMIN_ROLES} fallback="Admin dashboard access is limited to ADMIN."><AdminToolsPage /></RoleRoute>} />
-            <Route path="/leave-types" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Masters access is limited to ADMIN, ESTABLISHMENT_OFFICER, and REGISTRAR."><MastersRedirect tab="leave-types" /></RoleRoute>} />
-            <Route path="/entitlements" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Masters access is limited to ADMIN, ESTABLISHMENT_OFFICER, and REGISTRAR."><MastersRedirect tab="entitlements" /></RoleRoute>} />
-            <Route path="/holidays" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Masters access is limited to ADMIN, ESTABLISHMENT_OFFICER, and REGISTRAR."><MastersRedirect tab="holidays" /></RoleRoute>} />
-            <Route path="/workflows" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Masters access is limited to ADMIN, ESTABLISHMENT_OFFICER, and REGISTRAR."><MastersRedirect tab="workflows" /></RoleRoute>} />
-            <Route path="/balances" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Opening balances are limited to ADMIN, ESTABLISHMENT_OFFICER, and REGISTRAR."><OpeningBalancePage /></RoleRoute>} />
+            <Route path="/leave-types" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Masters access is limited to Super Admin."><MastersRedirect tab="leave-types" /></RoleRoute>} />
+            <Route path="/entitlements" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Masters access is limited to Super Admin."><MastersRedirect tab="entitlements" /></RoleRoute>} />
+            <Route path="/holidays" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Masters access is limited to Super Admin."><MastersRedirect tab="holidays" /></RoleRoute>} />
+            <Route path="/workflows" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Masters access is limited to Super Admin."><MastersRedirect tab="workflows" /></RoleRoute>} />
+            <Route path="/balances" element={<RoleRoute allowedRoles={CONFIG_ROLES} fallback="Opening balances are limited to Super Admin."><OpeningBalancePage /></RoleRoute>} />
             <Route path="/change-password" element={<ChangePasswordPage />} />
-            <Route path="/profile-dashboard" element={<ProfileDashboardPage />} />
-            <Route path="/profile" element={<StaffProfilePage />} />
-            <Route path="/leave-dashboard" element={<LeaveDashboardPage />} />
+            <Route path="/profile-dashboard" element={<StaffPersonalRoute><ProfileDashboardPage /></StaffPersonalRoute>} />
+            <Route path="/profile" element={<StaffPersonalRoute><StaffProfilePage /></StaffPersonalRoute>} />
+            <Route path="/leave-dashboard" element={<StaffPersonalRoute><LeaveDashboardPage /></StaffPersonalRoute>} />
             
             {/* Future HMIS Modules Placeholders */}
-            <Route path="/claims" element={<ClaimsDashboardPage />} />
-            <Route path="/payroll" element={<PayrollDashboardPage />} />
-            <Route path="/performance" element={<PerformanceDashboardPage />} />
+            <Route path="/claims" element={<StaffPersonalRoute><ClaimsDashboardPage /></StaffPersonalRoute>} />
+            <Route path="/payroll" element={<StaffPersonalRoute><PayrollDashboardPage /></StaffPersonalRoute>} />
+            <Route path="/performance" element={<StaffPersonalRoute><PerformanceDashboardPage /></StaffPersonalRoute>} />
             
-            <Route path="/dependents" element={<UnderConstructionPage title="Family & Dependents" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Profile', to: '/profile-dashboard' }, { label: 'Family & Dependents' }]} />} />
-            <Route path="/holidays-calendar" element={<UnderConstructionPage title="Holiday Calendar" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Leave & Attendance', to: '/leave-dashboard' }, { label: 'Holiday Calendar' }]} />} />
-            <Route path="/attendance" element={<UnderConstructionPage title="My Attendance" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Leave & Attendance', to: '/leave-dashboard' }, { label: 'My Attendance' }]} />} />
-            <Route path="/punches" element={<UnderConstructionPage title="Punch History" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Leave & Attendance', to: '/leave-dashboard' }, { label: 'Punch History' }]} />} />
+            <Route path="/dependents" element={<StaffPersonalRoute><UnderConstructionPage title="Family & Dependents" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Profile', to: '/profile-dashboard' }, { label: 'Family & Dependents' }]} /></StaffPersonalRoute>} />
+            <Route path="/holidays-calendar" element={<StaffPersonalRoute><UnderConstructionPage title="Holiday Calendar" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Leave & Attendance', to: '/leave-dashboard' }, { label: 'Holiday Calendar' }]} /></StaffPersonalRoute>} />
+            <Route path="/attendance" element={<StaffPersonalRoute><AttendancePage /></StaffPersonalRoute>} />
+            <Route path="/punches" element={<StaffPersonalRoute><UnderConstructionPage title="Punch History" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Leave & Attendance', to: '/leave-dashboard' }, { label: 'Punch History' }]} /></StaffPersonalRoute>} />
             
             {/* Claims & Advances */}
-            <Route path="/claims/ltc" element={<UnderConstructionPage title="LTC Claim" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Claims & Advances', to: '/claims' }, { label: 'LTC Claim' }]} />} />
-            <Route path="/claims/cea" element={<UnderConstructionPage title="CEA (Education)" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Claims & Advances', to: '/claims' }, { label: 'CEA (Education)' }]} />} />
-            <Route path="/claims/ehs" element={<UnderConstructionPage title="EHS Reimbursement" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Claims & Advances', to: '/claims' }, { label: 'EHS Reimbursement' }]} />} />
-            <Route path="/claims/ta" element={<UnderConstructionPage title="TA/DA" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Claims & Advances', to: '/claims' }, { label: 'TA/DA' }]} />} />
-            <Route path="/claims/telephone" element={<UnderConstructionPage title="Telephone & Internet" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Claims & Advances', to: '/claims' }, { label: 'Telephone & Internet' }]} />} />
+            <Route path="/claims/ltc" element={<StaffPersonalRoute><UnderConstructionPage title="LTC Claim" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Claims & Advances', to: '/claims' }, { label: 'LTC Claim' }]} /></StaffPersonalRoute>} />
+            <Route path="/claims/cea" element={<StaffPersonalRoute><UnderConstructionPage title="CEA (Education)" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Claims & Advances', to: '/claims' }, { label: 'CEA (Education)' }]} /></StaffPersonalRoute>} />
+            <Route path="/claims/ehs" element={<StaffPersonalRoute><UnderConstructionPage title="EHS Reimbursement" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Claims & Advances', to: '/claims' }, { label: 'EHS Reimbursement' }]} /></StaffPersonalRoute>} />
+            <Route path="/claims/ta" element={<StaffPersonalRoute><UnderConstructionPage title="TA/DA" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Claims & Advances', to: '/claims' }, { label: 'TA/DA' }]} /></StaffPersonalRoute>} />
+            <Route path="/claims/telephone" element={<StaffPersonalRoute><UnderConstructionPage title="Telephone & Internet" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Claims & Advances', to: '/claims' }, { label: 'Telephone & Internet' }]} /></StaffPersonalRoute>} />
 
             {/* Payroll & Finance */}
-            <Route path="/payroll/slips" element={<UnderConstructionPage title="Salary Slips" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Payroll & Finance', to: '/payroll' }, { label: 'Salary Slips' }]} />} />
-            <Route path="/payroll/summary" element={<UnderConstructionPage title="Annual Summary" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Payroll & Finance', to: '/payroll' }, { label: 'Annual Summary' }]} />} />
-            <Route path="/payroll/form16" element={<UnderConstructionPage title="Form 16 & Tax" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Payroll & Finance', to: '/payroll' }, { label: 'Form 16 & Tax' }]} />} />
+            <Route path="/payroll/slips" element={<StaffPersonalRoute><UnderConstructionPage title="Salary Slips" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Payroll & Finance', to: '/payroll' }, { label: 'Salary Slips' }]} /></StaffPersonalRoute>} />
+            <Route path="/payroll/summary" element={<StaffPersonalRoute><UnderConstructionPage title="Annual Summary" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Payroll & Finance', to: '/payroll' }, { label: 'Annual Summary' }]} /></StaffPersonalRoute>} />
+            <Route path="/payroll/form16" element={<StaffPersonalRoute><UnderConstructionPage title="Form 16 & Tax" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Payroll & Finance', to: '/payroll' }, { label: 'Form 16 & Tax' }]} /></StaffPersonalRoute>} />
 
             {/* Performance */}
-            <Route path="/performance/apar" element={<UnderConstructionPage title="My APAR" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Performance', to: '/performance' }, { label: 'My APAR' }]} />} />
-            <Route path="/performance/training" element={<UnderConstructionPage title="Training Logs" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Performance', to: '/performance' }, { label: 'Training Logs' }]} />} />
+            <Route path="/performance/apar" element={<StaffPersonalRoute><UnderConstructionPage title="My APAR" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Performance', to: '/performance' }, { label: 'My APAR' }]} /></StaffPersonalRoute>} />
+            <Route path="/performance/training" element={<StaffPersonalRoute><UnderConstructionPage title="Training Logs" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Performance', to: '/performance' }, { label: 'Training Logs' }]} /></StaffPersonalRoute>} />
             
             <Route path="/team-calendar" element={<Navigate to="/forecast" replace />} />
-            <Route path="/delegation" element={<UnderConstructionPage title="Delegation" breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Approvals', to: '/approver-dashboard' }, { label: 'Delegation' }]} />} />
+            <Route path="/delegation" element={<RoleRoute allowedRoles={APPROVER_ROLES} requireDeskMode fallback="Delegation is available in Desk View."><UnderConstructionPage title="Delegation" breadcrumbs={[{ label: 'Home', to: '/hod' }, { label: 'Nodal Desk' }, { label: 'Delegation' }]} /></RoleRoute>} />
           </Routes>
           </Layout>
         ) : (
@@ -548,5 +721,6 @@ export default function App() {
         )
       } />
     </Routes>
+    </>
   );
 }

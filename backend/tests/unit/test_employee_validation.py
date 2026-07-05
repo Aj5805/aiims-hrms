@@ -6,9 +6,12 @@ from datetime import date
 from app.utils.employee_validation import (
     normalize_address_field,
     parse_iso_date_string,
+    suggest_next_increment_date,
+    validate_bank_account_optional,
     validate_calendar_date,
     validate_email_optional,
     validate_employee_dates,
+    validate_ifsc_optional,
 )
 
 
@@ -76,3 +79,35 @@ def test_parse_iso_date_string_rules():
         parse_iso_date_string("2100-01-01")
     with pytest.raises(ValueError):
         parse_iso_date_string("01-02-2023")
+
+
+def test_validate_ifsc_normalizes_spaces_and_o():
+    assert validate_ifsc_optional("SBIN0001234") == "SBIN0001234"
+    assert validate_ifsc_optional("sbin 0001234") == "SBIN0001234"
+    assert validate_ifsc_optional("SBINO001234") == "SBIN0001234"
+    with pytest.raises(ValueError):
+        validate_ifsc_optional("SBIN000123")
+    with pytest.raises(ValueError):
+        validate_ifsc_optional("12340001234")
+
+
+def test_validate_bank_account():
+    assert validate_bank_account_optional("123456789") == "123456789"
+    assert validate_bank_account_optional("1234 5678 9012 3456") == "1234567890123456"
+    with pytest.raises(ValueError):
+        validate_bank_account_optional("12345678")
+    with pytest.raises(ValueError):
+        validate_bank_account_optional("1234567890123456789")
+    with pytest.raises(ValueError):
+        validate_bank_account_optional("12345abc9")
+
+
+def test_suggest_next_increment_date_jul_cycle():
+    assert suggest_next_increment_date(date(2024, 7, 2)) == date(2025, 7, 1)
+    assert suggest_next_increment_date(date(2024, 12, 31)) == date(2025, 7, 1)
+    assert suggest_next_increment_date(date(2025, 1, 1)) == date(2025, 7, 1)
+
+
+def test_suggest_next_increment_date_jan_cycle():
+    assert suggest_next_increment_date(date(2024, 1, 2)) == date(2025, 1, 1)
+    assert suggest_next_increment_date(date(2024, 7, 1)) == date(2025, 1, 1)

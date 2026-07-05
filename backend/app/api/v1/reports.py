@@ -26,8 +26,8 @@ from app.core.config import settings
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
-REPORT_ROLES = ("ADMIN", "ESTABLISHMENT_OFFICER", "REGISTRAR", "DIRECTOR", "NODAL_OFFICER", "NODAL_OFFICE")
-PAYROLL_EXPORT_ROLES = ("ESTABLISHMENT_OFFICER", "REGISTRAR", "DIRECTOR")
+REPORT_ROLES = ("ADMIN", "DIRECTOR", "NODAL_OFFICER", "NODAL_OFFICE")
+PAYROLL_EXPORT_ROLES = ("ADMIN", "DIRECTOR", "NODAL_OFFICER")
 
 # Placeholder until AIIMS Finance / NIC provides the actual column contract.
 PAYROLL_NIC_MAPPING_PLACEHOLDER = {
@@ -45,19 +45,13 @@ _NODAL_SCOPED_ROLES = ("NODAL_OFFICER", "NODAL_OFFICE")
 
 def _apply_nodal_scope(query: str, current_user: dict | None, params: dict, employee_alias: str = "e") -> str:
     if current_user and current_user.get("role") in _NODAL_SCOPED_ROLES:
+        from app.services.nodal_routing import nodal_scope_employee_ids_subquery
+
         query += f"""
-          AND {employee_alias}.id IN (
-              SELECT e2.id FROM employees e2
-              JOIN employee_categories c ON c.id = e2.category_id
-              JOIN nodal_offices no ON no.leave_scheme = c.leave_scheme
-              WHERE no.is_active = true AND (
-                  no.officer_user_id = :nodal_user_id
-                  OR no.id IN (SELECT nodal_office_id FROM users WHERE id = :nodal_user_id AND nodal_office_id IS NOT NULL)
-                  OR no.officer_user_id IN (SELECT parent_nodal_user_id FROM users WHERE id = :nodal_user_id)
-              )
-          )
+          AND {employee_alias}.id IN ({nodal_scope_employee_ids_subquery()})
         """
-        params["nodal_user_id"] = current_user.get("user_id")
+        params["nodal_uid"] = current_user.get("user_id")
+        params["nodal_role"] = current_user.get("role")
     return query
 
 
@@ -142,6 +136,15 @@ def _stream_bytes(content: bytes, media_type: str, filename: str) -> StreamingRe
     )
 
 
+def _preview_payload(title: str, headers: list[str], body_rows: list[list[object]]) -> dict:
+    return {
+        "title": title,
+        "headers": headers,
+        "rows": [[str(value if value is not None else "") for value in row] for row in body_rows],
+        "count": len(body_rows),
+    }
+
+
 async def _fetch_leave_register_rows(db: AsyncSession, from_date: date, to_date: date, department_code: str | None, current_user: dict | None = None) -> list[dict]:
     query = """
         SELECT
@@ -178,18 +181,21 @@ async def _fetch_leave_register_rows(db: AsyncSession, from_date: date, to_date:
 
 
 async def _fetch_category_summary_rows(db: AsyncSession, from_date: date, to_date: date, current_user: dict | None = None) -> list[dict]:
+    staff_params: dict = {}
     staff_result = await db.execute(
         text(
             "SELECT c.code AS category, COUNT(e.id) AS total_staff "
             "FROM employee_categories c "
             "LEFT JOIN employees e ON e.category_id = c.id AND e.is_active = true "
-            + _apply_nodal_scope("", current_user, {}, "e") + 
+            + _apply_nodal_scope("", current_user, staff_params, "e") +
             " GROUP BY c.code "
             "ORDER BY c.code"
-        ), {"nodal_user_id": current_user.get("user_id")} if current_user and current_user.get("role") in _NODAL_SCOPED_ROLES else {}
+        ),
+        staff_params,
     )
     staff_counts = {row._mapping["category"]: int(row._mapping["total_staff"] or 0) for row in staff_result.fetchall()}
 
+    leave_params: dict = {"from_date": from_date, "to_date": to_date}
     leave_result = await db.execute(
         text(
             "SELECT "
@@ -203,11 +209,11 @@ async def _fetch_category_summary_rows(db: AsyncSession, from_date: date, to_dat
              "AND a.status = 'APPROVED' "
              "AND a.from_date BETWEEN :from_date AND :to_date "
             "LEFT JOIN leave_types lt ON lt.id = a.leave_type_id "
-            + _apply_nodal_scope("", current_user, {}, "e") + 
+            + _apply_nodal_scope("", current_user, leave_params, "e") +
             " GROUP BY c.code, lt.code "
             "ORDER BY c.code, lt.code"
         ),
-        {"from_date": from_date, "to_date": to_date, **({"nodal_user_id": current_user.get("user_id")} if current_user and current_user.get("role") in _NODAL_SCOPED_ROLES else {})},
+        leave_params,
     )
 
     grouped: dict[str, dict[str, object]] = {}
@@ -339,11 +345,17 @@ async def leave_register(
     from_date: str = Query(),
     to_date: str = Query(),
     department_code: str | None = Query(None),
-    format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
-    _: dict = Depends(require_role(*REPORT_ROLES)),
+    format: str = Query("xlsx", pattern="^(xlsx|pdf|json)$"),
+    current_user: dict = Depends(require_role(*REPORT_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
-    rows = await _fetch_leave_register_rows(db, date.fromisoformat(from_date), date.fromisoformat(to_date), department_code)
+    rows = await _fetch_leave_register_rows(
+        db,
+        date.fromisoformat(from_date),
+        date.fromisoformat(to_date),
+        department_code,
+        current_user,
+    )
     headers = ["Emp Code", "Name", "Dept", "Leave Type", "From", "To", "Days", "Status", "Approval Date"]
     body_rows = [
         [
@@ -359,6 +371,9 @@ async def leave_register(
         ]
         for row in rows
     ]
+
+    if format == "json":
+        return _preview_payload("Leave Register", headers, body_rows)
 
     if format == "pdf":
         content = _pdf_bytes("Leave Register", headers, body_rows)
@@ -378,12 +393,22 @@ async def leave_abstract(
     request: Request,
     from_date: str = Query(),
     to_date: str = Query(),
-    _: dict = Depends(require_role(*REPORT_ROLES)),
+    format: str = Query("xlsx", pattern="^(xlsx|json)$"),
+    current_user: dict = Depends(require_role(*REPORT_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
-    rows = await _fetch_category_summary_rows(db, date.fromisoformat(from_date), date.fromisoformat(to_date))
+    rows = await _fetch_category_summary_rows(
+        db,
+        date.fromisoformat(from_date),
+        date.fromisoformat(to_date),
+        current_user,
+    )
     headers = ["Category", "Total Staff", "Total Leave Days by type", "Avg per staff"]
     body_rows = [[row["category"], row["total_staff"], row["total_leave_days_by_type"], row["avg_per_staff"]] for row in rows]
+
+    if format == "json":
+        return _preview_payload("Category-wise Summary", headers, body_rows)
+
     content = _workbook_bytes("Category Summary", headers, body_rows)
     return _stream_bytes(
         content,
@@ -423,6 +448,7 @@ async def leave_abstract_department(
 @limiter.limit(settings.RATE_LIMIT_EXPORT)
 async def pending_applications(
     request: Request,
+    format: str = Query("pdf", pattern="^(pdf|json)$"),
     _: dict = Depends(require_role(*REPORT_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
@@ -439,6 +465,10 @@ async def pending_applications(
         ]
         for row in rows
     ]
+
+    if format == "json":
+        return _preview_payload("Pending Applications (Aged)", headers, body_rows)
+
     content = _pdf_bytes("Pending Applications (Aged)", headers, body_rows)
     return _stream_bytes(content, "application/pdf", "pending_applications_aged.pdf")
 
@@ -507,7 +537,7 @@ async def balance_overview(
 async def sanction_pdf(
     request: Request,
     application_id: str,
-    current_user: dict = Depends(require_role("ADMIN", "ESTABLISHMENT_OFFICER", "REGISTRAR", "DIRECTOR", "HOD", "DEAN_ACADEMIC")),
+    current_user: dict = Depends(require_role("ADMIN", "DIRECTOR", "HOD", "NODAL_OFFICER")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
@@ -575,12 +605,17 @@ async def leave_calendar(
     request: Request,
     department_code: str | None = Query(None),
     month: str | None = Query(None),
+    format: str = Query("xlsx", pattern="^(xlsx|json)$"),
     _: dict = Depends(require_role(*REPORT_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
     rows = await _fetch_calendar_rows(db, department_code, month)
     headers = ["Emp Code", "Name", "From", "To", "Leave Type"]
     body_rows = [[row["emp_code"], row["name"], row["from_date"], row["to_date"], row["leave_type"]] for row in rows]
+
+    if format == "json":
+        return _preview_payload("Leave Calendar", headers, body_rows)
+
     content = _workbook_bytes("Leave Calendar", headers, body_rows)
     filename_suffix = month or "all"
     return _stream_bytes(
@@ -590,21 +625,7 @@ async def leave_calendar(
     )
 
 
-@router.get("/payroll-export")
-@limiter.limit(settings.RATE_LIMIT_EXPORT)
-async def payroll_export(
-    request: Request,
-    from_date: str = Query(),
-    to_date: str = Query(),
-    export_type: str = Query("LOP"),
-    current_user: dict = Depends(require_role(*PAYROLL_EXPORT_ROLES)),
-    db: AsyncSession = Depends(get_db),
-):
-    if export_type != "LOP":
-        raise HTTPException(status_code=400, detail="Only LOP export is supported in v1")
-
-    fd = date.fromisoformat(from_date)
-    td = date.fromisoformat(to_date)
+async def _fetch_payroll_lop_rows(db: AsyncSession, from_date: date, to_date: date) -> list[dict]:
     result = await db.execute(
         text(
             "SELECT "
@@ -624,9 +645,43 @@ async def payroll_export(
             "GROUP BY e.emp_code, e.name, d.name, TO_CHAR(a.from_date, 'YYYY-MM') "
             "ORDER BY e.emp_code, month"
         ),
-        {"from_date": fd, "to_date": td},
+        {"from_date": from_date, "to_date": to_date},
     )
-    rows = _rows_from_result(result)
+    return _rows_from_result(result)
+
+
+@router.get("/payroll-export")
+@limiter.limit(settings.RATE_LIMIT_EXPORT)
+async def payroll_export(
+    request: Request,
+    from_date: str = Query(),
+    to_date: str = Query(),
+    export_type: str = Query("LOP"),
+    format: str = Query("csv", pattern="^(csv|json)$"),
+    current_user: dict = Depends(require_role(*PAYROLL_EXPORT_ROLES)),
+    db: AsyncSession = Depends(get_db),
+):
+    if export_type != "LOP":
+        raise HTTPException(status_code=400, detail="Only LOP export is supported in v1")
+
+    fd = date.fromisoformat(from_date)
+    td = date.fromisoformat(to_date)
+    rows = await _fetch_payroll_lop_rows(db, fd, td)
+    headers = list(PAYROLL_NIC_MAPPING_PLACEHOLDER.values())
+    body_rows = [
+        [
+            row["emp_code"],
+            row["name"],
+            row["department"],
+            row["month"],
+            row["lop_days"],
+            row["reason"],
+        ]
+        for row in rows
+    ]
+
+    if format == "json":
+        return _preview_payload("Payroll Export (LOP)", headers, body_rows)
 
     await db.execute(
         text(

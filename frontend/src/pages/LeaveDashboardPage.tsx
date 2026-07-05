@@ -83,9 +83,6 @@ const ROLE_COLOR: Record<string, string> = {
   HOD:                  'bg-violet-600',
   NODAL_OFFICER:        'bg-teal-600',
   NODAL_OFFICE:         'bg-cyan-600',
-  ESTABLISHMENT_OFFICER:'bg-orange-600',
-  REGISTRAR:            'bg-rose-600',
-  DEAN_ACADEMIC:        'bg-indigo-600',
   DIRECTOR:             'bg-slate-700',
   ADMIN:                'bg-gray-900',
 };
@@ -275,12 +272,6 @@ export default function LeaveDashboardPage() {
             <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
           </svg>
           My Applications
-        </Link>
-        <Link
-          to="/leave-forms"
-          className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition-colors"
-        >
-          Leave Forms
         </Link>
         <Link
           to="/leave-account"

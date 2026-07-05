@@ -1,55 +1,67 @@
 # TESTING
 
-How to run and interpret the test suites. Current verified status at `0bbb590`: pytest `42 passed`, Playwright `6/6`, and `typecheck:e2e` green.
+How to run and interpret the test suites.
 
 ## Test layers
 
 | Layer | Tool | Location | Scope |
 | --- | --- | --- | --- |
-| Unit and integration | pytest | `backend/tests/` | Core services, API behavior, report/admin/security proofs |
-| API proof harness | pytest-backed script harness | `backend/tests/e2e_test.py` | Full backend workflow exercise through ASGI |
-| Browser journeys | Playwright (chromium) | `frontend/src/test/e2e/core_journeys.spec.ts` | Real user journeys through the running stack |
-| E2E type safety | `tsc` | `npm run typecheck:e2e` | Type-checks the Playwright specs |
+| Unit | pytest | `backend/tests/unit/` | Leave rules, employee validation, roles, attendance helpers |
+| Integration | pytest | `backend/tests/integration/` | Auth/RBAC, reports, security, leave balances |
+| API harness | pytest | `backend/tests/e2e_test.py` | Full leave workflow via ASGI |
+| Component | Vitest | `frontend/src/test/` | Auth flow, workMode, employeeForm helpers |
+| Browser journeys | Playwright | `frontend/src/test/e2e/core_journeys.spec.ts` | Login, apply, approve, reports, notifications |
 
-## Clean rebuild before a full run
+## Journey test users (does not purge manual data)
 
 ```powershell
 cd backend
-.\.venv\Scripts\python.exe -m alembic downgrade base
-.\.venv\Scripts\python.exe -m alembic upgrade head
-.\.venv\Scripts\python.exe seeds\run.py
-.\.venv\Scripts\python.exe ..\scripts\init_admin.py
+.\.venv\Scripts\python.exe tools\ensure_e2e_users.py
 ```
 
-## Running the suites
+Creates `staff` / `hod` / `nodal` (password `password`) plus `TEST_STAFF` employee with opening EL balance. Playwright globalSetup runs this automatically.
+
+Admin login remains `admin` / `password`.
+
+## Running tests
 
 ```powershell
+# Backend unit (fast — run on every change)
 cd backend
+.\.venv\Scripts\python.exe -m pytest tests/unit -q
+
+# Backend integration (needs PostgreSQL)
+.\.venv\Scripts\python.exe -m pytest tests/integration -q
+
+# Full backend including E2E harness
 .\.venv\Scripts\python.exe -m pytest -q
 
+# Frontend component tests
 cd ..\frontend
+npm run test
+
+# Playwright (starts backend + frontend; uses journey users above)
 npx playwright test --project=chromium
-npx playwright test --project=chromium -g "J6"
 npm run typecheck:e2e
 ```
 
-## Test users
+## Optional sample staff seed
 
-`backend/seeds/versions/007_test_users.py` creates one user per role with password `password` and auto-skips itself when `APP_ENV=production`. It also resets `failed_login_attempts`, `locked_until`, and `tokens_valid_from` on reseed. The seeded `staff` user starts with `must_change_password=true` and changes to `NewPassword123!` on first login.
+Seed `012_sample_staff.py` **no longer purges** employees unless you set `PURGE_DEV_STAFF=1`. Use that only when you want a clean demo dataset.
 
-## Core journeys (`J1` to `J6`)
+## Core Playwright journeys (`J1`–`J6`)
 
 | ID | Journey |
 | --- | --- |
-| `J1` | Staff first login, forced password change, reaches the app |
-| `J2` | Apply for leave |
-| `J3` | HOD approval |
-| `J4` | Establishment Officer approval |
-| `J5` | Registrar final approval and balance deduction |
-| `J6` | Notification bell flow: staff applies, HOD sees it, mark-read clears the badge |
+| `J1` | Staff login, password change, apply leave |
+| `J2` | HOD → Nodal Officer approval chain |
+| `J3` | Staff checks balance after approval |
+| `J4` | Admin views employee ledger |
+| `J5` | Nodal officer exports leave register |
+| `J6` | Notification bell mark-read |
 
-The Playwright `login()` helper handles both the seeded password and the post-change password. Run the whole spec for a faithful regression because later journeys assume earlier state transitions have happened.
+Approval workflow is **two steps**: `HOD → NODAL_OFFICER` (legacy Establishment/Registrar roles removed).
 
-## What "verified end to end" means
+## CI
 
-A verified claim here means a clean rebuild plus full backend pytest and full Playwright, not a mocked component test or one isolated browser step.
+GitHub Actions runs backend unit tests and frontend Vitest on every push/PR (`.github/workflows/ci.yml`). Integration and Playwright remain local/pre-release checks until a shared test database is wired in CI.

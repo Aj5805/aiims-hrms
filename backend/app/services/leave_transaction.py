@@ -51,24 +51,39 @@ async def get_pending_committed_days(
     *,
     exclude_application_id: str | None = None,
 ) -> float:
-    """Sum days reserved by in-flight applications (accounts for simultaneous requests)."""
+    """Sum balance-debit days reserved by in-flight applications."""
     result = await db.execute(
         text("""
             SELECT COALESCE(SUM(
                 CASE
                     WHEN a.application_kind = 'MODIFICATION' AND p.id IS NOT NULL THEN
-                        GREATEST(a.applied_days - p.applied_days, 0)
+                        GREATEST(
+                            CASE
+                                WHEN lt.code = 'HPL' AND COALESCE(a.is_commuted, false)
+                                THEN a.applied_days * 2
+                                ELSE a.applied_days
+                            END
+                            -
+                            CASE
+                                WHEN lt.code = 'HPL' AND COALESCE(p.is_commuted, false)
+                                THEN p.applied_days * 2
+                                ELSE p.applied_days
+                            END,
+                            0
+                        )
                     WHEN a.application_kind = 'CANCELLATION' THEN 0
+                    WHEN lt.code = 'HPL' AND COALESCE(a.is_commuted, false) THEN a.applied_days * 2
                     ELSE a.applied_days
                 END
             ), 0) AS pending_days
             FROM leave_applications a
+            JOIN leave_types lt ON a.leave_type_id = lt.id
             LEFT JOIN leave_applications p ON a.parent_application_id = p.id
             WHERE a.employee_id = :eid
               AND a.leave_type_id = :lid
               AND EXTRACT(YEAR FROM a.from_date)::int = :ly
               AND a.status IN ('SUBMITTED', 'UNDER_REVIEW')
-              AND (:exclude IS NULL OR a.id != CAST(:exclude AS uuid))
+              AND (CAST(:exclude AS uuid) IS NULL OR a.id <> CAST(:exclude AS uuid))
         """),
         {
             "eid": employee_id,
@@ -168,9 +183,11 @@ async def deduct_on_final_approval(
     application_id: str,
     actor_id: str,
     impersonated_by: str | None = None,
+    balance_debit_days: float | None = None,
 ) -> str | None:
     """Lock balance, verify funds (incl. pending), deduct availed, append ledger."""
-    if days <= 0:
+    debit = balance_debit_days if balance_debit_days is not None else days
+    if debit <= 0:
         raise LeaveBalanceError("Applied days must be greater than zero")
 
     if await _deduction_exists(db, application_id):
@@ -191,9 +208,9 @@ async def deduct_on_final_approval(
         exclude_application_id=application_id,
     )
     available = float(bal["closing_balance"] or 0) - pending
-    if days > available:
+    if debit > available:
         raise LeaveBalanceError(
-            f"Insufficient balance at approval: {available} available after pending commitments, {days} requested"
+            f"Insufficient balance at approval: {available} available after pending commitments, {debit} requested"
         )
 
     balance_id = str(bal["id"])
@@ -203,8 +220,9 @@ async def deduct_on_final_approval(
             SET availed = COALESCE(availed, 0) + :days, last_updated = now()
             WHERE id = :bid
         """),
-        {"days": days, "bid": balance_id},
+        {"days": debit, "bid": balance_id},
     )
+    reason = "Leave approved (commuted HPL)" if debit != days else "Leave approved"
     await record_leave_ledger(
         db,
         balance_id=balance_id,
@@ -212,11 +230,11 @@ async def deduct_on_final_approval(
         leave_type_id=leave_type_id,
         leave_year=leave_year,
         txn_type="AVAIL",
-        amount=days,
+        amount=debit,
         field_affected="availed",
         reference_type="application",
         reference_id=application_id,
-        reason="Leave approved",
+        reason=reason,
         actor_id=actor_id,
         impersonated_by=impersonated_by,
     )

@@ -41,6 +41,7 @@ async def bootstrap_leave_balances(
     as_of: date | None = None,
     actor_id: str | None = None,
     impersonated_by: str | None = None,
+    credit_overrides: dict[str, float] | None = None,
 ) -> dict:
     """Idempotent: create balance rows for all entitled leave types in the current calendar year."""
     as_of = as_of or date.today()
@@ -61,7 +62,11 @@ async def bootstrap_leave_balances(
         if existing.fetchone():
             continue
 
-        credited = onboarding_credited_amount(rule, doj, as_of)
+        lt_code = str(rule["code"])
+        if credit_overrides is not None and lt_code in credit_overrides:
+            credited = float(credit_overrides[lt_code])
+        else:
+            credited = onboarding_credited_amount(rule, doj, as_of)
         balance_id = str(uuid.uuid4())
         await db.execute(
             text("""

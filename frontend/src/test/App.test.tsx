@@ -17,6 +17,6 @@ describe('App', () => {
       </QueryClientProvider>,
     );
 
-    expect(screen.getByText(/AIIMS HRMS/i)).toBeInTheDocument();
+    expect(screen.getByText(/^HRMS$/i)).toBeInTheDocument();
   });
 });

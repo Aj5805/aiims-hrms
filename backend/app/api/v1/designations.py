@@ -17,7 +17,7 @@ router = APIRouter(prefix="/designations", tags=["designations"])
 @router.get("", response_model=list[DesignationResponse])
 async def list_designations(
     include_inactive: bool = Query(False),
-    _: dict = Depends(require_role("ADMIN", "ESTABLISHMENT_OFFICER", "REGISTRAR", "DIRECTOR", "NODAL_OFFICER", "NODAL_OFFICE", "HOD", "STAFF")),
+    _: dict = Depends(require_role("ADMIN", "DIRECTOR", "NODAL_OFFICER", "NODAL_OFFICE", "HOD", "STAFF")),
     db: AsyncSession = Depends(get_db),
 ):
     inactive_clause = "" if include_inactive else " AND d.is_active = true"
@@ -42,7 +42,7 @@ async def list_designations(
 @router.post("", response_model=DesignationResponse, status_code=201)
 async def create_designation(
     body: DesignationCreate,
-    _: dict = Depends(require_role("ADMIN", "ESTABLISHMENT_OFFICER")),
+    _: dict = Depends(require_role("ADMIN")),
     db: AsyncSession = Depends(get_db),
 ):
     cat_id = None
@@ -83,7 +83,7 @@ async def create_designation(
 async def update_designation(
     designation_id: str,
     body: DesignationUpdate,
-    _: dict = Depends(require_role("ADMIN", "ESTABLISHMENT_OFFICER")),
+    _: dict = Depends(require_role("ADMIN")),
     db: AsyncSession = Depends(get_db),
 ):
     updates: dict = {}

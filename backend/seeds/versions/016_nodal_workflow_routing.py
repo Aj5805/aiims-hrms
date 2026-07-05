@@ -51,7 +51,29 @@ def _update_steps(session, config_name: str, steps: list[tuple]):
                 },
             )
 
+    max_step_order = max(s[0] for s in steps)
+    session.execute(
+        text("""
+            UPDATE workflow_steps
+            SET is_final_authority = (step_order = :final_so)
+            WHERE config_id = :cid
+        """),
+        {"cid": cid, "final_so": max_step_order},
+    )
+
     # Remove extra steps only when not referenced by leave_approvals (keeps historical rows intact).
+    extras = session.execute(
+        text("SELECT id FROM workflow_steps WHERE config_id = :cid AND step_order > :max_so ORDER BY step_order"),
+        {"cid": cid, "max_so": max_step_order},
+    ).fetchall()
+    for (step_id,) in extras:
+        refs = session.execute(
+            text("SELECT 1 FROM leave_approvals WHERE step_id = :sid LIMIT 1"),
+            {"sid": step_id},
+        ).fetchone()
+        if not refs:
+            session.execute(text("DELETE FROM workflow_steps WHERE id = :id"), {"id": step_id})
+
     if len(existing) > len(steps):
         for extra in existing[len(steps):]:
             refs = session.execute(

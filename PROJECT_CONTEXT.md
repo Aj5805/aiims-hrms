@@ -2,9 +2,19 @@
 
 > **Agents:** Read this file at the start of every session. Update it after meaningful work (features, fixes, decisions, validation). Keep it concise — current state only, not a full changelog. Detailed history stays in `HANDOFF.md`.
 
-**Last updated:** 2026-07-03 (simplified HOD + nodal assignment masters)
+**Last updated:** 2026-07-05 (testing + production-readiness checkpoint)
 
 ---
+
+## Latest (2026-07-05): Testing infrastructure + production fixes
+
+- **Automated tests:** backend **100/100** pytest (unit + integration + ASGI e2e harness); frontend **12/12** Vitest. CI workflow: `.github/workflows/ci.yml`.
+- **Test maintenance:** `.cursor/rules/testing.mdc` — update/add tests when touching related APIs, leave rules, auth, or workflows.
+- **E2E helpers:** `backend/tests/helpers.py`, `backend/tools/ensure_e2e_users.py` (idempotent journey users; does **not** purge manual DB data). Playwright globalSetup uses ensure script, not full seed purge.
+- **Production fixes this session:** pending-balance SQL cast (`leave_transaction.py`); leave app numbers use **max seq** not count (avoids duplicate `app_number`); workflow seed **021** + e2e setup enforce **HOD → Nodal (2 steps, final at step 2)** — removes legacy 3-step configs.
+- **Removed obsolete:** leave form templates API/page (`leave_form_templates.py`, `LeaveFormsPage.tsx`).
+- **Manual test data:** owner adds staff visually; sample seed purge only when `PURGE_DEV_STAFF=1`. E2E cleans **HRMS\*** / **RES001** test rows only.
+- **Run tests:** see `docs/TESTING.md` — `cd backend && pytest -q`; `cd frontend && npm run test -- --run`.
 
 ## Stakeholder & Project Stage
 
@@ -58,24 +68,26 @@ scripts/db_sync.py      cross-platform DB snapshot sync
 
 ## Roles (summary)
 
+Six login roles only. **Registrar** and **Establishment Officer** are designations and nodal-office functions — not separate system roles.
+
 | Role | Scope | Key capability |
 |---|---|---|
-| `ADMIN` | All | System config, user mgmt, audit, impersonation |
-| `DIRECTOR` | All | Read-only institutional view |
-| `REGISTRAR` / `ESTABLISHMENT_OFFICER` | CCS staff | Legacy chain, masters, reports |
-| `DEAN_ACADEMIC` | Residents | Final approver (resident leave) |
+| `ADMIN` | All | System config, user mgmt, audit, impersonation, masters |
+| `DIRECTOR` | All | Read-only institutional view (Executive Director) |
+| `NODAL_OFFICER` | Nodal office (Establishment or Registrar) | Final leave approver — staff matching that office's leave scheme |
+| `NODAL_OFFICE` | Under nodal officer | Clerical — onboarding, directory, reports, profile edit, manual leave entries (no approval) |
 | `HOD` | Own dept | First-stage approver |
-| `NODAL_OFFICER` | Nodal office (Establishment or Registrar) | Final approver — all staff matching that office's leave scheme |
-| `NODAL_OFFICE` | Under nodal officer | Clerical staff — onboarding, directory, reports, **full profile edit** (no leave approval) |
-| `STAFF` | Own record | Apply leave, view balances, **edit own non-critical profile** |
+| `STAFF` | Own record | Apply leave, view balances, edit own non-critical profile |
+
+**Removed (2026-07-04):** `ESTABLISHMENT_OFFICER`, `REGISTRAR`, `DEAN_ACADEMIC` — covered by nodal officers + designation master. Migration `o5p6q7r8s9t0` remaps existing users.
 
 **Nodal leave workflow:** `Staff → HOD (step 1) → Nodal Officer (step 2, FINAL)` — routed by **employee category**, not department:
 - **Regular staff** (CCS: faculty, nursing, admin) → **Establishment** nodal office officer
 - **Residents** (JR/SR academic & non-academic) → **Registrar** nodal office officer
 
-Masters → **Nodal Offices** manages offices, nodal officers, and clerical logins. No per-department nodal mapping or department “managing office” field.
+Masters → **Nodal Offices** manages offices, nodal officers, and clerical logins. Leave step 2 routes by employee leave scheme only (no department mapping). Multiple nodal offices per staff type are supported.
 
-**Owner spec mapping:** Staff = `STAFF`; HOD = `HOD`; Nodal Officer = `NODAL_OFFICER`; Nodal office clerical (view-only, no approvals) = `NODAL_OFFICE`; Super Admin = `ADMIN`.
+**Owner spec mapping:** Staff = `STAFF`; HOD = `HOD`; Nodal Officer = `NODAL_OFFICER`; Nodal office clerical = `NODAL_OFFICE` (profile edit + manual entries, no approvals); Super Admin = `ADMIN`.
 
 ---
 
@@ -97,7 +109,7 @@ Masters → **Nodal Offices** manages offices, nodal officers, and clerical logi
 | Custom leave adjustments | — | — | ✓ nodal officer scoped | ✓ |
 | Manual leave entries (balance) | — | — | ✓ nodal officer + nodal office scoped | ✓ |
 | Balance overview + filters | — | — | ✓ `/balance-overview` | — |
-| NODAL_OFFICE view-only logins | — | — | ✓ no edit/onboard/approve | ~ via user create |
+| NODAL_OFFICE view-only logins | — | — | ✓ clerical under nodal officer (no approve) | ~ via user create |
 | Masters CRUD + activate/deactivate | — | — | — | ✓ dept/desg/leave types |
 | Holidays / RH load | — | — | — | ✓ Masters tab |
 | Auditability | — | — | — | ✓ + immutable leave ledger |
@@ -120,7 +132,7 @@ Masters → **Nodal Offices** manages offices, nodal officers, and clerical logi
 
 **Masters UI:** Departments/designations — **Add** button top-right (form collapsed by default); inline edit + activate/deactivate. **Nodal Offices** — table master like departments; assign nodal officer by staff picker + Save; clerical logins under **Clerical** row expand. **HOD Assignments** — one row per department; staff picker from that department + Save (departments managed in Departments tab). **Leave Types** — create/edit collapsed by default; validation rules as toggles (no raw JSON). **Nodal Assignments** — separate sections for nodal officer (one per dept, approval) vs nodal office clerical logins + dept mapping; summary counts. **HOD Assignments** — collapsed assign form; shows coverage gap. **Entitlements** — credit frequency per rule (EL = half-yearly, 15+15). **Holidays** — closed/RH filter (closed default), add form collapsed; RH = any 2 per staff per year. **Workflows** — edit config matching rules + approval steps.
 
-**Sample data:** Purge via `cd backend && .venv\Scripts\python.exe scripts/purge_test_data.py --reseed` (keeps departments/designations). **Avoid** `purge_all_test_data.py` without re-running seeds 009+010.
+**Sample data:** **Purged 2026-07-04** — 0 employees, 0 leave records; only `admin` login remains. Real AIIMS masters kept (57 departments, 43 designations). Re-purge: `cd backend && .venv\Scripts\python.exe scripts/purge_test_data.py` (add `--reseed` for 20 sample staff). **Avoid** `purge_all_test_data.py` without re-running seeds 009+010.
 
 **HR Operations:** Bulk CSV import **removed** from nav and UI — onboard one employee at a time only.
 
@@ -130,11 +142,39 @@ Masters → **Nodal Offices** manages offices, nodal officers, and clerical logi
 
 **Latest (2026-07-01):** **Layout + home dashboard** — breadcrumbs moved to top bar (left of notifications/user); page headers slimmed (no card banner). Home dashboard shows live leave stats, pending apps, approver inbox preview, quick actions, compact module chips. Frontend build ✓.
 
-**Latest (2026-07-03):** **HOD + Nodal assignment UX** — Masters tabs now match Departments/Designations pattern: table of groups (departments / nodal offices), **Manage** → pick **staff** from dropdown → **Save**. No separate login-account picker; backend accepts `employee_id`, upgrades role to HOD/NODAL_OFFICER automatically. New APIs: `GET /hod-assignments/eligible-staff`, `GET /nodal-offices/eligible-staff`.
+**Latest (2026-07-03):** **Profile + dashboard polish** — shared `EmployeeProfileContent` for self (`/profile`) and HR (`/employees/:id`) views; extended `PATCH /employees/me` for contact/address/personal fields; home dashboard live stats + approver widgets respect Staff/Desk toggle; breadcrumbs via `pageMeta` store in top bar; `workMode` helpers in `utils/workMode.ts`. Frontend `npm run build` ✓.
+
+**Latest (2026-07-04):** **Onboard increment + leave credits + error messages** — next increment auto-fill corrected: Jul 2–Jan 1 joiners → upcoming 1 Jul (Jan 1 joiners included in July cycle); Jan 2–Jul 1 → upcoming 1 Jan. Onboarding form shows editable opening leave credits per leave type (auto from entitlement + DOJ; `GET /employees/onboarding-leave-credits`; saved via `onboarding_leave_credits` on create). Generic "Request failed" replaced with `formatHttpError` (shows API detail, HTTP status, or network message) on onboard, profile save, reports, change requests. Unit tests + frontend build ✓.
+
+**Latest (2026-07-04):** **Onboard + profile edit polish** — JR Academic / Non-Academic designations map to correct staff groups (`PGJR` / `PGNA`); profile edit uses same dropdowns as onboard (marital status, blood group, caste); save-success messages show in page header banner (not floating toast). Backend + frontend unit tests; `npm run build` ✓.
+
+**Latest (2026-07-04):** **Onboard staff-group auto-suggest** — selecting a designation again auto-fills staff group immediately (no department required first); local rules mirror backend + API confirm. Frontend build ✓.
+
+**Latest (2026-07-04):** **Admin dashboard command centre** — Dashboard tab rebuilt as institution pulse: clickable attention cards (unmapped users, password resets, policy gaps, pending leaves, depts without HOD, maintenance mode), employee/user/master snapshot, users-by-role chips, recent audit preview, quick links, improved system health labels (failed notifications, backup age). New `GET /admin/summary` aggregates counts in one call. Frontend `npm run build` ✓.
+
+**Latest (2026-07-04):** **Staff master duplicate checks** — onboarding and profile edit reject PAN, Aadhaar, NPS, mobile, email, bank account, and PFMS code if already registered to another employee (409 with staff number + name). Mobile/email also checked against alt-mobile/alt-email columns. **Profile edit validation** — same field rules as onboarding now run client-side before save (self + full edit modes). Unit tests + frontend build ✓.
+
+**Prior (2026-07-04):** **Staff onboarding validation** — email, PAN, IFSC, and bank account show inline errors on blur (not only on save); date fields have calendar picker + "Stored as DD-MM-YYYY" hint; IFSC normalizes spaces and letter-O→zero in 5th position; bank account 9–18 digits only. Backend mirrors IFSC/bank rules. Unit tests + frontend build ✓.
+
+**Latest (2026-07-04):** **Reports screen redesign** — tabbed report picker with per-report filters (labeled, contextual); **View report** loads on-screen table preview; **Export Excel/PDF/CSV** downloads unchanged files. Backend adds `format=json` preview on leave register, category summary, pending, calendar, payroll (payroll preview skips export audit log). Nodal scoping fixed on leave register + category summary. Payroll tab hidden for `NODAL_OFFICE`. Frontend `npm run build` ✓.
+
+**Latest (2026-07-04):** **Staff vs Desk — separate screens** — for employee-linked `HOD`/`NODAL_OFFICER`, toggle now swaps **entire** nav + landing (not overlapped menus): Staff View = personal employee menus only (`/` home); Desk View = Nodal Desk + HR Operations/Reports only (`/hod` home). Wrong-mode routes redirect; personal pages blocked in Desk View. Frontend `npm run build` ✓.
+
+**Latest (2026-07-04):** **HPL commutation + attendance pipeline** — commuted HPL is an apply-leave option (MC required, 2× HPL debit, 180-day lifetime cap, whole days only); standalone `COMMUTED` leave type removed; past-dated leave allowed automatically; `attendance_daily` table + `/attendance/report` (leave-derived stage 1; biometric review/final open). Migration `n4o5p6q7r8s9`, seed `019`. Unit tests + frontend build ✓.
+
+**Latest (2026-07-04):** **Entitlement review + corrections** — CCL/ML/PL/EOL tenure pools no longer show misleading "Annual" credit (now `NONE` / "Tenure pool"); Faculty/Nursing EL/HPL restored to 30/20 days per year (half-yearly 15+15, 10+10); CL max stretch 8; resident ANNUAL_RES annual (not monthly); CCS ML tenure_extension removed. Seed `018`. Frontend build ✓.
+
+**Latest (2026-07-03):** **Leave policy matrix + apply leave** — ML/PL/CCL as tenure pools with gender rules (CCL/ML female, PL male) and max-times-in-service; EL/HPL half-yearly (15+15, 10+10); policy matrix UI: year basis, eligibility, max times, Initialize missing rows; single-day leave (same from/to) counts 1 day; MC optional everywhere; HPL MC flag removed. Migration `m3n4o5p6q7r8`, seed `017`. Unit tests + frontend build ✓.
+
+**Latest (2026-07-03):** **Leave lifecycle hardening** — cut-short via **Report rejoin** (`rejoin_date` on change-request); `actual_rejoin_date` on parent after approval; **retrospective apply** (past dates + MC, 30-day window); min-notice skipped for modifications; **recall restricted** to nodal/admin (staff use cancellation). Migration `l2m3n4o5p6q7`. Unit tests + frontend build ✓.
+
+**Latest (2026-07-03):** **Category-only nodal routing + UX** — removed department → nodal mapping; leave routes by leave scheme only. Global save toasts on mutations. Staff category editable on profile (Admin + nodal). Nodal officer picker searches all staff. Migration `k1l2m3n4o5p6`. Frontend build ✓.
+
+**Latest (2026-07-03):** **HOD + Nodal assignment UX** — Masters tabs: table of groups, **Manage** → pick staff → **Save**; backend accepts `employee_id`, upgrades role to HOD/NODAL_OFFICER.
 
 **Latest (2026-07-02):** **Staff vs Desk view toggle** — for employee-linked `HOD`/`NODAL_OFFICER` logins, top-bar toggle now switches between **Staff View** and **Desk View**. Sidebar hides Nodal Desk in staff mode; approver pages (`/hod`, `/approvals`, `/team-leave`, `/forecast`) require Desk View for toggle-eligible users. Home dashboard approver widgets/actions now respect the selected view mode. Frontend build ✓.
 
-**Latest (2026-07-02):** **Nodal officer assignment dropdown** — Masters → Nodal Offices now lists standalone Establishment/Registrar logins (not only existing `NODAL_OFFICER` accounts). Dropdown is filtered per office (CCS vs Residents). Assigning upgrades role to `NODAL_OFFICER`. Frontend build ✓.
+**Latest (2026-07-02):** **Nodal officer assignment** — Masters → Nodal Offices lists all active staff for officer assignment (any category). Assigning upgrades role to `NODAL_OFFICER`. Frontend build ✓.
 
 **Latest (2026-07-01):** **Nodal office manual leave entries** — `NODAL_OFFICE` clerical staff can search staff in their nodal office scope on Leave Ledger (`/leave-account`) and post manual balance entries (availed, credited, etc.) with required reason; same API as nodal officer, scoped by leave scheme. Frontend build ✓.
 
@@ -142,7 +182,7 @@ Masters → **Nodal Offices** manages offices, nodal officers, and clerical logi
 
 **Latest (2026-07-01):** **Profile self-edit** — My Profile → View Profile (`/profile`) opens full e-Service Book in view mode with top-right Edit FAB. Staff update non-critical fields (contact, address, personal bio) via `PATCH /employees/me`. Nodal office (+ existing HR editors) get full edit on employee profiles including critical fields (dept, designation, IDs, banking). Frontend build ✓.
 
-**Latest (2026-07-01):** **Date entry UX** — staff form dates are typed `YYYY-MM-DD` (auto-dashes); validate instantly on 8 digits; invalid → inline warning + clear. **Enter** advances focus field-to-field on onboard form. Frontend build ✓.
+**Latest (2026-07-01):** **Date entry UX** — staff form dates are typed `YYYY-MM-DD` (auto-dashes) with calendar picker; validate instantly on 8 digits or calendar pick; invalid → inline warning + clear; profile/reports display as `DD-MM-YYYY`. **Enter** advances focus field-to-field on onboard form. Frontend build ✓.
 
 **Latest (2026-07-01):** **Six-month realistic demo seeding** — added `backend/scripts/seed_six_month_demo.py` to quickly generate visual demo data (default 72 staff, 6 months history, mixed approved/rejected/withdrawn/pending leave states, role logins for HOD/Nodal/office chain). Verified local run created 288 leave applications; reports and balance overview endpoints respond with populated output.
 
@@ -156,6 +196,8 @@ Masters → **Nodal Offices** manages offices, nodal officers, and clerical logi
 
 **Not built yet (current priority):** Full **transaction logic** for the four core areas below — correct, reliable rules that govern how data moves and stays consistent.
 
+**WIP / Uncommitted:** Leave policy overhaul (matrix UI, validation, seeds/migration `m3n4o5p6q7r8`), Apply Leave redesign, prior profile/dashboard slice.
+
 ---
 
 ## Core Transaction Logic — Build Roadmap
@@ -168,7 +210,7 @@ Masters → **Nodal Offices** manages offices, nodal officers, and clerical logi
 |---|---|---|
 | Shell | Add employee form, CSV bulk import, auto-create login (username = emp code, temp password) | Full registration workflow: validation rules, approval before account goes live, linking user role (STAFF/HOD) at registration time, transfers between departments, deactivation/rejoin, password policy on first login |
 | **Done (2026-07-01)** | **Auto staff number allotment** — per-group prefixed series (`FAC`, `NUR`, `NFS`, `DEP`, `CON`, `PGJR`, `PGNA`, `SRAC`, `SRNA` + 4 digits); numbers never reused | — |
-| Shell | Admin can create standalone users (`users.py`) | Clear rule: when is a user created with vs without an employee record; NODAL_OFFICER role missing from admin user-create |
+| Shell | Admin can create standalone users (`users.py`) | Clear rule: when is a user created with vs without an employee record; roles centralized in `app/auth/roles.py` |
 | Gap | — | Self-registration (if needed for AIIMS), document upload at join, probation period flags |
 
 ### Owner-provided master data (canonical — real AIIMS)
@@ -216,8 +258,10 @@ Masters → **Nodal Offices** manages offices, nodal officers, and clerical logi
 | CCS (faculty) | FACULTY | 11 | Professor, Associate Professor, Lecturer, Dietician, Clinical Psychologist |
 | CCS (nursing) | NURSING | 2 | Senior Nursing Officer, Nursing Officer |
 | CCS (admin) | ADMIN | 22 | Registrar, Executive, Accounts Officer, Lab Technician, Stenographer |
-| Residency | JR_ACAD | 2 | Junior Resident, P.G. Student |
-| Residency | SR_ACAD | 2 | Senior Resident, SR (Academic) |
+| Residency | JR_ACAD | 1 | Junior Resident (Academic) |
+| Residency | JR_NA | 1 | Junior Resident (Non-Academic) |
+| Residency | SR_ACAD | 1 | Senior Resident (Academic) |
+| Residency | SR_NA | 1 | Senior Resident (Non-Academic) |
 
 Duplicates removed from source: Professor, Senior Resident, Technician, Junior Admin row, Executive. Expanded truncated names (e.g. Techniciar → Technician). Pay levels not yet assigned — owner can supply later.
 
@@ -237,10 +281,10 @@ All-caps names normalised for display (e.g. NURSING → Nursing, PULMONARY MEDIC
 
 | Status | What exists | What transaction logic is still needed |
 |---|---|---|
-| **Master in DB** | 57 AIIMS departments loaded (seed `010` ran locally) | Hierarchy (parent depts), nodal officer assignment via Nodal Offices master |
+| **Master in DB** | 57 AIIMS departments loaded (seed `010` ran locally) | Hierarchy (parent depts) |
 | Shell | CRUD: code, name, parent department | Cannot delete dept with active staff; transfers affecting approval chain |
-| **Done (2026-07-01)** | **Nodal offices** — Establishment (CCS) + Registrar (residents); category-based leave routing | Optional extra nodal offices / department overrides if AIIMS needs later |
-| Legacy | `dept_nodal_assignments` table (unused for routing) | — |
+| **Done (2026-07-01)** | **Nodal offices** — Establishment (CCS) + Registrar (residents); category-based leave routing | — |
+| **Done (2026-07-03)** | **HOD Assignments** — one HOD per department via Masters tab | — |
 
 **Suggested order:** Assign nodal officers in Masters → Nodal Offices (Establishment + Registrar).
 
@@ -262,10 +306,11 @@ All-caps names normalised for display (e.g. NURSING → Nursing, PULMONARY MEDIC
 | **Seeded + wired** | Entitlement matrix, eligible leave types, onboarding bootstrap | Tenure-pool consumption (EOL/ML) on apply |
 | **Done (2026-06-30)** | **Atomic final approval** — balance lock, fund check, deduct + ledger + APPROVED in one commit; idempotent recall | Sanction PDF polish |
 | **Done (2026-06-30)** | **Multi-stage balance check** — pending applications reserved at apply, forward, approve, modify | — |
+| **Done (2026-07-03)** | **Leave lifecycle** — rejoin/cut-short, retrospective apply, recall nodal-only, `actual_rejoin_date` | — |
 | **Done (2026-06-30)** | **Cancel/modify approved leave** — change-request workflow restores or adjusts balance on final approval | — |
 | **Done (2026-06-30)** | **Validation engine** — MC requirement, min notice (EL), max stretch, workflow min/max days | **Done (2026-07-01)** CL DoPT rules: allow holiday/weekend attachment, 8-day absence span, EL/HPL sandwich ban, half-day emergency continuation |
 | **Done (2026-06-30)** | **CL prefix/suffix** from config (legacy block flags for non-CL types) | — |
-| **Done (2026-06-30)** | **AIIMS Bibinagar form catalogue** — `GET /leave-form-templates` + Apply screen links by category/leave type | Host PDFs in-repo if institute URLs change |
+| **Done (2026-07-04)** | **Apply for Leave screen** — institutional proforma fields (applicant particulars, nature/period, leave account, purpose/contact, MC); PDF form catalogue removed | Acting arrangement field |
 | **Done (2026-06-30)** | **Jan-1 annual credit scheduler** (optional, `ANNUAL_CREDIT_SCHEDULER_ENABLED`); manual button still available | — |
 | Partial | Carry-forward (EL cap 300); one annual credit run (1 Jan) for CCS + residents | Year-end closing automation |
 
@@ -291,23 +336,6 @@ Step 5: Year-end / special   → Closing, encashment, LOP, comp-off (as AIIMS re
 
 ---
 
-## Current State
-
-**Built so far (foundation):** Auth, role-based navigation, leave apply/approve flow (incl. nodal routing), leave balances (basic), admin console, impersonation, reports shell, hub dashboards, test seed data.
-
-**Latest work (2026-06-30):** Nav & UX fixes — dedicated **Leave Forms** catalogue (`/leave-forms`); **Login As User** in Admin Console → Users & Roles; employee directory read-only with separate **Lifecycle** and **Bulk Import** menus; policy matrix resilient loading + empty-state guidance; **ADMIN** added to report access (frontend + backend). Frontend `npm run build` ✓.
-
-**Prior (2026-06-30):** Leave transaction hardening — pending-balance checks at all approval stages; cancel/modify approved leave; config-driven validation; AIIMS Bibinagar form template API + Apply UI; Jan-1 annual credit scheduler. Migration `d4e5f6a7b8c9`. Seed `005_validation_rules_update`.
-
-**Git:** Pushed `419bb82` — staff auto-numbering, 2026 holidays, leave form templates, annual credit scheduler, masters/nav UI.
-
-### WIP / Uncommitted
-
-Uncommitted local changes include onboarding validation/date UX files plus new demo seeding helper `backend/scripts/seed_six_month_demo.py`.
-
-
----
-
 ## Run Locally
 
 ```powershell
@@ -318,7 +346,7 @@ python -m uvicorn main:app --reload    # http://127.0.0.1:8000
 cd frontend && npm run dev             # http://localhost:5173
 ```
 
-**Test accounts** (password: `password`): `admin` (ADMIN); `testStaff1`–`10`, `testHod1`–`10`, `testNodal1`–`10` (nodal routing dataset).
+**Test accounts:** `admin` / `password` only (test staff purged). Use onboard form or `purge_test_data.py --reseed` to add sample users again.
 
 **DB sync:** Only use `python scripts/db_sync.py pull|push` when user explicitly says **"with db"**. Otherwise code-only `git pull` / normal commit flow.
 
@@ -348,7 +376,7 @@ Use this ladder. **Default = keep building; fix only when a trigger fires.**
 | **Now (during feature work)** | Fix only if it **blocks** the feature you are building | Broken login, wrong approval routing, data not saving |
 | **When touching the same area** | Fix related known issues in the same PR/session | Building session management → fix force-logout; building broadcasts → add content sanitization |
 | **When a module is "done"** | Light cleanup for that module only | Split an oversized page file after the screen stabilizes |
-| **Before pilot / UAT** | Automated tests for critical journeys; fix security holes in active modules | CI pipeline, leave end-to-end tests, RBAC tests |
+| **Before pilot / UAT** | Automated tests for critical journeys; fix security holes in active modules | CI pipeline ✓, leave e2e harness ✓, RBAC/integration tests ✓ — keep updated as features land |
 | **Before production go-live** | Full hardening pass | Backup scripts in repo, install docs correct, release tags, monitoring, all P0 security items |
 | **Defer indefinitely** | Cosmetic refactors with no user impact | Rename phase files, remove unused React Query dep, ORM migration from raw SQL |
 
@@ -394,11 +422,7 @@ Use this ladder. **Default = keep building; fix only when a trigger fires.**
 
 ## Next Action
 
-**Run locally:** `cd backend && alembic upgrade head` (applies `d4e5f6a7b8c9` leave-application extensions). `python seeds/run.py` (includes `005_validation_rules_update`). Restart backend + frontend.
-
-**Smoke test:** Apply CL spanning a weekend — only working days debited; projection shows calendar absence span. CL Fri + EL Mon (with existing approved CL) should reject sandwich. Half-day CL then EL next day (with prior CL on record) should allow. Run `python seeds/run.py` for seed `014_cl_dopt_rules` on existing DBs.
-
-**Next Action:** For visual walkthrough/demo, run `cd backend && .venv\Scripts\python.exe scripts/seed_six_month_demo.py --staff 72 --months 6 --apps-per-staff 4` (safe for non-production only), then log in as `admin/password` and review Dashboards + Reports + Approval inboxes.
+Onboard real staff via Masters → HR Operations, or run `purge_test_data.py --reseed` if you need quick demo users again. Then continue registration transaction logic hardening.
 
 
 ---

@@ -7,13 +7,24 @@ CCS_CATEGORIES = ("FACULTY", "NURSING", "ADMIN")
 # (leave_type, year_ref, days_per_year, prorata_rate, year1_days, year2_plus_days,
 #  max_stretch, max_tenure, carry_forward, special_rules)
 _CCS_LEAVE_RULES = [
-    ("EL", "CALENDAR", 30, 2.5, None, None, None, None, True, None),
-    ("HPL", "CALENDAR", 20, 1.67, None, None, None, None, False, None),
-    ("CL", "CALENDAR", 8, None, None, None, 8, None, False, None),
-    ("ML", "CALENDAR", 180, None, None, None, None, None, False, None),
-    ("PL", "CALENDAR", 15, None, None, None, None, None, False, None),
-    ("CCL", "CALENDAR", 730, None, None, None, None, None, False, None),
-    ("COMMUTED", "CALENDAR", None, None, None, None, None, None, False, None),
+    ("EL", "CALENDAR", 30, 2.5, None, None, None, None, True, None, "HALF_YEARLY"),
+    ("HPL", "CALENDAR", 20, 1.67, None, None, None, None, False, None, "HALF_YEARLY"),
+    ("CL", "CALENDAR", 8, None, None, None, 8, None, False, None, "ANNUAL"),
+    (
+        "ML", "TENURE", None, None, None, None, None, 180, False,
+        '{"gender_eligibility": "FEMALE_ONLY", "max_times_in_service": 2}',
+        "NONE",
+    ),
+    (
+        "PL", "TENURE", None, None, None, None, None, 15, False,
+        '{"gender_eligibility": "MALE_ONLY", "max_times_in_service": 2}',
+        "NONE",
+    ),
+    (
+        "CCL", "TENURE", None, None, None, None, None, 730, False,
+        '{"gender_eligibility": "FEMALE_ONLY"}',
+        "NONE",
+    ),
 ]
 
 
@@ -27,7 +38,7 @@ def run(session):
     count = 0
     for cat_code in CCS_CATEGORIES:
         cat_id = _get_id(session, "employee_categories", cat_code)
-        for (lt_code, year_ref, dpy, pr, y1, y2, max_stretch, max_tenure, cf, special) in _CCS_LEAVE_RULES:
+        for (lt_code, year_ref, dpy, pr, y1, y2, max_stretch, max_tenure, cf, special, credit_freq) in _CCS_LEAVE_RULES:
             lt_id = _get_id(session, "leave_types", lt_code)
             existing = session.execute(
                 text("""SELECT id FROM leave_entitlement_rules
@@ -39,17 +50,17 @@ def run(session):
             session.execute(
                 text("""
                     INSERT INTO leave_entitlement_rules
-                        (category_id, leave_type_id, year_ref, days_per_year,
+                        (category_id, leave_type_id, year_ref, credit_frequency, days_per_year,
                          prorata_rate, year1_days, year2_plus_days,
                          max_at_a_stretch, max_in_tenure, carry_forward, special_rules)
                     VALUES
-                        (:cat_id, :lt_id, :year_ref, :dpy,
+                        (:cat_id, :lt_id, :year_ref, :cfreq, :dpy,
                          :pr, :y1, :y2,
                          :max_stretch, :max_tenure, :cf, CAST(:special AS jsonb))
                 """),
                 {
                     "cat_id": cat_id, "lt_id": lt_id, "year_ref": year_ref,
-                    "dpy": dpy, "pr": pr, "y1": y1, "y2": y2,
+                    "cfreq": credit_freq, "dpy": dpy, "pr": pr, "y1": y1, "y2": y2,
                     "max_stretch": max_stretch, "max_tenure": max_tenure,
                     "cf": cf, "special": special,
                 },

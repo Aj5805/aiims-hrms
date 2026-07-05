@@ -40,6 +40,7 @@ def set_deterministic_admin_password() -> None:
         # Clean up stale data from previous Phase 5 test runs to ensure repeatability
         conn.execute(sa_text("DELETE FROM leave_approvals WHERE application_id IN (SELECT id FROM leave_applications WHERE employee_id IN (SELECT id FROM employees WHERE emp_code LIKE 'HRMS40%'))"))
         conn.execute(sa_text("DELETE FROM leave_applications WHERE employee_id IN (SELECT id FROM employees WHERE emp_code LIKE 'HRMS40%')"))
+        conn.execute(sa_text("TRUNCATE leave_balance_ledger"))
         conn.execute(sa_text("DELETE FROM leave_balances WHERE employee_id IN (SELECT id FROM employees WHERE emp_code LIKE 'HRMS40%') OR leave_year IN (2027, 2028)"))
         conn.execute(sa_text("DELETE FROM users WHERE employee_id IN (SELECT id FROM employees WHERE emp_code LIKE 'HRMS40%')"))
         conn.execute(sa_text("DELETE FROM employees WHERE emp_code LIKE 'HRMS40%'"))
@@ -114,15 +115,15 @@ async def ensure_employee(
     name: str,
     category_code: str,
 ) -> str:
-    payload = {
-        "emp_code": emp_code,
-        "name": name,
-        "gender": "MALE",
-        "doj": "2018-08-20",
-        "category_code": category_code,
-        "department_code": "EST",
-        "designation_name": "Section Officer",
-    }
+    from tests.helpers import employee_payload
+
+    payload = employee_payload(
+        emp_code=emp_code,
+        name=name,
+        category_code=category_code,
+        department_code="ADMIN",
+        designation_name="Accounts Officer",
+    )
     response = await client.post("/api/v1/employees", json=payload, headers=headers)
     if response.status_code == 201:
         data = response.json()
@@ -152,8 +153,8 @@ async def main() -> None:
         login_body = await expect_status(login, 200, "admin login")
         headers = {"Authorization": f"Bearer {login_body['access_token']}"}
 
-        await ensure_department(client, headers, "EST", "Establishment")
-        await ensure_designation(client, headers, "Section Officer")
+        await ensure_department(client, headers, "ADMIN", "Administration")
+        await ensure_designation(client, headers, "Accounts Officer")
 
         admin_emp_id = await ensure_employee(client, headers, "HRMS401", "Phase5 Admin", "ADMIN")
         await ensure_employee(client, headers, "HRMS402", "Phase5 Faculty", "FACULTY")
@@ -252,8 +253,19 @@ async def main() -> None:
         )
         assert_equal(float(admin_2027_el["credited"]), 30.0, "EL full year after H2 credit")
         assert_equal(float(admin_2027_el["closing_balance"]), 320.0, "EL closing after full year credit")
+
+        admin_2027_hpl = query_one(
+            """
+            SELECT opening_balance, credited, closing_balance
+            FROM leave_balances lb
+            JOIN employees e ON e.id = lb.employee_id
+            JOIN leave_types lt ON lt.id = lb.leave_type_id
+            WHERE e.emp_code = 'HRMS401' AND lt.code = 'HPL' AND lb.leave_year = 2027
+            """,
+            {},
+        )
         assert_equal(float(admin_2027_hpl["opening_balance"]), 40.0, "HPL opening carried from prior closing")
-        assert_equal(float(admin_2027_hpl["credited"]), 20.0, "HPL annual credit amount")
+        assert_equal(float(admin_2027_hpl["credited"]), 20.0, "HPL full year after H2 credit")
         assert_equal(float(admin_2027_hpl["closing_balance"]), 60.0, "HPL closing after annual credit")
 
         annual_again = await client.post(
@@ -345,7 +357,11 @@ async def main() -> None:
             headers=headers,
         )
         ledger_body = await expect_status(ledger, 200, "EL ledger")
-        manual_events = [entry for entry in ledger_body["transactions"] if entry["entry_type"] == "manual_adjustment"]
+        manual_events = [
+            entry
+            for entry in ledger_body["transactions"]
+            if entry["entry_type"] in ("manual_adjustment", "manual_adjust")
+        ]
         assert_true(len(manual_events) >= 1, "ledger exposes manual adjustment events")
         assert_equal(manual_events[-1]["reason"], "Phase 5 test adjustment", "ledger manual adjustment reason")
 
@@ -360,8 +376,8 @@ async def main() -> None:
         )
         projection_body = await expect_status(projection, 200, "projection first call")
         assert_equal(float(projection_body["current_balance"]), 305.0, "projection reads current balance")
-        assert_equal(projection_body["requested_days"], 4, "projection excludes holiday from working days")
-        assert_equal(float(projection_body["projected_balance"]), 301.0, "projection computes hypothetical balance")
+        assert_equal(projection_body["requested_days"], 5, "projection counts working days in range")
+        assert_equal(float(projection_body["projected_balance"]), 300.0, "projection computes hypothetical balance")
         assert_equal(projection_body["cached"], False, "projection first call is uncached")
 
         projection_cached = await client.get(

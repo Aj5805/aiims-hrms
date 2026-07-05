@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect } from 'react';
 import { employeesApi, leaveBalancesApi } from '../api/endpoints';
 import { useAuthStore } from '../stores';
 import { PageHeader } from '../components/PageHeader';
+import { hasSystemRole, HR_EDITOR_ROLES, TEAM_VIEW_ROLES } from '../constants/roles';
 
 type EmployeeOption = {
   id: string;
@@ -188,8 +189,9 @@ function BalanceTableRow({
 
 export function MyLeaveAccountPage() {
   const user = useAuthStore((state) => state.user);
-  const canTeamView = ['ADMIN', 'ESTABLISHMENT_OFFICER', 'HOD', 'NODAL_OFFICER', 'NODAL_OFFICE'].includes(user?.role ?? '');
-  const canAdjust = ['ADMIN', 'ESTABLISHMENT_OFFICER', 'NODAL_OFFICER', 'NODAL_OFFICE'].includes(user?.role ?? '');
+  const canTeamView = hasSystemRole(user?.role, TEAM_VIEW_ROLES)
+    || user?.role === 'NODAL_OFFICE';
+  const canAdjust = hasSystemRole(user?.role, HR_EDITOR_ROLES);
   const [employeeQuery, setEmployeeQuery] = useState('');
   const [employeeOptions, setEmployeeOptions] = useState<EmployeeOption[]>([]);
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeOption | null>(null);

@@ -25,7 +25,7 @@ type BalanceRow = {
 
 export function YearEndProcessingPage() {
   const user = useAuthStore((state) => state.user);
-  const canRun = user?.role === 'ADMIN' || user?.role === 'ESTABLISHMENT_OFFICER';
+  const canRun = user?.role === 'ADMIN';
   const [message, setMessage] = useState('');
   const [manualSearch, setManualSearch] = useState('');
   const [manualEmployees, setManualEmployees] = useState<EmployeeOption[]>([]);
@@ -39,7 +39,7 @@ export function YearEndProcessingPage() {
   if (!canRun) {
     return (
       <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-        Only `ADMIN` and `ESTABLISHMENT_OFFICER` can run year-end or manual account actions.
+        Only Super Admin can run year-end or manual account actions.
       </div>
     );
   }

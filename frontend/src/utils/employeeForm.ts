@@ -14,6 +14,10 @@ export const EMPTY_ADDRESS: AddressParts = {
   pin: '',
 };
 
+export const MARITAL_STATUS_OPTIONS = ['SINGLE', 'MARRIED', 'WIDOWED', 'DIVORCED'] as const;
+export const BLOOD_GROUP_OPTIONS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] as const;
+export const CASTE_CATEGORY_OPTIONS = ['GEN', 'OBC', 'SC', 'ST', 'EWS'] as const;
+
 export const INDIAN_STATES = [
   'ANDAMAN AND NICOBAR ISLANDS',
   'ANDHRA PRADESH',
@@ -125,14 +129,25 @@ export function formatAddressDisplay(raw: string | null | undefined): string {
 }
 
 export function isValidEmail(value: string): boolean {
+  return emailValidationMessage(value) === null;
+}
+
+export function emailValidationMessage(value: string): string | null {
   const v = value.trim();
-  if (!v) return true;
+  if (!v) return null;
   const atParts = v.split('@');
-  if (atParts.length !== 2) return false;
+  if (atParts.length !== 2) {
+    return 'Email must have exactly one @ and at least one . in the domain.';
+  }
   const [local, domain] = atParts;
-  if (!local || !domain || domain.includes('@')) return false;
+  if (!local || !domain || domain.includes('@')) {
+    return 'Email must have exactly one @ and at least one . in the domain.';
+  }
   const dot = domain.indexOf('.');
-  return dot > 0 && dot < domain.length - 1;
+  if (dot <= 0 || dot >= domain.length - 1) {
+    return 'Email must have exactly one @ and at least one . in the domain.';
+  }
+  return null;
 }
 
 export const MIN_DATE_YEAR = 1900;
@@ -202,6 +217,29 @@ export interface DateValidationResult {
   message?: string;
 }
 
+/** Jul 2–Dec 31 and 1 Jan → July increment cycle. */
+function isJulyIncrementCycle(month: number, day: number): boolean {
+  if (month === 1 && day === 1) return true;
+  if (month === 7 && day >= 2) return true;
+  return month >= 8;
+}
+
+/**
+ * Government increment cycle: DOJ Jul 2–Jan 1 → upcoming 1 Jul; DOJ Jan 2–Jul 1 → upcoming 1 Jan.
+ * Returns ISO date string or empty when DOJ is invalid/incomplete.
+ */
+export function suggestNextIncrementDate(dojIso: string): string {
+  if (!dojIso || !isCompleteIsoDateString(dojIso) || isoDateValidationMessage(dojIso)) return '';
+  const year = Number(dojIso.slice(0, 4));
+  const month = Number(dojIso.slice(5, 7));
+  const day = Number(dojIso.slice(8, 10));
+  if (isJulyIncrementCycle(month, day)) {
+    if (month === 1) return `${year}-07-01`;
+    return `${year + 1}-07-01`;
+  }
+  return `${year + 1}-01-01`;
+}
+
 export function validateEmployeeDates(input: {
   dob?: string;
   doj?: string;
@@ -250,17 +288,146 @@ export function validateAddressParts(parts: AddressParts, label: string): string
   return null;
 }
 
+export function filterPanInput(value: string): string {
+  return upperText(value.replace(/[^A-Za-z0-9]/g, '')).slice(0, 10);
+}
+
 export function isValidPan(value: string): boolean {
-  if (!value) return true;
-  return /^[A-Z]{5}\d{4}[A-Z]$/.test(value);
+  return panValidationMessage(value) === null;
+}
+
+export function panValidationMessage(value: string): string | null {
+  if (!value) return null;
+  if (value.length !== 10) {
+    return 'PAN must be exactly 10 characters (e.g. ABCDE1234F).';
+  }
+  if (!/^[A-Z]{5}\d{4}[A-Z]$/.test(value)) {
+    return 'PAN must be in format ABCDE1234F (5 letters, 4 digits, 1 letter).';
+  }
+  return null;
+}
+
+/** Strip spaces/special chars; auto-correct letter O in 5th position to zero. */
+export function filterIfscInput(value: string): string {
+  let code = upperText(value.replace(/[^A-Za-z0-9]/g, '')).slice(0, 11);
+  if (code.length >= 5 && code[4] === 'O') {
+    code = `${code.slice(0, 4)}0${code.slice(5)}`;
+  }
+  return code;
 }
 
 export function isValidIfsc(value: string): boolean {
-  if (!value) return true;
-  return /^[A-Z]{4}0[A-Z0-9]{6}$/.test(value);
+  return ifscValidationMessage(value) === null;
+}
+
+export function ifscValidationMessage(value: string): string | null {
+  const code = filterIfscInput(value);
+  if (!code) return null;
+  if (code.length !== 11) {
+    return 'IFSC must be exactly 11 characters (e.g. SBIN0001234).';
+  }
+  if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(code)) {
+    return 'IFSC format: 4-letter bank code + 0 + 6-character branch code.';
+  }
+  return null;
+}
+
+export function filterBankAccountInput(value: string): string {
+  return filterDigits(value, 18);
+}
+
+export function isValidBankAccount(value: string): boolean {
+  return bankAccountValidationMessage(value) === null;
+}
+
+export function bankAccountValidationMessage(value: string): string | null {
+  if (!value) return null;
+  if (!/^\d+$/.test(value)) {
+    return 'Bank account must contain numbers only (no spaces).';
+  }
+  if (value.length < 9 || value.length > 18) {
+    return 'Bank account must be 9–18 digits.';
+  }
+  return null;
+}
+
+/** Display / report format: DD-MM-YYYY from ISO YYYY-MM-DD. */
+export function formatIndianDate(iso: string): string {
+  if (!iso || !isCompleteIsoDateString(iso)) return iso;
+  const [y, m, d] = iso.split('-');
+  return `${d}-${m}-${y}`;
 }
 
 export function isValidMobile(value: string): boolean {
   if (!value) return true;
   return /^\d{10}$/.test(value);
+}
+
+export interface RegistrationValidationInput {
+  email?: string;
+  personal_email?: string;
+  mobile?: string;
+  alt_mobile?: string;
+  pan?: string;
+  aadhaar?: string;
+  nps_or_gpf_no?: string;
+  pfms_code?: string;
+  bank_account_no?: string;
+  ifsc_code?: string;
+  permanentAddress?: AddressParts;
+  presentAddress?: AddressParts;
+  dob?: string;
+  doj?: string;
+  next_increment_date?: string;
+  /** When false, skip IDs & banking field checks (self-service edit). */
+  includeIdsAndBanking?: boolean;
+  /** When false, skip DOB/DOJ/next-increment checks. */
+  includeDates?: boolean;
+  /** When false, skip address checks. */
+  includeAddress?: boolean;
+}
+
+/** Shared client-side validation for onboarding and profile edit. */
+export function validateRegistrationFields(input: RegistrationValidationInput): string | null {
+  const emailErr = emailValidationMessage(input.email ?? '');
+  if (emailErr) return emailErr;
+  const altEmailErr = emailValidationMessage(input.personal_email ?? '');
+  if (altEmailErr) return `Alt email: ${altEmailErr.replace('Email', 'email')}`;
+  if (!isValidMobile(input.mobile ?? '')) return 'Mobile must be exactly 10 digits when entered.';
+  if (!isValidMobile(input.alt_mobile ?? '')) return 'Alt mobile must be exactly 10 digits when entered.';
+
+  if (input.includeIdsAndBanking !== false) {
+    const panErr = panValidationMessage(input.pan ?? '');
+    if (panErr) return panErr;
+    const ifscErr = ifscValidationMessage(input.ifsc_code ?? '');
+    if (ifscErr) return ifscErr;
+    const bankErr = bankAccountValidationMessage(input.bank_account_no ?? '');
+    if (bankErr) return bankErr;
+    const aadhaar = input.aadhaar ?? '';
+    if (aadhaar && aadhaar.length !== 12) return 'Aadhaar must be exactly 12 digits.';
+    const nps = input.nps_or_gpf_no ?? '';
+    if (nps && nps.length !== 12) return 'NPS number must be exactly 12 digits.';
+    const pfms = input.pfms_code ?? '';
+    if (pfms && pfms.length !== 14) return 'PFMS code must be exactly 14 characters.';
+  }
+
+  if (input.includeAddress !== false && input.permanentAddress) {
+    const permErr = validateAddressParts(input.permanentAddress, 'Permanent address');
+    if (permErr) return permErr;
+    if (input.presentAddress) {
+      const presErr = validateAddressParts(input.presentAddress, 'Present address');
+      if (presErr) return presErr;
+    }
+  }
+
+  if (input.includeDates !== false) {
+    const dates = validateEmployeeDates({
+      dob: input.dob,
+      doj: input.doj,
+      next_increment_date: input.next_increment_date,
+    });
+    if (!dates.ok) return dates.message || 'Invalid date.';
+  }
+
+  return null;
 }
