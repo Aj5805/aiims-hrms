@@ -1,5 +1,9 @@
 import api from './client';
 
+export const systemApi = {
+  time: () => api.get<{ server_time: string; timezone: string; unix_ms: number }>('/system/time'),
+};
+
 export const authApi = {
   login: (username: string, password: string) =>
     api.post('/auth/login', { username, password }),
@@ -26,6 +30,11 @@ export const employeesApi = {
   }) => api.get('/employees/suggest-staff-group', { params }),
   nextStaffNumber: (staff_group: string) =>
     api.get('/employees/next-staff-number', { params: { staff_group } }),
+  checkStaffNumber: (params: {
+    emp_code: string;
+    staff_group?: string;
+    exclude_employee_id?: string;
+  }) => api.get('/employees/check-staff-number', { params }),
   onboardingLeaveCredits: (params: { category_code: string; doj: string; gender?: string }) =>
     api.get('/employees/onboarding-leave-credits', { params }),
   eligibleLeaveTypes: (id: string) => api.get(`/employees/${id}/eligible-leave-types`),
@@ -115,6 +124,8 @@ export const adminApi = {
   forceLogout: (userId: string) => api.post(`/admin/force-logout/${userId}`),
   getMaintenanceMode: () => api.get('/admin/maintenance-mode'),
   toggleMaintenanceMode: (enable: boolean) => api.post(`/admin/maintenance-mode?enable=${enable}`),
+  getEmailSettings: () => api.get('/admin/email-settings'),
+  updateEmailSettings: (data: Record<string, unknown>) => api.put('/admin/email-settings', data),
   getWorkflowDiagnostics: (leaveId: string) => api.get(`/admin/workflow/${leaveId}`),
   overrideWorkflow: (leaveId: string) => api.post(`/admin/workflow/${leaveId}/override`),
   bulkRoles: (assignments: any[]) => api.put('/admin/bulk-roles', { assignments }),
@@ -134,6 +145,11 @@ export const nodalOfficesApi = {
   eligibleStaff: (params?: Record<string, string>) => api.get('/nodal-offices/eligible-staff', { params }),
   eligibleOfficers: () => api.get('/nodal-offices/eligible-officers'),
   clericalLogins: (officeId: string) => api.get(`/nodal-offices/${officeId}/clerical-logins`),
+  assignOfficeStaff: (officeId: string, data: { employee_id: string }) =>
+    api.post(`/nodal-offices/${officeId}/clerical-logins`, data),
+  removeOfficeStaff: (officeId: string, userId: string) =>
+    api.delete(`/nodal-offices/${officeId}/office-staff/${userId}`),
+  /** @deprecated Prefer assignOfficeStaff with employee_id */
   createClericalLogin: (officeId: string, data: Record<string, unknown>) =>
     api.post(`/nodal-offices/${officeId}/clerical-logins`, data),
 };
@@ -183,8 +199,10 @@ export const workflowApi = {
 
 export const leaveBalancesApi = {
   get: (employeeId: string) => api.get(`/leave-balances/${employeeId}`),
-  ledger: (employeeId: string, leaveTypeId: string) =>
-    api.get(`/leave-balances/${employeeId}/ledger/${leaveTypeId}`),
+  ledger: (employeeId: string, leaveTypeId: string, leaveYear?: number) =>
+    api.get(`/leave-balances/${employeeId}/ledger/${leaveTypeId}`, {
+      params: leaveYear != null ? { leave_year: String(leaveYear) } : undefined,
+    }),
   project: (employeeId: string, params: Record<string, string>) =>
     api.get(`/leave-balances/${employeeId}/project`, { params }),
   opening: (data: Record<string, unknown>[]) => api.post('/leave-balances/opening', data),
@@ -202,7 +220,7 @@ export const leaveBalancesApi = {
 };
 
 export const leaveAppApi = {
-  submit: (data: Record<string, unknown>) => api.post('/leave-applications', data),
+  deskEntry: (data: Record<string, unknown>) => api.post('/leave-applications/desk-entry', data),
   changeRequest: (data: Record<string, unknown>) => api.post('/leave-applications/change-request', data),
   list: (params?: Record<string, string>) => api.get('/leave-applications', { params }),
   get: (id: string) => api.get(`/leave-applications/${id}`),

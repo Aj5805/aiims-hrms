@@ -1,3 +1,5 @@
+import type { ChangeEvent } from 'react';
+
 export interface AddressParts {
   flat: string;
   street: string;
@@ -69,6 +71,36 @@ export function filterEmailInput(value: string): string {
 
 export function upperText(value: string): string {
   return value.toUpperCase();
+}
+
+/** Map a caret position through a filter so selection stays stable after transforms. */
+export function mapCaretThroughFilter(
+  raw: string,
+  caret: number,
+  filter: (value: string) => string,
+): number {
+  if (caret <= 0) return 0;
+  return filter(raw.slice(0, caret)).length;
+}
+
+/** Apply a filter on change while preserving the text cursor position. */
+export function commitFilteredInputChange(
+  e: ChangeEvent<HTMLInputElement>,
+  filter: (value: string) => string,
+  commit: (filtered: string) => void,
+): void {
+  const el = e.target;
+  const start = el.selectionStart ?? el.value.length;
+  const end = el.selectionEnd ?? start;
+  const filtered = filter(el.value);
+  const newStart = mapCaretThroughFilter(el.value, start, filter);
+  const newEnd = mapCaretThroughFilter(el.value, end, filter);
+  commit(filtered);
+  requestAnimationFrame(() => {
+    if (document.activeElement === el) {
+      el.setSelectionRange(newStart, newEnd);
+    }
+  });
 }
 
 export function filterName(value: string): string {
@@ -356,6 +388,11 @@ export function formatIndianDate(iso: string): string {
   if (!iso || !isCompleteIsoDateString(iso)) return iso;
   const [y, m, d] = iso.split('-');
   return `${d}-${m}-${y}`;
+}
+
+/** Whole-day leave credits for onboarding display and defaults (no fractional days). */
+export function roundLeaveDays(value: number): number {
+  return Math.round(value);
 }
 
 export function isValidMobile(value: string): boolean {

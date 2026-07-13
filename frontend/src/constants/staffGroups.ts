@@ -3,7 +3,8 @@ export const FALLBACK_STAFF_GROUPS = [
   { code: 'FAC', label: 'Faculty' },
   { code: 'NUR', label: 'Nursing Officer' },
   { code: 'NFS', label: 'Senior Nursing Officer' },
-  { code: 'DEP', label: 'Administration / Department' },
+  { code: 'ADM', label: 'Administration (Non-Faculty)' },
+  { code: 'DEP', label: 'Legacy department series' },
   { code: 'CON', label: 'College of Nursing' },
   { code: 'PGJR', label: 'Junior Resident (Academic)' },
   { code: 'PGNA', label: 'Junior Resident (Non-Academic)' },
@@ -28,7 +29,7 @@ const DESIGNATION_STAFF_GROUP: Record<string, string> = {
 const CATEGORY_STAFF_GROUP: Record<string, string> = {
   FACULTY: 'FAC',
   NURSING: 'NUR',
-  ADMIN: 'DEP',
+  ADMIN: 'ADM',
   JR_ACAD: 'PGJR',
   SR_ACAD: 'SRAC',
   JR_NA: 'PGNA',

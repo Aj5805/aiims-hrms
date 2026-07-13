@@ -1,15 +1,19 @@
-import { useEffect, useState } from 'react';
-import { departmentsApi, designationsApi, employeesApi } from '../api/endpoints';
+import { useEffect, useState, type ChangeEvent } from 'react';
+import { Link } from 'react-router-dom';
+import { employeesApi } from '../api/endpoints';
 import { formatHttpError } from '../constants/roles';
 import { PageHeader } from './PageHeader';
 import AddressFields from './AddressFields';
 import { ValidatedDateInput } from './ValidatedDateInput';
+import { handleFormEnterKey } from '../utils/focusNavigation';
+import { checkStaffNumberAvailable } from '../utils/staffNumberCheck';
 import {
   type AddressParts,
   EMPTY_ADDRESS,
   BLOOD_GROUP_OPTIONS,
   CASTE_CATEGORY_OPTIONS,
   MARITAL_STATUS_OPTIONS,
+  commitFilteredInputChange,
   filterAlphanumUpper,
   filterDigits,
   filterEmailInput,
@@ -79,15 +83,6 @@ type Props = {
 
 const INITIALS = ['', 'Dr.', 'Shri.', 'Smt.', 'Mr.', 'Mrs.', 'Ms.', 'Prof.'] as const;
 const PAY_GROUPS = ['A', 'B', 'C'] as const;
-const CATEGORY_CODES = [
-  { code: 'FACULTY', label: 'Faculty' },
-  { code: 'NURSING', label: 'Nursing' },
-  { code: 'ADMIN', label: 'Administration' },
-  { code: 'JR_ACAD', label: 'Junior Resident (Academic)' },
-  { code: 'SR_ACAD', label: 'Senior Resident (Academic)' },
-  { code: 'JR_NA', label: 'Junior Resident (Non-Academic)' },
-  { code: 'SR_NA', label: 'Senior Resident (Non-Academic)' },
-] as const;
 
 function fmtDate(value?: string | null) {
   if (!value) return '—';
@@ -153,6 +148,7 @@ function buildSelfDraft(emp: EmployeeRecord): DraftState {
 function buildFullDraft(emp: EmployeeRecord): DraftState {
   return {
     ...buildSelfDraft(emp),
+    emp_code: emp.emp_code || '',
     name: emp.name || '',
     gender: emp.gender || 'MALE',
     dob: emp.dob || '',
@@ -199,13 +195,11 @@ function selfPayload(draft: DraftState) {
 function fullPayload(draft: DraftState) {
   return {
     ...selfPayload(draft),
+    emp_code: draft.emp_code || null,
     name: draft.name || null,
     gender: draft.gender || null,
     dob: draft.dob || null,
     doj: draft.doj || null,
-    department_code: draft.department_code || null,
-    designation_name: draft.designation_name || null,
-    category_code: draft.category_code || null,
     grade: draft.grade || null,
     pay_level: draft.pay_level || null,
     next_increment_date: draft.next_increment_date || null,
@@ -234,21 +228,40 @@ export default function EmployeeProfileContent({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [draft, setDraft] = useState<DraftState>({});
-  const [departments, setDepartments] = useState<{ code: string; name: string }[]>([]);
-  const [designations, setDesignations] = useState<{ name: string }[]>([]);
+  const [staffNumberError, setStaffNumberError] = useState('');
+  const [staffNumberChecking, setStaffNumberChecking] = useState(false);
 
   useEffect(() => {
-    if (!editing || editMode !== 'full') return;
-    void Promise.all([departmentsApi.list({ is_active: true }), designationsApi.list({ is_active: true })])
-      .then(([deptRes, desgRes]) => {
-        setDepartments(deptRes.data || []);
-        setDesignations(desgRes.data || []);
-      })
-      .catch(() => {
-        setDepartments([]);
-        setDesignations([]);
-      });
-  }, [editing, editMode]);
+    if (!editing || editMode !== 'full') {
+      setStaffNumberError('');
+      setStaffNumberChecking(false);
+      return;
+    }
+    const code = String(draft.emp_code || '').trim();
+    if (!code) {
+      setStaffNumberError('');
+      return;
+    }
+    let cancelled = false;
+    setStaffNumberChecking(true);
+    const timer = window.setTimeout(() => {
+      void checkStaffNumberAvailable(code, { exclude_employee_id: emp.id })
+        .then((result) => {
+          if (cancelled) return;
+          setStaffNumberError(result.available ? '' : (result.message || 'Staff number is not available'));
+        })
+        .catch(() => {
+          if (!cancelled) setStaffNumberError('');
+        })
+        .finally(() => {
+          if (!cancelled) setStaffNumberChecking(false);
+        });
+    }, 350);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [editing, editMode, draft.emp_code, emp.id]);
 
   const startEdit = () => {
     setDraft(editMode === 'full' ? buildFullDraft(emp) : buildSelfDraft(emp));
@@ -281,6 +294,9 @@ export default function EmployeeProfileContent({
         includeDates: false,
       });
     }
+    if (!String(draft.emp_code || '').trim()) {
+      return 'Staff number is required.';
+    }
     return validateRegistrationFields({
       ...common,
       pan: String(draft.pan || ''),
@@ -300,6 +316,24 @@ export default function EmployeeProfileContent({
     if (validationError) {
       setError(validationError);
       return;
+    }
+    if (editMode === 'full') {
+      if (staffNumberChecking) {
+        setError('Checking staff number availability…');
+        return;
+      }
+      if (staffNumberError) {
+        setError(staffNumberError);
+        return;
+      }
+      const code = String(draft.emp_code || '').trim();
+      if (code !== emp.emp_code) {
+        const liveCheck = await checkStaffNumberAvailable(code, { exclude_employee_id: emp.id });
+        if (!liveCheck.available) {
+          setError(liveCheck.message || 'Staff number is not available');
+          return;
+        }
+      }
     }
     setSaving(true);
     setError('');
@@ -325,6 +359,13 @@ export default function EmployeeProfileContent({
       }
       return next;
     });
+  };
+
+  const handleFiltered = (
+    key: string,
+    filter: (value: string) => string,
+  ) => (e: ChangeEvent<HTMLInputElement>) => {
+    commitFilteredInputChange(e, filter, (v) => setField(key, v));
   };
 
   const isSelfField = (section: 'contact' | 'personal' | 'address' | 'critical') => {
@@ -357,6 +398,201 @@ export default function EmployeeProfileContent({
     )
   ) : null;
 
+  const personalFirst = editing && editMode === 'full';
+  const personalOrder = personalFirst ? 'order-1' : 'order-2';
+  const serviceOrder = personalFirst ? 'order-2' : 'order-1';
+
+  const profileGrid = (
+    <div className="grid gap-4 lg:grid-cols-2">
+      <section className={`card p-5 ${serviceOrder}`}>
+        <h2 className="text-sm font-bold text-slate-800 border-b pb-2 mb-4">Service Record</h2>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Staff Number</div>
+            {isSelfField('critical') && editMode === 'full' ? (
+              <>
+                <input
+                  required
+                  className={`form-input py-1 text-sm w-full uppercase font-mono${staffNumberError ? ' border-red-400 ring-1 ring-red-200' : ''}`}
+                  value={String(draft.emp_code || '')}
+                  onChange={handleFiltered('emp_code', upperText)}
+                />
+                {staffNumberChecking && (
+                  <p className="mt-0.5 text-[11px] text-slate-500">Checking availability…</p>
+                )}
+                {staffNumberError && (
+                  <p className="mt-0.5 text-[11px] text-red-600">{staffNumberError}</p>
+                )}
+              </>
+            ) : (
+              <div className="text-sm font-medium text-slate-900 mt-0.5 break-words">{emp.emp_code || '—'}</div>
+            )}
+          </div>
+          <Detail label="Staff Group" value={emp.staff_group} />
+          <Detail label="Designation" value={emp.designation_name} />
+          <Detail label="Department" value={emp.department_name} />
+          <Detail label="Category" value={emp.category_name} />
+          {editMode === 'full' && (
+            <div className="col-span-2 text-[11px] text-slate-500 border-t border-slate-100 pt-3 mt-1 space-y-1">
+              <div className="font-semibold text-slate-600 uppercase tracking-wide">Lifecycle actions</div>
+              <div className="flex flex-wrap gap-x-3 gap-y-1">
+                {emp.is_active ? (
+                  <>
+                    <Link to="/employees?tab=deactivate" state={{ employeeId: emp.id }} className="text-indigo-600 hover:underline">Deactivate</Link>
+                    <Link to="/employees?tab=designation" state={{ employeeId: emp.id }} className="text-indigo-600 hover:underline">Change designation</Link>
+                    <Link to="/employees?tab=transfer" state={{ employeeId: emp.id }} className="text-indigo-600 hover:underline">Transfer</Link>
+                  </>
+                ) : (
+                  <Link to="/employees?tab=reactivate" state={{ employeeId: emp.id }} className="text-indigo-600 hover:underline">Reactivate</Link>
+                )}
+              </div>
+            </div>
+          )}
+          <Detail label="Grade (A/B/C)" value={isSelfField('critical') ? (
+            <select className="form-input py-1 text-sm w-full" value={String(draft.grade || '')} onChange={(e) => setField('grade', e.target.value)}>
+              <option value="">—</option>
+              {PAY_GROUPS.map((g) => <option key={g} value={g}>{g}</option>)}
+            </select>
+          ) : emp.grade} />
+          <Detail label="Pay Level" value={isSelfField('critical') ? (
+            <input className="form-input py-1 text-sm w-full uppercase" value={String(draft.pay_level || '')} onChange={handleFiltered('pay_level', upperText)} />
+          ) : emp.pay_level} />
+          <Detail label="Date of Joining" value={isSelfField('critical') ? (
+            <ValidatedDateInput value={String(draft.doj || '')} onChange={(v) => setField('doj', v)} className="form-input py-1 text-sm w-full" />
+          ) : fmtDate(emp.doj)} />
+          <Detail label="Next Increment" value={isSelfField('critical') ? (
+            <ValidatedDateInput value={String(draft.next_increment_date || '')} onChange={(v) => setField('next_increment_date', v)} className="form-input py-1 text-sm w-full" />
+          ) : fmtDate(emp.next_increment_date)} />
+          <Detail label="Last Working Day" value={fmtDate(emp.dol_last_working)} />
+          <Detail label="Status" value={
+            <span className={emp.is_active ? 'text-emerald-700' : 'text-slate-500'}>
+              {emp.is_active ? 'Active' : 'Inactive'}
+            </span>
+          } />
+        </div>
+      </section>
+
+      <section className={`card p-5 ${personalOrder}`}>
+        <h2 className="text-sm font-bold text-slate-800 border-b pb-2 mb-4">Personal Details</h2>
+        <div className="grid grid-cols-2 gap-4">
+          <Detail label="Initial" value={isSelfField('personal') ? (
+            <select className="form-input py-1 text-sm w-full" value={String(draft.initial || '')} onChange={(e) => setField('initial', e.target.value)}>
+              {INITIALS.map((i) => <option key={i || 'none'} value={i}>{i || '—'}</option>)}
+            </select>
+          ) : emp.initial} />
+          <Detail label="Full Name" value={isSelfField('critical') ? (
+            <input className="form-input py-1 text-sm w-full uppercase" value={String(draft.name || '')} onChange={handleFiltered('name', filterName)} />
+          ) : emp.name} />
+          <Detail label="Father's Name" value={isSelfField('personal') ? (
+            <input className="form-input py-1 text-sm w-full uppercase" value={String(draft.father_name || '')} onChange={handleFiltered('father_name', filterName)} />
+          ) : emp.father_name} />
+          <Detail label="Date of Birth" value={isSelfField('critical') ? (
+            <ValidatedDateInput value={String(draft.dob || '')} onChange={(v) => setField('dob', v)} className="form-input py-1 text-sm w-full" />
+          ) : fmtDate(emp.dob)} />
+          <Detail label="Gender" value={isSelfField('critical') ? (
+            <select className="form-input py-1 text-sm w-full" value={String(draft.gender || 'MALE')} onChange={(e) => setField('gender', e.target.value)}>
+              <option value="MALE">Male</option>
+              <option value="FEMALE">Female</option>
+              <option value="OTHER">Other</option>
+            </select>
+          ) : emp.gender} />
+          <Detail label="Blood Group" value={isSelfField('personal') ? (
+            <select className="form-input py-1 text-sm w-full" value={String(draft.blood_group || '')} onChange={(e) => setField('blood_group', e.target.value)}>
+              <option value="">—</option>
+              {BLOOD_GROUP_OPTIONS.map((bg) => <option key={bg} value={bg}>{bg}</option>)}
+            </select>
+          ) : emp.blood_group} />
+          <Detail label="Marital Status" value={isSelfField('personal') ? (
+            <select className="form-input py-1 text-sm w-full" value={String(draft.marital_status || '')} onChange={(e) => setField('marital_status', e.target.value)}>
+              <option value="">—</option>
+              {MARITAL_STATUS_OPTIONS.map((opt) => (
+                <option key={opt} value={opt}>{opt.charAt(0) + opt.slice(1).toLowerCase()}</option>
+              ))}
+            </select>
+          ) : emp.marital_status} />
+          <Detail label="Caste Category" value={isSelfField('critical') ? (
+            <select className="form-input py-1 text-sm w-full" value={String(draft.caste_category || '')} onChange={(e) => setField('caste_category', e.target.value)}>
+              <option value="">—</option>
+              {CASTE_CATEGORY_OPTIONS.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+            </select>
+          ) : emp.caste_category} />
+          <Detail label="Religion" value={isSelfField('personal') ? (
+            <input className="form-input py-1 text-sm w-full uppercase" value={String(draft.religion || '')} onChange={handleFiltered('religion', upperText)} />
+          ) : emp.religion} />
+          <Detail label="PwD" value={isSelfField('critical') ? (
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={Boolean(draft.is_physically_handicapped)} onChange={(e) => setField('is_physically_handicapped', e.target.checked)} />
+              Yes
+            </label>
+          ) : (emp.is_physically_handicapped ? 'Yes' : 'No')} />
+          <Detail label="Qualification" value={isSelfField('personal') ? (
+            <input className="form-input py-1 text-sm w-full uppercase" value={String(draft.last_qualification || '')} onChange={handleFiltered('last_qualification', upperText)} />
+          ) : emp.last_qualification} />
+        </div>
+      </section>
+
+      <section className="card p-5 lg:col-span-2 order-3">
+        <h2 className="text-sm font-bold text-slate-800 border-b pb-2 mb-4">Contact</h2>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+          <Detail label="Mobile" value={isSelfField('contact') ? (
+            <input className="form-input py-1 text-sm w-full" maxLength={10} value={String(draft.mobile || '')} onChange={handleFiltered('mobile', (v) => filterDigits(v, 10))} />
+          ) : emp.mobile} />
+          <Detail label="Alt Mobile" value={isSelfField('contact') ? (
+            <input className="form-input py-1 text-sm w-full" maxLength={10} value={String(draft.alt_mobile || '')} onChange={handleFiltered('alt_mobile', (v) => filterDigits(v, 10))} />
+          ) : emp.alt_mobile} />
+          <Detail label="Email" value={isSelfField('contact') ? (
+            <input className="form-input py-1 text-sm w-full" value={String(draft.email || '')} onChange={handleFiltered('email', filterEmailInput)} />
+          ) : emp.email} />
+          <Detail label="Alt Email" value={isSelfField('contact') ? (
+            <input className="form-input py-1 text-sm w-full" value={String(draft.personal_email || '')} onChange={handleFiltered('personal_email', filterEmailInput)} />
+          ) : emp.personal_email} />
+        </div>
+        {isSelfField('address') ? (
+          <AddressFields
+            permanent={(draft.permanentParts as AddressParts) || EMPTY_ADDRESS}
+            present={(draft.presentParts as AddressParts) || EMPTY_ADDRESS}
+            sameAsPermanent={Boolean(draft.sameAsPermanent)}
+            onPermanentChange={(parts) => setField('permanentParts', parts)}
+            onPresentChange={(parts) => setField('presentParts', parts)}
+            onSameToggle={(checked) => setField('sameAsPermanent', checked)}
+          />
+        ) : (
+          <div className="grid md:grid-cols-2 gap-4">
+            <AddressBlock label="Permanent Address" raw={emp.permanent_address} />
+            <AddressBlock label="Present Address" raw={emp.address} />
+          </div>
+        )}
+      </section>
+
+      <section className="card p-5 lg:col-span-2 order-4">
+        <h2 className="text-sm font-bold text-slate-800 border-b pb-2 mb-4">IDs & Banking</h2>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <Detail label="PAN" value={isSelfField('critical') ? (
+            <input className="form-input py-1 text-sm w-full uppercase" maxLength={10} value={String(draft.pan || '')} onChange={handleFiltered('pan', (v) => filterAlphanumUpper(v, 10))} />
+          ) : emp.pan} />
+          <Detail label="Aadhaar" value={isSelfField('critical') ? (
+            <input className="form-input py-1 text-sm w-full" maxLength={12} value={String(draft.aadhaar || '')} onChange={handleFiltered('aadhaar', (v) => filterDigits(v, 12))} />
+          ) : emp.aadhaar} />
+          <Detail label="NPS" value={isSelfField('critical') ? (
+            <input className="form-input py-1 text-sm w-full" maxLength={12} inputMode="numeric" value={String(draft.nps_or_gpf_no || '')} onChange={handleFiltered('nps_or_gpf_no', (v) => filterDigits(v, 12))} />
+          ) : emp.nps_or_gpf_no} />
+          <Detail label="PFMS" value={isSelfField('critical') ? (
+            <input className="form-input py-1 text-sm w-full uppercase" maxLength={14} value={String(draft.pfms_code || '')} onChange={handleFiltered('pfms_code', (v) => filterAlphanumUpper(v, 14))} />
+          ) : emp.pfms_code} />
+          <Detail label="Bank A/C" value={isSelfField('critical') ? (
+            <input className="form-input py-1 text-sm w-full" value={String(draft.bank_account_no || '')} onChange={handleFiltered('bank_account_no', (v) => filterDigits(v, 18))} />
+          ) : emp.bank_account_no} />
+          <Detail label="Bank Name" value={isSelfField('critical') ? (
+            <input className="form-input py-1 text-sm w-full uppercase" value={String(draft.bank_name || '')} onChange={handleFiltered('bank_name', upperText)} />
+          ) : emp.bank_name} />
+          <Detail label="IFSC" value={isSelfField('critical') ? (
+            <input className="form-input py-1 text-sm w-full uppercase" maxLength={11} value={String(draft.ifsc_code || '')} onChange={handleFiltered('ifsc_code', (v) => filterAlphanumUpper(v, 11))} />
+          ) : emp.ifsc_code} />
+        </div>
+      </section>
+    </div>
+  );
+
   return (
     <div className="employee-profile-print">
       <div className="no-print">
@@ -384,207 +620,23 @@ export default function EmployeeProfileContent({
         <p className="text-sm text-slate-600">{emp.emp_code} · {emp.designation_name}</p>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <section className="card p-5">
-          <h2 className="text-sm font-bold text-slate-800 border-b pb-2 mb-4">Service Record</h2>
-          <div className="grid grid-cols-2 gap-4">
-            <Detail label="Staff Number" value={emp.emp_code} />
-            <Detail label="Staff Group" value={emp.staff_group} />
-            {isSelfField('critical') && editMode === 'full' ? (
-              <>
-                <div className="col-span-2">
-                  <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Department</div>
-                  <select
-                    className="form-input py-1 text-sm w-full"
-                    value={String(draft.department_code || '')}
-                    onChange={(e) => setField('department_code', e.target.value)}
-                  >
-                    <option value="">Select department</option>
-                    {departments.map((d) => (
-                      <option key={d.code} value={d.code}>{d.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="col-span-2">
-                  <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Designation</div>
-                  <select
-                    className="form-input py-1 text-sm w-full"
-                    value={String(draft.designation_name || '')}
-                    onChange={(e) => setField('designation_name', e.target.value)}
-                  >
-                    <option value="">Select designation</option>
-                    {designations.map((d) => (
-                      <option key={d.name} value={d.name}>{d.name}</option>
-                    ))}
-                  </select>
-                </div>
-              </>
-            ) : (
-              <>
-                <Detail label="Designation" value={emp.designation_name} />
-                <Detail label="Department" value={emp.department_name} />
-              </>
-            )}
-            <Detail label="Category" value={isSelfField('critical') ? (
-              <select
-                className="form-input py-1 text-sm w-full"
-                value={String(draft.category_code || '')}
-                onChange={(e) => setField('category_code', e.target.value)}
-              >
-                <option value="">Select category</option>
-                {CATEGORY_CODES.map((c) => (
-                  <option key={c.code} value={c.code}>{c.label}</option>
-                ))}
-              </select>
-            ) : emp.category_name} />
-            <Detail label="Grade (A/B/C)" value={isSelfField('critical') ? (
-              <select className="form-input py-1 text-sm w-full" value={String(draft.grade || '')} onChange={(e) => setField('grade', e.target.value)}>
-                <option value="">—</option>
-                {PAY_GROUPS.map((g) => <option key={g} value={g}>{g}</option>)}
-              </select>
-            ) : emp.grade} />
-            <Detail label="Pay Level" value={isSelfField('critical') ? (
-              <input className="form-input py-1 text-sm w-full" value={String(draft.pay_level || '')} onChange={(e) => setField('pay_level', upperText(e.target.value))} />
-            ) : emp.pay_level} />
-            <Detail label="Date of Joining" value={isSelfField('critical') ? (
-              <ValidatedDateInput value={String(draft.doj || '')} onChange={(v) => setField('doj', v)} className="form-input py-1 text-sm w-full" />
-            ) : fmtDate(emp.doj)} />
-            <Detail label="Next Increment" value={isSelfField('critical') ? (
-              <ValidatedDateInput value={String(draft.next_increment_date || '')} onChange={(v) => setField('next_increment_date', v)} className="form-input py-1 text-sm w-full" />
-            ) : fmtDate(emp.next_increment_date)} />
-            <Detail label="Last Working Day" value={fmtDate(emp.dol_last_working)} />
-            <Detail label="Status" value={
-              <span className={emp.is_active ? 'text-emerald-700' : 'text-slate-500'}>
-                {emp.is_active ? 'Active' : 'Inactive'}
-              </span>
-            } />
-          </div>
-        </section>
-
-        <section className="card p-5">
-          <h2 className="text-sm font-bold text-slate-800 border-b pb-2 mb-4">Personal Details</h2>
-          <div className="grid grid-cols-2 gap-4">
-            <Detail label="Initial" value={isSelfField('personal') ? (
-              <select className="form-input py-1 text-sm w-full" value={String(draft.initial || '')} onChange={(e) => setField('initial', e.target.value)}>
-                {INITIALS.map((i) => <option key={i || 'none'} value={i}>{i || '—'}</option>)}
-              </select>
-            ) : emp.initial} />
-            <Detail label="Full Name" value={isSelfField('critical') ? (
-              <input className="form-input py-1 text-sm w-full" value={String(draft.name || '')} onChange={(e) => setField('name', filterName(e.target.value))} />
-            ) : emp.name} />
-            <Detail label="Father's Name" value={isSelfField('personal') ? (
-              <input className="form-input py-1 text-sm w-full" value={String(draft.father_name || '')} onChange={(e) => setField('father_name', filterName(e.target.value))} />
-            ) : emp.father_name} />
-            <Detail label="Date of Birth" value={isSelfField('critical') ? (
-              <ValidatedDateInput value={String(draft.dob || '')} onChange={(v) => setField('dob', v)} className="form-input py-1 text-sm w-full" />
-            ) : fmtDate(emp.dob)} />
-            <Detail label="Gender" value={isSelfField('critical') ? (
-              <select className="form-input py-1 text-sm w-full" value={String(draft.gender || 'MALE')} onChange={(e) => setField('gender', e.target.value)}>
-                <option value="MALE">Male</option>
-                <option value="FEMALE">Female</option>
-                <option value="OTHER">Other</option>
-              </select>
-            ) : emp.gender} />
-            <Detail label="Blood Group" value={isSelfField('personal') ? (
-              <select className="form-input py-1 text-sm w-full" value={String(draft.blood_group || '')} onChange={(e) => setField('blood_group', e.target.value)}>
-                <option value="">—</option>
-                {BLOOD_GROUP_OPTIONS.map((bg) => <option key={bg} value={bg}>{bg}</option>)}
-              </select>
-            ) : emp.blood_group} />
-            <Detail label="Marital Status" value={isSelfField('personal') ? (
-              <select className="form-input py-1 text-sm w-full" value={String(draft.marital_status || '')} onChange={(e) => setField('marital_status', e.target.value)}>
-                <option value="">—</option>
-                {MARITAL_STATUS_OPTIONS.map((opt) => (
-                  <option key={opt} value={opt}>{opt.charAt(0) + opt.slice(1).toLowerCase()}</option>
-                ))}
-              </select>
-            ) : emp.marital_status} />
-            <Detail label="Caste Category" value={isSelfField('critical') ? (
-              <select className="form-input py-1 text-sm w-full" value={String(draft.caste_category || '')} onChange={(e) => setField('caste_category', e.target.value)}>
-                <option value="">—</option>
-                {CASTE_CATEGORY_OPTIONS.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
-              </select>
-            ) : emp.caste_category} />
-            <Detail label="Religion" value={isSelfField('personal') ? (
-              <input className="form-input py-1 text-sm w-full" value={String(draft.religion || '')} onChange={(e) => setField('religion', upperText(e.target.value))} />
-            ) : emp.religion} />
-            <Detail label="PwD" value={isSelfField('critical') ? (
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={Boolean(draft.is_physically_handicapped)} onChange={(e) => setField('is_physically_handicapped', e.target.checked)} />
-                Yes
-              </label>
-            ) : (emp.is_physically_handicapped ? 'Yes' : 'No')} />
-            <Detail label="Qualification" value={isSelfField('personal') ? (
-              <input className="form-input py-1 text-sm w-full" value={String(draft.last_qualification || '')} onChange={(e) => setField('last_qualification', upperText(e.target.value))} />
-            ) : emp.last_qualification} />
-          </div>
-        </section>
-
-        <section className="card p-5 lg:col-span-2">
-          <h2 className="text-sm font-bold text-slate-800 border-b pb-2 mb-4">Contact</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-            <Detail label="Mobile" value={isSelfField('contact') ? (
-              <input className="form-input py-1 text-sm w-full" maxLength={10} value={String(draft.mobile || '')} onChange={(e) => setField('mobile', filterDigits(e.target.value, 10))} />
-            ) : emp.mobile} />
-            <Detail label="Alt Mobile" value={isSelfField('contact') ? (
-              <input className="form-input py-1 text-sm w-full" maxLength={10} value={String(draft.alt_mobile || '')} onChange={(e) => setField('alt_mobile', filterDigits(e.target.value, 10))} />
-            ) : emp.alt_mobile} />
-            <Detail label="Email" value={isSelfField('contact') ? (
-              <input className="form-input py-1 text-sm w-full" value={String(draft.email || '')} onChange={(e) => setField('email', filterEmailInput(e.target.value))} />
-            ) : emp.email} />
-            <Detail label="Alt Email" value={isSelfField('contact') ? (
-              <input className="form-input py-1 text-sm w-full" value={String(draft.personal_email || '')} onChange={(e) => setField('personal_email', filterEmailInput(e.target.value))} />
-            ) : emp.personal_email} />
-          </div>
-          {isSelfField('address') ? (
-            <AddressFields
-              permanent={(draft.permanentParts as AddressParts) || EMPTY_ADDRESS}
-              present={(draft.presentParts as AddressParts) || EMPTY_ADDRESS}
-              sameAsPermanent={Boolean(draft.sameAsPermanent)}
-              onPermanentChange={(parts) => setField('permanentParts', parts)}
-              onPresentChange={(parts) => setField('presentParts', parts)}
-              onSameToggle={(checked) => setField('sameAsPermanent', checked)}
-            />
-          ) : (
-            <div className="grid md:grid-cols-2 gap-4">
-              <AddressBlock label="Permanent Address" raw={emp.permanent_address} />
-              <AddressBlock label="Present Address" raw={emp.address} />
-            </div>
-          )}
-        </section>
-
-        <section className="card p-5 lg:col-span-2">
-          <h2 className="text-sm font-bold text-slate-800 border-b pb-2 mb-4">IDs & Banking</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <Detail label="PAN" value={isSelfField('critical') ? (
-              <input className="form-input py-1 text-sm w-full" maxLength={10} value={String(draft.pan || '')} onChange={(e) => setField('pan', filterAlphanumUpper(e.target.value, 10))} />
-            ) : emp.pan} />
-            <Detail label="Aadhaar" value={isSelfField('critical') ? (
-              <input className="form-input py-1 text-sm w-full" maxLength={12} value={String(draft.aadhaar || '')} onChange={(e) => setField('aadhaar', filterDigits(e.target.value, 12))} />
-            ) : emp.aadhaar} />
-            <Detail label="NPS" value={isSelfField('critical') ? (
-              <input className="form-input py-1 text-sm w-full" maxLength={12} inputMode="numeric" value={String(draft.nps_or_gpf_no || '')} onChange={(e) => setField('nps_or_gpf_no', filterDigits(e.target.value, 12))} />
-            ) : emp.nps_or_gpf_no} />
-            <Detail label="PFMS" value={isSelfField('critical') ? (
-              <input className="form-input py-1 text-sm w-full" maxLength={14} value={String(draft.pfms_code || '')} onChange={(e) => setField('pfms_code', filterAlphanumUpper(e.target.value, 14))} />
-            ) : emp.pfms_code} />
-            <Detail label="Bank A/C" value={isSelfField('critical') ? (
-              <input className="form-input py-1 text-sm w-full" value={String(draft.bank_account_no || '')} onChange={(e) => setField('bank_account_no', filterDigits(e.target.value, 18))} />
-            ) : emp.bank_account_no} />
-            <Detail label="Bank Name" value={isSelfField('critical') ? (
-              <input className="form-input py-1 text-sm w-full" value={String(draft.bank_name || '')} onChange={(e) => setField('bank_name', upperText(e.target.value))} />
-            ) : emp.bank_name} />
-            <Detail label="IFSC" value={isSelfField('critical') ? (
-              <input className="form-input py-1 text-sm w-full" maxLength={11} value={String(draft.ifsc_code || '')} onChange={(e) => setField('ifsc_code', filterAlphanumUpper(e.target.value, 11))} />
-            ) : emp.ifsc_code} />
-          </div>
-        </section>
-      </div>
+      {editing ? (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void saveEdit();
+          }}
+          onKeyDown={(e) => handleFormEnterKey(e, e.currentTarget)}
+        >
+          {profileGrid}
+        </form>
+      ) : (
+        profileGrid
+      )}
 
       {editMode === 'self' && !editing && (
         <p className="no-print mt-4 text-xs text-slate-500">
-          Service record changes (department, designation, IDs) are maintained by the establishment section.
-          Tap Edit to update contact details and address.
+          Service record: establishment. Edit for contact/address only.
         </p>
       )}
     </div>

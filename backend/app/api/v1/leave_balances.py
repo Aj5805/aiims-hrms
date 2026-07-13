@@ -23,6 +23,7 @@ from app.services.leave_validation import (
     count_leave_days,
     load_holidays_in_range,
 )
+from app.services.working_days import is_working_day
 
 router = APIRouter(prefix="/leave-balances", tags=["leave-balances"])
 
@@ -60,7 +61,7 @@ def _working_days(from_date: date, to_date: date, holidays: set[date]) -> int:
     return sum(
         1
         for d in [from_date + date.resolution * i for i in range((to_date - from_date).days + 1)]
-        if d.weekday() < 5 and d not in holidays
+        if is_working_day(d, holidays)
     )
 
 
@@ -207,37 +208,47 @@ async def get_balances(
 async def get_ledger(
     employee_id: str,
     leave_type_id: str,
+    leave_year: int | None = Query(None, description="Restrict ledger to a single leave year"),
     current_user: dict = Depends(get_current_user),
     scope: dict = Depends(employee_scope),
     db: AsyncSession = Depends(get_db),
 ):
     _require_employee_scope(scope, employee_id)
 
-    bal = await db.execute(
-        text("""
+    bal_sql = """
             SELECT lb.*, lt.code AS leave_type_code, lt.name AS leave_type_name, lt.max_accumulation
             FROM leave_balances lb
             JOIN leave_types lt ON lb.leave_type_id = lt.id
             WHERE lb.employee_id = :eid AND lb.leave_type_id = :lid
-            ORDER BY lb.leave_year
-        """),
-        {"eid": employee_id, "lid": leave_type_id},
-    )
+    """
+    bal_params: dict = {"eid": employee_id, "lid": leave_type_id}
+    if leave_year is not None:
+        bal_sql += " AND lb.leave_year = :ly"
+        bal_params["ly"] = leave_year
+    bal_sql += " ORDER BY lb.leave_year"
+    bal = await db.execute(text(bal_sql), bal_params)
     balances = [dict(r._mapping) for r in bal.fetchall()]
 
+    app_year_clause = " AND EXTRACT(YEAR FROM from_date)::int = :ly" if leave_year is not None else ""
+    app_params: dict = {"eid": employee_id, "lid": leave_type_id}
+    if leave_year is not None:
+        app_params["ly"] = leave_year
+
     apps = await db.execute(
-        text("""
-            SELECT app_number, from_date, to_date, applied_days, status, submitted_at, updated_at
+        text(f"""
+            SELECT id, app_number, from_date, to_date, applied_days, status, submitted_at, updated_at
             FROM leave_applications
             WHERE employee_id = :eid AND leave_type_id = :lid AND status IN ('APPROVED', 'RECALLED')
+            {app_year_clause}
             ORDER BY COALESCE(updated_at, submitted_at), from_date
         """),
-        {"eid": employee_id, "lid": leave_type_id},
+        app_params,
     )
     application_events = [
         {
             "entry_type": "application",
             "event_date": row.updated_at or row.submitted_at,
+            "application_id": str(row.id),
             "app_number": row.app_number,
             "from_date": row.from_date,
             "to_date": row.to_date,
@@ -248,13 +259,39 @@ async def get_ledger(
         for row in apps.fetchall()
     ]
 
+    pending_apps = await db.execute(
+        text(f"""
+            SELECT id, app_number, from_date, to_date, applied_days, status, submitted_at
+            FROM leave_applications
+            WHERE employee_id = :eid AND leave_type_id = :lid AND status IN ('SUBMITTED', 'UNDER_REVIEW')
+            {app_year_clause}
+            ORDER BY submitted_at, from_date
+        """),
+        app_params,
+    )
+    pending_events = [
+        {
+            "entry_type": "pending_application",
+            "event_date": row.submitted_at,
+            "application_id": str(row.id),
+            "app_number": row.app_number,
+            "from_date": row.from_date,
+            "to_date": row.to_date,
+            "days": float(row.applied_days),
+            "delta": 0,
+            "status": row.status,
+        }
+        for row in pending_apps.fetchall()
+    ]
+
     balance_ids = [row["id"] for row in balances]
     ledger_transactions = []
     if balance_ids:
         ledger_rows = await db.execute(
             text("""
                 SELECT lbl.created_at, lbl.txn_type, lbl.amount, lbl.field_affected, lbl.reason,
-                       lbl.reference_type, lbl.balance_id, lbl.leave_year, la.app_number
+                       lbl.reference_type, lbl.reference_id, lbl.balance_id, lbl.leave_year,
+                       la.app_number, la.id AS application_id
                 FROM leave_balance_ledger lbl
                 LEFT JOIN leave_applications la
                   ON lbl.reference_id = la.id AND lbl.reference_type = 'application'
@@ -266,6 +303,9 @@ async def get_ledger(
         for row in ledger_rows.fetchall():
             field = row.field_affected
             amt = float(row.amount or 0)
+            app_id = row.application_id
+            if not app_id and row.reference_type == "application" and row.reference_id:
+                app_id = row.reference_id
             ledger_transactions.append(
                 {
                     "entry_type": str(row.txn_type).lower(),
@@ -277,6 +317,7 @@ async def get_ledger(
                     "days": abs(amt),
                     "delta": -amt if field == "availed" and row.txn_type == "AVAIL" else amt,
                     "app_number": row.app_number,
+                    "application_id": str(app_id) if app_id else None,
                 }
             )
 
@@ -363,10 +404,13 @@ async def get_ledger(
         approval_chains.append(cfg)
 
     if ledger_transactions:
-        transactions = ledger_transactions
+        transactions = sorted(
+            [*ledger_transactions, *pending_events],
+            key=lambda item: (str(item.get("event_date") or ""), item["entry_type"]),
+        )
     else:
         transactions = sorted(
-            [*yearly_events, *manual_adjustments, *application_events],
+            [*yearly_events, *manual_adjustments, *application_events, *pending_events],
             key=lambda item: (str(item.get("event_date") or ""), item["entry_type"]),
         )
     return {

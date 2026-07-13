@@ -258,7 +258,7 @@ async def main():
                 ok(f"create designation {des['name']}", r, 201)
 
         emp_ids = {}
-        _staff_groups = {"ADMIN": "DEP", "FACULTY": "FAC", "NURSING": "NUR"}
+        _staff_groups = {"ADMIN": "ADM", "FACULTY": "FAC", "NURSING": "NUR"}
         for emp in [
             {"emp_code": "HRMS001", "name": "Alice Kumar", "gender": "FEMALE",
              "doj": "2020-01-15", "category_code": "ADMIN",
@@ -397,7 +397,7 @@ async def main():
             "emp_code": "HRMS004", "name": "David Rao Dupe", "gender": "MALE",
             "doj": "2018-08-20", "category_code": "ADMIN",
             "department_code": "EST", "designation_name": "Section Officer",
-            "staff_group": "DEP",
+            "staff_group": "ADM",
         }, headers=admin_headers)
         if r.status_code == 409:
             print("  [OK]  GAP B employee dupe -> 409")
@@ -445,6 +445,19 @@ async def main():
         else:
             print(f"  [FAIL] GAP B workflow_config dupe: expected 409, got HTTP {r.status_code}: {r.text[:200]}")
             sys.exit(1)
+
+        # Remove inactive dupe probe so Masters workflows tab stays clean
+        from sqlalchemy import create_engine, text as sa_text
+        from app.core.config import settings
+        with create_engine(settings.DATABASE_URL_SYNC).begin() as conn:
+            conn.execute(
+                sa_text("DELETE FROM workflow_steps WHERE config_id IN (SELECT id FROM workflow_configs WHERE config_name = :name)"),
+                {"name": dupe_cfg_name},
+            )
+            conn.execute(
+                sa_text("DELETE FROM workflow_configs WHERE config_name = :name"),
+                {"name": dupe_cfg_name},
+            )
 
         # Cleanup test config (deactivate API bumps version and can collide on re-runs)
         # B7: duplicate user

@@ -14,9 +14,8 @@ export function MaintenancePage() {
         <h1 className="mb-3 text-3xl font-extrabold tracking-tight text-slate-900">System Maintenance</h1>
         
         <div className="mb-8 rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
-          <p className="text-base text-slate-600 leading-relaxed">
-            The AIIMS HRMS is currently undergoing scheduled maintenance to upgrade system capabilities.
-            Please check back again later.
+          <p className="text-base text-slate-600">
+            Scheduled maintenance. Check back later.
           </p>
           <div className="mt-6 pt-6 border-t border-slate-100">
             <p className="text-sm font-medium text-slate-500">

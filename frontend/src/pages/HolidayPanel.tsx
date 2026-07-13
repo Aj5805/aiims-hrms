@@ -48,11 +48,6 @@ export function HolidayPanel() {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 space-y-1">
-        <p><strong>Closed holidays</strong> — institute is closed; applies to all staff.</p>
-        <p><strong>Restricted holidays (RH)</strong> — each employee may avail <strong>any two</strong> from the RH list in a calendar year (subject to approval).</p>
-      </div>
-
       <div className="flex flex-wrap gap-3 items-center justify-between">
         <div className="flex flex-wrap gap-2">
           {([

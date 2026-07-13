@@ -56,6 +56,15 @@ export default function EmployeeProfilePage() {
             <button type="button" onClick={() => navigate('/employees?tab=directory')} className="btn-secondary btn-sm">
               Back
             </button>
+            {canEdit && emp.is_active && (
+              <>
+                <button type="button" onClick={() => navigate('/employees?tab=deactivate', { state: { employeeId: emp.id } })} className="btn-secondary btn-sm">Deactivate</button>
+                <button type="button" onClick={() => navigate('/employees?tab=transfer', { state: { employeeId: emp.id } })} className="btn-secondary btn-sm">Transfer</button>
+              </>
+            )}
+            {canEdit && !emp.is_active && (
+              <button type="button" onClick={() => navigate('/employees?tab=reactivate', { state: { employeeId: emp.id } })} className="btn-secondary btn-sm">Reactivate</button>
+            )}
             <button type="button" onClick={handleExport} className="btn-secondary btn-sm">Export</button>
             <button type="button" onClick={() => window.print()} className="btn-secondary btn-sm">Print</button>
           </div>

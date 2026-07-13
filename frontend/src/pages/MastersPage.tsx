@@ -14,7 +14,7 @@ export const MASTER_TABS = [
   { id: 'assignments', label: 'Nodal Offices' },
   { id: 'hod-assignments', label: 'HOD Assignments' },
   { id: 'leave-types', label: 'Leave Types' },
-  { id: 'entitlements', label: 'Entitlements' },
+  { id: 'entitlements', label: 'Leave Policy' },
   { id: 'holidays', label: 'Holidays' },
   { id: 'workflows', label: 'Workflows' },
 ] as const;
@@ -28,24 +28,9 @@ function resolveTab(raw: string | null): MasterTabId {
   return 'dept';
 }
 
-const TAB_DESCRIPTIONS: Record<MasterTabId, string> = {
-  dept: 'Organisational departments used across HR and leave routing.',
-  desg: 'Job titles linked to employee categories (pay level is captured per employee at registration).',
-  assignments: 'Nodal offices — assign officer, map departments (HOD groups), and manage clerical logins.',
-  'hod-assignments': 'One HOD per department — pick staff from that department and save.',
-  'leave-types': 'Core definitions for all available leave types — create and edit each type’s rules.',
-  entitlements: 'How leave is credited (frequency and days per year) for each category and leave type.',
-  holidays: 'Closed holidays (institute shut) and restricted holidays (RH — staff choose any 2 per year).',
-  workflows: 'Approval chains — create, edit steps, and simulate routing.',
-};
-
 export default function MastersPage() {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const tab = resolveTab(searchParams.get('tab'));
-
-  const setTab = (next: MasterTabId) => {
-    setSearchParams({ tab: next }, { replace: true });
-  };
 
   const activeLabel = MASTER_TABS.find((t) => t.id === tab)?.label ?? 'Masters';
 
@@ -53,34 +38,17 @@ export default function MastersPage() {
     <div className="page">
       <PageHeader
         breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Masters' }, { label: activeLabel }]}
-        title="Masters"
-        description="All reference data for departments, designations, leave, and workflows in one place."
-        rightContent={
-          <div className="flex flex-wrap gap-1.5 p-1 rounded-lg border max-w-full" style={{ background: 'var(--color-surface-alt)', borderColor: 'var(--color-border)' }}>
-            {MASTER_TABS.map((t) => (
-              <button
-                key={t.id}
-                id={`master-tab-${t.id}`}
-                onClick={() => setTab(t.id)}
-                className={`px-3 py-1.5 text-xs sm:text-sm font-bold rounded-md transition whitespace-nowrap ${
-                  tab === t.id ? 'shadow-sm text-blue-700' : 'text-slate-500 hover:text-slate-800'
-                }`}
-                style={tab === t.id ? { background: 'var(--color-surface)' } : undefined}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-        }
+        hideTitle
       />
-      <p className="text-sm text-slate-500 -mt-4 mb-2">{TAB_DESCRIPTIONS[tab]}</p>
-      <div className="card p-5">
+      <div className="card p-3 sm:p-4">
         {tab === 'dept' && <DepartmentTab />}
         {tab === 'desg' && <DesignationTab />}
         {tab === 'assignments' && <NodalOfficesPanel />}
         {tab === 'hod-assignments' && <HodAssignmentsPanel />}
         {tab === 'leave-types' && <LeaveTypesPanel />}
-        {tab === 'entitlements' && <EntitlementRulesPanel />}
+        {tab === 'entitlements' && (
+          <EntitlementRulesPanel initialCategory={searchParams.get('category')} />
+        )}
         {tab === 'holidays' && <HolidayPanel />}
         {tab === 'workflows' && <WorkflowPanel />}
       </div>

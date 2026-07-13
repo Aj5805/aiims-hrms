@@ -187,9 +187,7 @@ function ValidationRulesEditor({
       <div>
         <h4 className="text-sm font-semibold text-slate-800">Validation rules</h4>
         <p className="text-xs text-slate-500 mt-0.5">
-          {isCl
-            ? 'CL (DoPT): weekends/holidays may attach without debit; block sandwich with EL/HPL; cap total absence span.'
-            : 'Optional checks applied when staff apply for this leave type.'}
+          {isCl ? 'DoPT rules for CL.' : 'Optional apply-time checks.'}
         </p>
       </div>
       {!isCl && (
@@ -465,10 +463,6 @@ export function LeaveTypesPanel() {
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-slate-500">
-        Credit frequency (e.g. EL credited 15 days at each calendar half) is set under{' '}
-        <strong>Masters → Entitlements</strong> or <strong>Admin → Leave Policy Matrix</strong>.
-      </p>
     </div>
   );
 }

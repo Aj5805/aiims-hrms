@@ -1,9 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { approvalsApi } from '../api/endpoints';
 import { PageHeader } from '../components/PageHeader';
 import { LeaveStatusBadge } from '../components/LeaveStatusBadge';
+import { ApprovalTrailPanel } from '../components/ApprovalTrailPanel';
 
 export function ApprovalInboxPage() {
+  const [searchParams] = useSearchParams();
+  const focusAppId = searchParams.get('app');
+  const focusRef = useRef<HTMLDivElement | null>(null);
   const [items, setItems] = useState<Record<string, unknown>[]>([]);
   const [remark, setRemark] = useState<Record<string, string>>({});
   const [modifyOpen, setModifyOpen] = useState<Record<string, boolean>>({});
@@ -15,6 +20,12 @@ export function ApprovalInboxPage() {
     setItems(data);
   };
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    if (focusAppId && focusRef.current) {
+      focusRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [focusAppId, items]);
 
   const act = async (id: string, action: string, extra: Record<string, unknown> = {}) => {
     setError('');
@@ -29,9 +40,8 @@ export function ApprovalInboxPage() {
   return (
     <div className="page">
       <PageHeader
-        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Approvals', to: '/approver-dashboard' }, { label: 'Approval Inbox' }]}
-        title="Approval Inbox"
-        description="Balance is re-checked at every stage including pending applications."
+        breadcrumbs={[{ label: 'Home', to: '/hod' }, { label: 'Nodal Desk', to: '/hod' }, { label: 'Approval Inbox' }]}
+        hideTitle
       />
       {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4 text-sm">{error}</div>}
       <div className="space-y-4">
@@ -40,7 +50,11 @@ export function ApprovalInboxPage() {
           const slaColor = pendingHours > (a.sla_hours as number) * 0.8 ? 'text-red-600' : 'text-slate-500';
           const kind = (a.application_kind as string) || 'NEW';
           return (
-            <div key={a.id as string} className="card p-5 hover:shadow-md transition-shadow">
+            <div
+              key={a.id as string}
+              ref={focusAppId === a.id ? focusRef : undefined}
+              className={`card p-5 hover:shadow-md transition-shadow ${focusAppId === a.id ? 'ring-2 ring-indigo-300' : ''}`}
+            >
               <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-1.5 flex-wrap">
@@ -60,6 +74,9 @@ export function ApprovalInboxPage() {
                   )}
                   <div className={`text-xs font-medium flex items-center gap-1 ${slaColor}`}>
                     Pending: {pendingHours.toFixed(1)}h (SLA: {a.sla_hours as number}h)
+                  </div>
+                  <div className="mt-4 border-t border-slate-100 pt-4">
+                    <ApprovalTrailPanel applicationId={a.id as string} compact />
                   </div>
                 </div>
                 <div className="w-full sm:w-80 flex flex-col gap-2 shrink-0 border-t sm:border-t-0 sm:border-l border-slate-100 pt-4 sm:pt-0 sm:pl-4">

@@ -5,6 +5,8 @@ import { approvalsApi } from '../api/endpoints';
 import api from '../api/client';
 import { useAuthStore } from '../stores';
 import { PageHeader } from '../components/PageHeader';
+import { SearchableSelect } from '../components/SearchableSelect';
+import { balancesForLeaveYear, currentLeaveYear, staffLedgerLink } from '../utils/leaveBalances';
 
 function formatDateTime(value?: string | null) {
   if (!value) return '—';
@@ -23,7 +25,6 @@ export function LoginActivityPage() {
     <div className="page">
       <PageHeader
         title="Login Activity"
-        description="Recent sign-ins to your account."
         breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'My Profile', to: '/profile-dashboard' }, { label: 'Login Activity' }]}
       />
       <div className="card p-5 space-y-4">
@@ -87,8 +88,7 @@ export function ForecastingPage() {
     <div className="page">
       <PageHeader
         title="Staff Availability Forecast"
-        description="Dates as rows, designations as columns — see who is available on future dates."
-        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Nodal Desk', to: '/hod' }, { label: 'Forecast' }]}
+        breadcrumbs={[{ label: 'Desk', to: '/hod' }, { label: 'Nodal Desk', to: '/hod' }, { label: 'Forecast' }]}
       />
       <div className="card p-4 mb-3 flex flex-wrap gap-3 items-end">
         <label className="text-xs font-semibold text-slate-600">From<input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="form-input block mt-1 text-xs" /></label>
@@ -181,7 +181,6 @@ export function BalanceOverviewPage() {
     <div className="page">
       <PageHeader
         title="Leave Balance Overview"
-        description="View leave balances across your mapped departments. Filter by department and designation."
         breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'HR Operations' }, { label: 'Balance Overview' }]}
         rightContent={
           <Link to="/reports" className="text-xs font-bold text-blue-600 hover:underline">Export reports →</Link>
@@ -190,17 +189,33 @@ export function BalanceOverviewPage() {
       <div className="card p-4 mb-3 flex flex-wrap gap-3">
         <label className="text-xs font-semibold text-slate-600">
           Department
-          <select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)} className="form-input block mt-1 text-xs min-w-[160px]">
-            <option value="ALL">All mapped</option>
-            {departments.map((d) => <option key={d.code} value={d.code}>{d.name}</option>)}
-          </select>
+          <div className="mt-1">
+            <SearchableSelect
+              options={[
+                { value: 'ALL', label: 'All mapped' },
+                ...departments.map((d) => ({ value: d.code, label: d.name, searchText: d.code })),
+              ]}
+              value={deptFilter}
+              onChange={setDeptFilter}
+              placeholder="All mapped"
+              className="min-w-[160px]"
+            />
+          </div>
         </label>
         <label className="text-xs font-semibold text-slate-600">
           Designation
-          <select value={desgFilter} onChange={(e) => setDesgFilter(e.target.value)} className="form-input block mt-1 text-xs min-w-[160px]">
-            <option value="ALL">All</option>
-            {designations.map((d) => <option key={d.name} value={d.name}>{d.name}</option>)}
-          </select>
+          <div className="mt-1">
+            <SearchableSelect
+              options={[
+                { value: 'ALL', label: 'All' },
+                ...designations.map((d) => ({ value: d.name, label: d.name })),
+              ]}
+              value={desgFilter}
+              onChange={setDesgFilter}
+              placeholder="All"
+              className="min-w-[160px]"
+            />
+          </div>
         </label>
       </div>
       <div className="overflow-x-auto border border-slate-200 rounded-lg bg-white">
@@ -257,6 +272,7 @@ type AssignableStaff = {
   designation_name?: string;
   leave_scheme?: string;
   department_id?: string;
+  user_role?: string;
 };
 
 const SCHEME_LABELS: Record<string, string> = {
@@ -269,6 +285,28 @@ function staffOptionLabel(s: AssignableStaff): string {
   return `${s.emp_code} — ${s.name}${desg}`;
 }
 
+function staffSelectOptions(staff: AssignableStaff[]) {
+  return staff.map((s) => ({
+    value: s.id,
+    label: staffOptionLabel(s),
+    searchText: `${s.emp_code} ${s.name} ${s.designation_name ?? ''}`,
+  }));
+}
+
+type OfficeStaff = {
+  id: string;
+  username: string;
+  is_active: boolean;
+  employee_id?: string | null;
+  emp_code?: string | null;
+  employee_name?: string | null;
+};
+
+function officeStaffLabel(s: OfficeStaff): string {
+  if (s.emp_code && s.employee_name) return `${s.emp_code} — ${s.employee_name}`;
+  return s.employee_name || s.username;
+}
+
 export function NodalOfficesPanel() {
   const [offices, setOffices] = useState<NodalOffice[]>([]);
   const [eligibleStaff, setEligibleStaff] = useState<AssignableStaff[]>([]);
@@ -278,11 +316,10 @@ export function NodalOfficesPanel() {
   const [newName, setNewName] = useState('');
   const [newScheme, setNewScheme] = useState('CCS');
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editEmployeeId, setEditEmployeeId] = useState('');
-  const [clericalOfficeId, setClericalOfficeId] = useState<string | null>(null);
-  const [clericalByOffice, setClericalByOffice] = useState<Record<string, { id: string; username: string; is_active: boolean }[]>>({});
-  const [clericalUsername, setClericalUsername] = useState('');
-  const [clericalPassword, setClericalPassword] = useState('');
+  const [editOfficerId, setEditOfficerId] = useState('');
+  const [officeStaffByOffice, setOfficeStaffByOffice] = useState<Record<string, OfficeStaff[]>>({});
+  const [staffPickId, setStaffPickId] = useState('');
+  const [staffBusy, setStaffBusy] = useState(false);
 
   const load = async () => {
     const [oRes, staffRes] = await Promise.all([
@@ -295,6 +332,30 @@ export function NodalOfficesPanel() {
 
   useEffect(() => { void load(); }, []);
 
+  const needsOfficerCount = useMemo(
+    () => offices.filter((o) => o.is_active !== false && !o.officer_employee_id && !o.officer_user_id).length,
+    [offices],
+  );
+
+  const loadOfficeStaff = async (officeId: string) => {
+    const res = await nodalOfficesApi.clericalLogins(officeId);
+    setOfficeStaffByOffice((prev) => ({ ...prev, [officeId]: res.data || [] }));
+  };
+
+  const startEdit = (office: NodalOffice) => {
+    setEditingId(office.id);
+    setEditOfficerId(office.officer_employee_id || '');
+    setStaffPickId('');
+    setMessage('');
+    void loadOfficeStaff(office.id);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditOfficerId('');
+    setStaffPickId('');
+  };
+
   const createOffice = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCode.trim() || !newName.trim()) return;
@@ -303,6 +364,7 @@ export function NodalOfficesPanel() {
       setNewCode('');
       setNewName('');
       setShowAddForm(false);
+      setMessage('');
       void load();
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
@@ -310,29 +372,53 @@ export function NodalOfficesPanel() {
     }
   };
 
-  const startEdit = (office: NodalOffice) => {
-    setEditingId(office.id);
-    setEditEmployeeId(office.officer_employee_id || '');
-    setMessage('');
-  };
-
-  const cancelEdit = () => {
-    setEditingId(null);
-    setEditEmployeeId('');
-  };
-
   const saveOfficer = async (office: NodalOffice) => {
-    if (!editEmployeeId) {
-      setMessage('Select a staff member.');
+    if (!editOfficerId) {
+      setMessage('Select a staff member for nodal officer.');
       return;
     }
     try {
-      await nodalOfficesApi.update(office.id, { officer_employee_id: editEmployeeId });
-      cancelEdit();
+      await nodalOfficesApi.update(office.id, { officer_employee_id: editOfficerId });
+      setMessage('');
       void load();
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       setMessage(detail || 'Could not save nodal officer.');
+    }
+  };
+
+  const assignOfficeStaff = async (office: NodalOffice) => {
+    if (!staffPickId) {
+      setMessage('Select a staff member for nodal office staff.');
+      return;
+    }
+    if (!office.officer_user_id && !office.officer_employee_id) {
+      setMessage('Assign a nodal officer first.');
+      return;
+    }
+    setStaffBusy(true);
+    try {
+      await nodalOfficesApi.assignOfficeStaff(office.id, { employee_id: staffPickId });
+      setStaffPickId('');
+      setMessage('');
+      void loadOfficeStaff(office.id);
+      void load();
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setMessage(detail || 'Could not assign office staff.');
+    } finally {
+      setStaffBusy(false);
+    }
+  };
+
+  const removeOfficeStaff = async (officeId: string, userId: string) => {
+    if (!window.confirm('Remove this staff member from nodal office desk role? They will revert to regular staff login.')) return;
+    try {
+      await nodalOfficesApi.removeOfficeStaff(officeId, userId);
+      void loadOfficeStaff(officeId);
+      void load();
+    } catch {
+      setMessage('Could not remove office staff.');
     }
   };
 
@@ -345,48 +431,31 @@ export function NodalOfficesPanel() {
     }
   };
 
-  const loadClerical = async (officeId: string) => {
-    const res = await nodalOfficesApi.clericalLogins(officeId);
-    setClericalByOffice((prev) => ({ ...prev, [officeId]: res.data || [] }));
-  };
-
-  const toggleClerical = (officeId: string) => {
-    if (clericalOfficeId === officeId) {
-      setClericalOfficeId(null);
-      return;
-    }
-    setClericalOfficeId(officeId);
-    void loadClerical(officeId);
-  };
-
-  const createClerical = async (officeId: string) => {
-    if (!clericalUsername.trim()) {
-      setMessage('Username required for clerical login.');
-      return;
-    }
-    try {
-      await nodalOfficesApi.createClericalLogin(officeId, {
-        username: clericalUsername.trim(),
-        password: clericalPassword || clericalUsername.trim(),
-      });
-      setClericalUsername('');
-      setClericalPassword('');
-      void loadClerical(officeId);
-      void load();
-    } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      setMessage(detail || 'Could not add clerical login.');
-    }
+  const pickableOfficeStaff = (office: NodalOffice) => {
+    const assignedEmpIds = new Set(
+      (officeStaffByOffice[office.id] || [])
+        .map((s) => s.employee_id)
+        .filter(Boolean),
+    );
+    return eligibleStaff.filter((s) => {
+      if (s.id === office.officer_employee_id) return false;
+      if (assignedEmpIds.has(s.id)) return false;
+      const role = s.user_role || 'STAFF';
+      return role === 'STAFF';
+    });
   };
 
   return (
     <div className="space-y-6">
-      <p className="text-sm text-slate-600">
-        Nodal offices route leave after HOD approval by staff type: regular staff (CCS) → Establishment; residents → Registrar.
-        Assign a nodal officer from any active staff member, then add clerical logins if needed.
-      </p>
+      {message && (
+        <p className="text-sm text-blue-700 bg-blue-50 border border-blue-100 rounded px-3 py-2">{message}</p>
+      )}
 
-      {message && <p className="text-sm text-blue-700 bg-blue-50 border border-blue-100 rounded px-3 py-2">{message}</p>}
+      {needsOfficerCount > 0 && (
+        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded px-3 py-2">
+          {needsOfficerCount} office{needsOfficerCount === 1 ? '' : 's'} without a nodal officer.
+        </p>
+      )}
 
       <div className="flex justify-end">
         <button type="button" onClick={() => setShowAddForm((v) => !v)} className="btn-primary btn-sm">
@@ -426,57 +495,65 @@ export function NodalOfficesPanel() {
               <th>Name</th>
               <th>Staff type</th>
               <th>Nodal officer</th>
+              <th>Office staff</th>
               <th>Status</th>
               <th className="text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
             {offices.map((office) => {
-              const clericalOpen = clericalOfficeId === office.id;
+              const editing = editingId === office.id;
+              const staffList = officeStaffByOffice[office.id];
+              const staffNames = staffList
+                ? staffList.filter((s) => s.is_active).map(officeStaffLabel)
+                : null;
+              const officerReady = Boolean(office.officer_employee_id || office.officer_user_id);
+              const pickable = pickableOfficeStaff(office);
+
               return (
                 <Fragment key={office.id}>
                   <tr className={office.is_active === false ? 'opacity-60' : ''}>
                     <td className="font-mono text-xs text-gray-600">{office.code}</td>
                     <td className="font-medium text-gray-900">{office.name}</td>
                     <td className="text-gray-500 text-xs">{SCHEME_LABELS[office.leave_scheme] || office.leave_scheme}</td>
-                    {editingId === office.id ? (
-                      <td colSpan={1}>
-                        <select
-                          value={editEmployeeId}
-                          onChange={(e) => setEditEmployeeId(e.target.value)}
-                          className="form-select py-1.5 text-sm w-full min-w-[220px]"
-                        >
-                          <option value="">Select staff…</option>
-                          {eligibleStaff.map((s) => (
-                            <option key={s.id} value={s.id}>{staffOptionLabel(s)}</option>
-                          ))}
-                        </select>
-                        {eligibleStaff.length === 0 && (
-                          <p className="text-xs text-amber-700 mt-1">No eligible staff — onboard staff first.</p>
-                        )}
-                      </td>
-                    ) : (
-                      <td className="text-gray-700">
-                        {office.officer_employee_name || <span className="text-slate-400 italic">Not assigned</span>}
-                      </td>
-                    )}
+                    <td>
+                      {editing ? (
+                        <SearchableSelect
+                          options={staffSelectOptions(eligibleStaff)}
+                          value={editOfficerId}
+                          onChange={setEditOfficerId}
+                          placeholder="Search or select staff…"
+                          className="min-w-[220px]"
+                        />
+                      ) : (
+                        <span className="text-gray-700">
+                          {office.officer_employee_name || <span className="text-slate-400 italic">Not assigned</span>}
+                        </span>
+                      )}
+                    </td>
+                    <td className="text-gray-700 text-xs max-w-[200px]">
+                      {staffNames === null && (office.clerical_count ?? 0) > 0 ? (
+                        <span className="text-slate-400">{office.clerical_count} assigned</span>
+                      ) : staffNames && staffNames.length > 0 ? (
+                        <span>{staffNames.join(', ')}</span>
+                      ) : (
+                        <span className="text-slate-400 italic">None</span>
+                      )}
+                    </td>
                     <td>
                       {office.is_active !== false
                         ? <span className="text-emerald-700 font-bold text-xs">Active</span>
                         : <span className="text-slate-400 text-xs">Inactive</span>}
                     </td>
                     <td className="text-right space-x-2 whitespace-nowrap">
-                      {editingId === office.id ? (
+                      {editing ? (
                         <>
                           <button type="button" onClick={() => void saveOfficer(office)} className="text-xs font-bold text-emerald-700 hover:underline">Save</button>
-                          <button type="button" onClick={cancelEdit} className="text-xs font-bold text-slate-500 hover:underline">Cancel</button>
+                          <button type="button" onClick={cancelEdit} className="text-xs font-bold text-slate-500 hover:underline">Done</button>
                         </>
                       ) : (
                         <>
                           <button type="button" onClick={() => startEdit(office)} className="text-xs font-bold text-indigo-600 hover:underline">Manage</button>
-                          <button type="button" onClick={() => toggleClerical(office.id)} className="text-xs font-bold text-blue-600 hover:underline">
-                            Clerical ({office.clerical_count ?? 0})
-                          </button>
                           <button type="button" onClick={() => void toggleActive(office)} className="text-xs font-bold text-blue-600 hover:underline">
                             {office.is_active !== false ? 'Deactivate' : 'Activate'}
                           </button>
@@ -484,44 +561,85 @@ export function NodalOfficesPanel() {
                       )}
                     </td>
                   </tr>
-                  {clericalOpen && (
-                    <tr key={`${office.id}-clerical`}>
-                      <td colSpan={6} className="bg-slate-50 border-t border-slate-100 p-4">
-                        {!office.officer_user_id && !office.officer_employee_id && (
-                          <p className="text-xs text-amber-700 mb-2">Assign a nodal officer before adding clerical logins.</p>
-                        )}
-                        <div className="flex flex-wrap gap-2 items-end mb-3">
-                          <label className="text-xs font-semibold text-slate-600">
-                            New clerical username
-                            <input value={clericalUsername} onChange={(e) => setClericalUsername(e.target.value)} className="form-input block mt-1 text-xs" disabled={!office.officer_employee_id && !office.officer_user_id} />
-                          </label>
-                          <label className="text-xs font-semibold text-slate-600">
-                            Temp password
-                            <input value={clericalPassword} onChange={(e) => setClericalPassword(e.target.value)} className="form-input block mt-1 text-xs" placeholder="defaults to username" disabled={!office.officer_employee_id && !office.officer_user_id} />
-                          </label>
-                          <button
-                            type="button"
-                            disabled={!office.officer_employee_id && !office.officer_user_id}
-                            onClick={() => void createClerical(office.id)}
-                            className="btn-sm bg-indigo-600 text-white rounded-md px-4 py-2 text-xs font-bold disabled:opacity-50"
-                          >
-                            Add login
-                          </button>
-                        </div>
-                        <table className="data-table data-table-compact w-full text-xs">
-                          <thead><tr><th>Username</th><th>Status</th></tr></thead>
-                          <tbody>
-                            {(clericalByOffice[office.id] || []).map((u) => (
-                              <tr key={u.id}>
-                                <td>{u.username}</td>
-                                <td>{u.is_active ? <span className="text-emerald-700 font-bold">Active</span> : <span className="text-slate-400">Inactive</span>}</td>
-                              </tr>
-                            ))}
-                            {(clericalByOffice[office.id] || []).length === 0 && (
-                              <tr><td colSpan={2} className="text-center py-4 text-slate-400 italic">No clerical logins yet.</td></tr>
+                  {editing && (
+                    <tr key={`${office.id}-staff`}>
+                      <td colSpan={7} className="bg-slate-50 border-t border-slate-100 p-4">
+                        <div className="max-w-2xl space-y-4">
+                          <div>
+                            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Nodal office staff</h4>
+                            <p className="text-xs text-slate-500 mb-3">
+                              Pick onboarded staff — same as HOD or nodal officer assignment. They use their existing login with desk permissions (onboarding, directory, leave entries — no approval).
+                            </p>
+                            {!officerReady && (
+                              <p className="text-xs text-amber-700 mb-2">Save a nodal officer above before adding office staff.</p>
                             )}
-                          </tbody>
-                        </table>
+                            <div className="flex flex-wrap gap-2 items-end">
+                              <div className="flex-1 min-w-[240px]">
+                                <label className="form-label">Staff member</label>
+                                <SearchableSelect
+                                  options={staffSelectOptions(pickable)}
+                                  value={staffPickId}
+                                  onChange={setStaffPickId}
+                                  placeholder="Search or select staff…"
+                                  disabled={!officerReady || staffBusy}
+                                />
+                              </div>
+                              <button
+                                type="button"
+                                disabled={!officerReady || !staffPickId || staffBusy}
+                                onClick={() => void assignOfficeStaff(office)}
+                                className="btn-primary btn-sm disabled:opacity-50"
+                              >
+                                {staffBusy ? 'Assigning…' : 'Assign staff'}
+                              </button>
+                            </div>
+                            {pickable.length === 0 && officerReady && (
+                              <p className="text-xs text-amber-700 mt-2">
+                                No eligible staff —{' '}
+                                <Link to="/employees?tab=onboard" className="font-bold underline">onboard staff first</Link>.
+                              </p>
+                            )}
+                          </div>
+                          <table className="data-table data-table-compact w-full text-xs">
+                            <thead>
+                              <tr>
+                                <th>Staff</th>
+                                <th>Login</th>
+                                <th>Status</th>
+                                <th className="text-right">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(officeStaffByOffice[office.id] || []).map((s) => (
+                                <tr key={s.id}>
+                                  <td className="font-medium">{officeStaffLabel(s)}</td>
+                                  <td className="font-mono text-slate-500">{s.username}</td>
+                                  <td>
+                                    {s.is_active
+                                      ? <span className="text-emerald-700 font-bold">Active</span>
+                                      : <span className="text-slate-400">Inactive</span>}
+                                  </td>
+                                  <td className="text-right">
+                                    <button
+                                      type="button"
+                                      onClick={() => void removeOfficeStaff(office.id, s.id)}
+                                      className="text-xs font-bold text-red-600 hover:underline"
+                                    >
+                                      Remove
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                              {(officeStaffByOffice[office.id] || []).length === 0 && (
+                                <tr>
+                                  <td colSpan={4} className="text-center py-4 text-slate-400 italic">
+                                    No office staff assigned yet.
+                                  </td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
                       </td>
                     </tr>
                   )}
@@ -529,7 +647,7 @@ export function NodalOfficesPanel() {
               );
             })}
             {offices.length === 0 && (
-              <tr><td colSpan={6} className="px-6 py-12 text-center text-gray-400">No nodal offices yet. Add Establishment and Registrar offices.</td></tr>
+              <tr><td colSpan={7} className="px-6 py-12 text-center text-gray-400">No nodal offices yet. Add Establishment and Registrar offices.</td></tr>
             )}
           </tbody>
         </table>
@@ -623,15 +741,11 @@ export function HodAssignmentsPanel() {
 
   return (
     <div className="space-y-6">
-      <p className="text-sm text-slate-600">
-        Each department needs one Head of Department. Departments are managed in the Departments tab — here you assign staff to each one.
-      </p>
-
       {message && <p className="text-sm text-blue-700 bg-blue-50 border border-blue-100 rounded px-3 py-2">{message}</p>}
 
       {unassignedCount > 0 && (
         <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded px-3 py-2">
-          {unassignedCount} department(s) still need a HOD before leave routing works for their staff.
+          {unassignedCount} dept(s) without HOD.
         </p>
       )}
 
@@ -659,16 +773,13 @@ export function HodAssignmentsPanel() {
                       {loadingDeptId === dept.id ? (
                         <span className="text-xs text-slate-400">Loading staff…</span>
                       ) : (
-                        <select
+                        <SearchableSelect
+                          options={staffSelectOptions(deptStaff)}
                           value={editEmployeeId}
-                          onChange={(e) => setEditEmployeeId(e.target.value)}
-                          className="form-select py-1.5 text-sm w-full min-w-[220px]"
-                        >
-                          <option value="">Select staff…</option>
-                          {deptStaff.map((s) => (
-                            <option key={s.id} value={s.id}>{staffOptionLabel(s)}</option>
-                          ))}
-                        </select>
+                          onChange={setEditEmployeeId}
+                          placeholder="Search or select staff…"
+                          className="min-w-[220px]"
+                        />
                       )}
                       {deptStaff.length === 0 && (
                         <p className="text-xs text-amber-700 mt-1">No staff in this department yet — onboard someone first.</p>
@@ -715,12 +826,14 @@ export function TeamLeavePage() {
   const [employees, setEmployees] = useState<{ id: string; emp_code: string; name: string; department_name: string; designation_name: string }[]>([]);
   const [selectedId, setSelectedId] = useState('');
   const [balances, setBalances] = useState<{ leave_type_code: string; leave_type_name: string; closing_balance: number | string; leave_year: number }[]>([]);
+  const leaveYear = currentLeaveYear();
 
   useEffect(() => {
     void employeesApi.list({ search, limit: '100' }).then((res) => setEmployees(res.data || []));
   }, [search]);
 
   const selected = useMemo(() => employees.find((e) => e.id === selectedId), [employees, selectedId]);
+  const currentBalances = useMemo(() => balancesForLeaveYear(balances, leaveYear), [balances, leaveYear]);
 
   useEffect(() => {
     if (!selectedId) { setBalances([]); return; }
@@ -733,14 +846,13 @@ export function TeamLeavePage() {
     <div className="page">
       <PageHeader
         title={title}
-        description="View leave balances for staff in your department or mapped departments."
-        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Nodal Desk', to: '/hod' }, { label: title }]}
-        rightContent={<Link to="/leave-account" className="text-xs font-bold text-blue-600 hover:underline">Open full ledger →</Link>}
+        breadcrumbs={[{ label: 'Desk', to: '/hod' }, { label: 'Nodal Desk', to: '/hod' }, { label: title }]}
+        hideTitle
       />
       <div className="grid md:grid-cols-3 gap-4">
         <div className="card p-4 md:col-span-1 space-y-2">
           <input type="text" placeholder="Search staff…" value={search} onChange={(e) => setSearch(e.target.value)} className="form-input w-full text-xs" />
-          <div className="max-h-96 overflow-y-auto border border-slate-200 rounded-lg divide-y">
+          <div className="max-h-96 app-scroll-y border border-slate-200 rounded-lg divide-y">
             {employees.map((e) => (
               <button
                 key={e.id}
@@ -758,19 +870,28 @@ export function TeamLeavePage() {
         <div className="card p-4 md:col-span-2">
           {selected ? (
             <>
-              <h3 className="font-bold text-slate-900 mb-1">{selected.name}</h3>
-              <p className="text-xs text-slate-500 mb-3">{selected.department_name} · {selected.designation_name}</p>
+              <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
+                <div>
+                  <h3 className="font-bold text-slate-900">{selected.name}</h3>
+                  <p className="text-xs text-slate-500">{selected.department_name} · {selected.designation_name} · FY {leaveYear}</p>
+                </div>
+                <Link
+                  to={staffLedgerLink(selected.id, leaveYear)}
+                  className="text-xs font-bold text-blue-600 hover:underline whitespace-nowrap"
+                >
+                  View full ledger →
+                </Link>
+              </div>
               <table className="data-table data-table-compact w-full text-xs">
-                <thead><tr><th>Leave type</th><th>Year</th><th>Closing balance</th></tr></thead>
+                <thead><tr><th>Leave type</th><th>Closing balance</th></tr></thead>
                 <tbody>
-                  {balances.map((b, i) => (
+                  {currentBalances.map((b, i) => (
                     <tr key={i}>
                       <td>{b.leave_type_name} ({b.leave_type_code})</td>
-                      <td>{b.leave_year}</td>
                       <td className="font-bold">{b.closing_balance}</td>
                     </tr>
                   ))}
-                  {balances.length === 0 && <tr><td colSpan={3} className="text-center py-4 text-slate-400 italic">No balances.</td></tr>}
+                  {currentBalances.length === 0 && <tr><td colSpan={2} className="text-center py-4 text-slate-400 italic">No balances for FY {leaveYear}.</td></tr>}
                 </tbody>
               </table>
             </>

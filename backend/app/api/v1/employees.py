@@ -24,17 +24,23 @@ from app.schemas import (
     SelfEmployeeUpdate,
     StaffGroupInfo,
     StaffGroupSuggestion,
+    StaffNumberCheck,
     StaffNumberPreview,
 )
 from app.services.leave_balance_bootstrap import bootstrap_leave_balances, onboarding_credited_amount
 from app.services.leave_rules import fetch_category_leave_entitlements, fetch_eligible_leave_types
 from app.services.staff_number import (
     StaffNumberError,
-    allocate_staff_number,
+    assert_emp_code_available,
+    check_emp_code_available,
     preview_next_staff_number,
+    resolve_new_staff_number,
     resolve_staff_group,
+    sync_sequence_from_emp_code,
+    validate_emp_code_for_group,
     validate_staff_group,
 )
+from app.services.employee_lifecycle import run_employee_lifecycle
 from app.services.employee_uniqueness import assert_employee_fields_unique
 from app.utils.employee_validation import validate_employee_dates
 from app.data.staff_number_groups import STAFF_NUMBER_GROUPS
@@ -211,6 +217,29 @@ async def next_staff_number(
     return StaffNumberPreview(next_emp_code=next_code)
 
 
+@router.get("/check-staff-number", response_model=StaffNumberCheck)
+async def check_staff_number(
+    emp_code: str = Query(..., min_length=1),
+    staff_group: str | None = Query(None),
+    exclude_employee_id: str | None = Query(None),
+    _: dict = Depends(require_role(*_EDITOR_ROLES)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fast availability check for onboarding manual entry or profile edit."""
+    try:
+        code = (emp_code or "").strip().upper()
+        if staff_group:
+            code = validate_emp_code_for_group(code, staff_group)
+        available, message = await check_emp_code_available(
+            db,
+            code,
+            exclude_employee_id=exclude_employee_id,
+        )
+        return StaffNumberCheck(available=available, emp_code=code, message=message)
+    except StaffNumberError as exc:
+        return StaffNumberCheck(available=False, emp_code=(emp_code or "").strip().upper() or None, message=str(exc))
+
+
 @router.get("/onboarding-leave-credits", response_model=list[OnboardingLeaveCreditPreview])
 async def onboarding_leave_credits_preview(
     category_code: str = Query(..., min_length=1),
@@ -233,7 +262,7 @@ async def onboarding_leave_credits_preview(
             leave_type_code=str(rule["code"]),
             leave_type_name=str(rule["name"]),
             credit_frequency=rule.get("credit_frequency"),
-            suggested_credit=onboarding_credited_amount(rule, doj),
+            suggested_credit=round(onboarding_credited_amount(rule, doj)),
         )
         for rule in rules
     ]
@@ -418,12 +447,14 @@ async def create_employee(
     except StaffNumberError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    emp_code = (body.emp_code or "").strip()
-    if not emp_code:
-        try:
-            emp_code = await allocate_staff_number(db, staff_group)
-        except StaffNumberError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    try:
+        emp_code = await resolve_new_staff_number(
+            db,
+            staff_group=staff_group,
+            manual_code=body.emp_code,
+        )
+    except StaffNumberError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     pay_level = body.pay_level
 
@@ -530,6 +561,18 @@ async def update_employee(
     if scope["scope"] != "all" and employee_id not in (scope["employee_ids"] or []):
         raise HTTPException(status_code=403, detail="Not authorized to modify this employee")
 
+    for blocked_field, label in (
+        ("department_code", "department"),
+        ("designation_name", "designation"),
+        ("category_code", "category"),
+        ("is_active", "active status"),
+    ):
+        if getattr(body, blocked_field) is not None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Use HR Operations lifecycle tabs to change {label}",
+            )
+
     current = await _fetch_employee(db, employee_id)
     validate_employee_dates(
         dob=body.dob if body.dob is not None else current.dob,
@@ -542,6 +585,22 @@ async def update_employee(
     )
 
     updates: dict = {}
+    if body.emp_code is not None:
+        try:
+            new_code = await assert_emp_code_available(
+                db,
+                body.emp_code,
+                exclude_employee_id=employee_id,
+            )
+        except StaffNumberError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if new_code != current.emp_code:
+            updates["emp_code"] = new_code
+            await sync_sequence_from_emp_code(db, new_code)
+            await db.execute(
+                text("UPDATE users SET username = :un WHERE employee_id = :eid"),
+                {"un": new_code, "eid": employee_id},
+            )
     if body.name is not None:
         updates["name"] = body.name
     if body.gender is not None:
@@ -551,37 +610,6 @@ async def update_employee(
     if body.doj is not None:
         updates["doj"] = body.doj
         updates["doj_actual"] = body.doj
-    if body.department_code is not None:
-        dept = await db.execute(text("SELECT id FROM departments WHERE code = :c"), {"c": body.department_code})
-        dept_row = dept.fetchone()
-        if not dept_row:
-            raise HTTPException(status_code=400, detail=f"Unknown department: {body.department_code}")
-
-        if current_user["role"] in _NODAL_SCOPED_ROLES:
-            await _check_nodal_employee_access(db, current_user["user_id"], current_user["role"], employee_id)
-
-        updates["department_id"] = str(dept_row[0])
-    if body.designation_name is not None:
-        des = await db.execute(text("SELECT id FROM designations WHERE name = :n"), {"n": body.designation_name})
-        des_row = des.fetchone()
-        if not des_row:
-            raise HTTPException(status_code=400, detail=f"Unknown designation: {body.designation_name}")
-        updates["designation_id"] = str(des_row[0])
-    if body.category_code is not None:
-        cat = await db.execute(
-            text("SELECT id, leave_scheme FROM employee_categories WHERE code = :c"),
-            {"c": body.category_code},
-        )
-        cat_row = cat.fetchone()
-        if not cat_row:
-            raise HTTPException(status_code=400, detail=f"Unknown category: {body.category_code}")
-        if current_user["role"] in _NODAL_SCOPED_ROLES:
-            from app.services.nodal_routing import get_nodal_office_for_user
-
-            office = await get_nodal_office_for_user(db, current_user["user_id"], current_user["role"])
-            if not office or office.leave_scheme != cat_row.leave_scheme:
-                raise HTTPException(status_code=403, detail="Not authorized to set this staff category")
-        updates["category_id"] = str(cat_row.id)
     if body.email is not None:
         updates["email"] = body.email
     if body.personal_email is not None:
@@ -630,8 +658,6 @@ async def update_employee(
         updates["grade"] = body.grade
     if body.pay_level is not None:
         updates["pay_level"] = body.pay_level.upper()
-    if body.is_active is not None:
-        updates["is_active"] = body.is_active
 
     if updates:
         uniqueness_values: dict[str, str | None] = {}
@@ -664,116 +690,18 @@ async def employee_lifecycle(
     scope: dict = Depends(employee_scope),
     db: AsyncSession = Depends(get_db),
 ):
-    """Resign, rejoin, promote, or demote an employee."""
-    action = body.get("action")
-    if action not in ("resign", "rejoin", "promote", "demote", "assign_hod"):
-        raise HTTPException(status_code=400, detail="action must be resign, rejoin, promote, demote, or assign_hod")
-
+    """Deactivate, reactivate, change designation, or transfer an employee."""
     if scope["scope"] != "all" and employee_id not in (scope["employee_ids"] or []):
         raise HTTPException(status_code=403, detail="Not authorized for this employee")
 
-    emp = await db.execute(
-        text("SELECT e.id, u.id AS user_id FROM employees e LEFT JOIN users u ON u.employee_id = e.id WHERE e.id = :eid"),
-        {"eid": employee_id},
+    return await run_employee_lifecycle(
+        db,
+        employee_id,
+        body,
+        actor_id=current_user["user_id"],
+        impersonated_by=current_user.get("impersonated_by"),
+        actor_role=current_user["role"],
     )
-    row = emp.fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="Employee not found")
-
-    user_id = str(row.user_id) if row.user_id else None
-
-    if action == "resign":
-        dol = body.get("dol_last_working")
-        await db.execute(
-            text("UPDATE employees SET is_active = false, dol_last_working = COALESCE(CAST(:dol AS date), CURRENT_DATE) WHERE id = :eid"),
-            {"eid": employee_id, "dol": dol},
-        )
-        if user_id:
-            await db.execute(text("UPDATE users SET is_active = false WHERE id = :uid"), {"uid": user_id})
-    elif action == "rejoin":
-        await db.execute(
-            text("UPDATE employees SET is_active = true, dol_last_working = NULL WHERE id = :eid"),
-            {"eid": employee_id},
-        )
-        if user_id:
-            await db.execute(text("UPDATE users SET is_active = true WHERE id = :uid"), {"uid": user_id})
-        doj_row = await db.execute(text("SELECT doj FROM employees WHERE id = :eid"), {"eid": employee_id})
-        doj_val = doj_row.fetchone()
-        if doj_val:
-            await bootstrap_leave_balances(
-                db,
-                employee_id,
-                doj_val[0],
-                actor_id=current_user["user_id"],
-                impersonated_by=current_user.get("impersonated_by"),
-            )
-    elif action in ("promote", "demote"):
-        new_desg = body.get("designation_name")
-        if not new_desg:
-            raise HTTPException(status_code=400, detail="designation_name required for promote/demote")
-        des = await db.execute(
-            text(
-                """
-                SELECT des.id, c.code AS category_code, d.code AS department_code
-                FROM designations des
-                JOIN employee_categories c ON des.category_id = c.id
-                JOIN employees e ON e.id = :eid
-                JOIN departments d ON e.department_id = d.id
-                WHERE des.name = :n
-                """
-            ),
-            {"n": new_desg, "eid": employee_id},
-        )
-        des_row = des.fetchone()
-        if not des_row:
-            raise HTTPException(status_code=400, detail=f"Unknown designation: {new_desg}")
-        updates: dict = {"desg_id": str(des_row.id), "eid": employee_id}
-        set_parts = ["designation_id = :desg_id"]
-        dept_code = body.get("department_code") or des_row.department_code
-        if body.get("department_code"):
-            dept = await db.execute(text("SELECT id FROM departments WHERE code = :c"), {"c": body["department_code"]})
-            dept_row = dept.fetchone()
-            if not dept_row:
-                raise HTTPException(status_code=400, detail="Unknown department")
-            updates["dept_id"] = str(dept_row[0])
-            set_parts.append("department_id = :dept_id")
-            dept_code = body["department_code"]
-        new_group = resolve_staff_group(
-            designation_name=new_desg,
-            category_code=des_row.category_code,
-            department_code=dept_code,
-        )
-        if new_group:
-            updates["staff_group"] = new_group
-            set_parts.append("staff_group = :staff_group")
-        if body.get("pay_level"):
-            updates["pay_level"] = body["pay_level"]
-            set_parts.append("pay_level = :pay_level")
-        await db.execute(text(f"UPDATE employees SET {', '.join(set_parts)} WHERE id = :eid"), updates)
-        doj_row = await db.execute(text("SELECT doj FROM employees WHERE id = :eid"), {"eid": employee_id})
-        doj_val = doj_row.fetchone()
-        if doj_val:
-            await bootstrap_leave_balances(
-                db,
-                employee_id,
-                doj_val[0],
-                actor_id=current_user["user_id"],
-                impersonated_by=current_user.get("impersonated_by"),
-            )
-    elif action == "assign_hod":
-        if not user_id:
-            raise HTTPException(status_code=400, detail="Employee has no login account — create user first")
-        await db.execute(text("UPDATE users SET role = 'HOD' WHERE id = :uid"), {"uid": user_id})
-
-    reporting_officer_id = body.get("reporting_officer_id")
-    if reporting_officer_id:
-        await db.execute(
-            text("UPDATE employees SET reporting_officer_id = :roid WHERE id = :eid"),
-            {"roid": reporting_officer_id, "eid": employee_id},
-        )
-
-    await db.commit()
-    return {"message": f"Employee {action} completed", "employee_id": employee_id}
 
 
 @router.post("/import", response_model=CsvImportResult)

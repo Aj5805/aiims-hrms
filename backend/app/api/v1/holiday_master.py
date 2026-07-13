@@ -14,7 +14,7 @@ from app.core.database import get_db
 router = APIRouter(prefix="/holiday-master", tags=["holiday-master"])
 
 
-_MASTER_VIEWER_ROLES = ("ADMIN", "DIRECTOR", "HOD", "NODAL_OFFICER", "NODAL_OFFICE")
+_MASTER_VIEWER_ROLES = ("ADMIN", "DIRECTOR", "HOD", "NODAL_OFFICER", "NODAL_OFFICE", "STAFF")
 
 
 @router.get("")

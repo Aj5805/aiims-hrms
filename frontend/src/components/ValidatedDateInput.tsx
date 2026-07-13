@@ -7,6 +7,7 @@ import {
   isoDateValidationMessage,
   ISO_DATE_MAX,
   ISO_DATE_MIN,
+  mapCaretThroughFilter,
 } from '../utils/employeeForm';
 import { focusNextField } from '../utils/focusNavigation';
 
@@ -84,14 +85,21 @@ export function ValidatedDateInput({
     return true;
   };
 
-  const applyInput = (raw: string) => {
+  const applyInput = (raw: string, inputEl?: HTMLInputElement, caret?: number) => {
     const formatted = formatIsoDateInput(raw);
     setDraft(formatted);
     if (isCompleteIsoDateString(formatted)) {
       finalize(formatted);
     } else {
       setFieldError(null);
-      onChange('');
+    }
+    if (inputEl && caret !== undefined) {
+      const newCaret = mapCaretThroughFilter(raw, caret, formatIsoDateInput);
+      requestAnimationFrame(() => {
+        if (document.activeElement === inputEl) {
+          inputEl.setSelectionRange(newCaret, newCaret);
+        }
+      });
     }
   };
 
@@ -155,7 +163,7 @@ export function ValidatedDateInput({
           spellCheck={false}
           value={draft}
           onFocus={handleFocus}
-          onChange={(e) => applyInput(e.target.value)}
+          onChange={(e) => applyInput(e.target.value, e.target, e.target.selectionStart ?? e.target.value.length)}
           onBlur={(e) => handleBlur(e.target.value)}
           onKeyDown={handleKeyDown}
           className={`${className} flex-1 pr-9${fieldError ? ' border-red-400 ring-1 ring-red-200' : ''}`}

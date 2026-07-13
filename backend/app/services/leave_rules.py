@@ -101,6 +101,18 @@ async def is_leave_type_eligible(
     return any(row["code"] == leave_type_code for row in eligible)
 
 
+async def is_category_leave_type_eligible(
+    db: AsyncSession,
+    category_code: str,
+    leave_type_code: str,
+    *,
+    gender: str | None = None,
+) -> bool:
+    """Whether Entitlements allow this category to apply for the leave type (scheme + rules)."""
+    entitled = await fetch_category_leave_entitlements(db, category_code, gender=gender)
+    return any(row["code"] == leave_type_code for row in entitled)
+
+
 def months_employed_in_calendar_year(doj: date, leave_year: int) -> int:
     """Whole calendar months from join month through December (inclusive) in leave_year."""
     if doj.year > leave_year:

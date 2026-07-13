@@ -89,7 +89,7 @@ async def test_notify_event_renders_template_without_committing():
     )
 
     assert db.commits == 0
-    assert db.insert_calls == 4
+    assert db.insert_calls == 2
 
 
 @pytest.mark.asyncio
@@ -125,15 +125,26 @@ async def test_send_email_batch_processes_single_pending_item(monkeypatch):
     async def _fake_factory():
         yield session
 
+    async def enabled_config(_db):
+        from app.services.email_config import EmailConfig
+
+        return EmailConfig(
+            smtp_host="smtp.zoho.in",
+            smtp_port=587,
+            from_email="demo@zoho.in",
+            app_password="secret",
+            sending_enabled=True,
+        )
+
     monkeypatch.setattr(email_sender, "async_session_factory", _fake_factory)
-    monkeypatch.setattr(email_sender, "settings", SimpleNamespace(EMAIL_SENDING_ENABLED=True, ZOHO_EMAIL="demo@zoho.in", ZOHO_APP_PASSWORD="secret"))
+    monkeypatch.setattr(email_sender, "load_email_config", enabled_config)
 
     sent = []
 
-    async def fake_send_message(*args, **kwargs):
+    def fake_send_message_sync(_config, *args, **kwargs):
         sent.append((args, kwargs))
 
-    monkeypatch.setattr(email_sender, "send_email_message", fake_send_message)
+    monkeypatch.setattr(email_sender, "send_email_message_sync", fake_send_message_sync)
 
     await email_sender.send_email_batch()
 
@@ -145,14 +156,34 @@ async def test_send_email_batch_processes_single_pending_item(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_send_email_batch_returns_early_when_email_sending_disabled(monkeypatch):
-    executed = []
+    from contextlib import asynccontextmanager
 
+    class DisabledDB:
+        async def execute(self, *_args, **_kwargs):
+            from app.services.email_config import EmailConfig
+
+            return FakeResult(value=True)
+
+        async def commit(self):
+            pass
+
+    @asynccontextmanager
     async def fake_factory():
-        raise AssertionError("async_session_factory should not be called when email sending is disabled")
-        yield
+        yield DisabledDB()
+
+    async def disabled_config(_db):
+        from app.services.email_config import EmailConfig
+
+        return EmailConfig(
+            smtp_host="smtp.zoho.in",
+            smtp_port=587,
+            from_email="",
+            app_password="",
+            sending_enabled=False,
+        )
 
     monkeypatch.setattr(email_sender, "async_session_factory", fake_factory)
-    monkeypatch.setattr(email_sender, "settings", SimpleNamespace(EMAIL_SENDING_ENABLED=False, ZOHO_EMAIL="demo@zoho.in", ZOHO_APP_PASSWORD="secret"))
+    monkeypatch.setattr(email_sender, "load_email_config", disabled_config)
 
     await email_sender.send_email_batch()
     assert True

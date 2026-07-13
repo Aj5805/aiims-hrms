@@ -11,6 +11,7 @@ import {
   EMPTY_ADDRESS,
   bankAccountValidationMessage,
   emailValidationMessage,
+  commitFilteredInputChange,
   filterAlphanumUpper,
   filterBankAccountInput,
   filterDigits,
@@ -25,10 +26,12 @@ import {
   BLOOD_GROUP_OPTIONS,
   CASTE_CATEGORY_OPTIONS,
   MARITAL_STATUS_OPTIONS,
+  roundLeaveDays,
   suggestNextIncrementDate,
   validateRegistrationFields,
 } from '../utils/employeeForm';
 import { handleFormEnterKey } from '../utils/focusNavigation';
+import { checkStaffNumberAvailable } from '../utils/staffNumberCheck';
 
 interface Department {
   id: string;
@@ -182,6 +185,8 @@ export default function AddStaffForm({ onSaved, onCancel, onDirtyChange }: AddSt
   const [presentSameAsPermanent, setPresentSameAsPermanent] = useState(false);
   const [leaveCredits, setLeaveCredits] = useState<LeaveCreditRow[]>([]);
   const [leaveCreditsLoading, setLeaveCreditsLoading] = useState(false);
+  const [staffNumberError, setStaffNumberError] = useState('');
+  const [staffNumberChecking, setStaffNumberChecking] = useState(false);
   const [authHydrated, setAuthHydrated] = useState(() => useAuthStore.persist.hasHydrated());
 
   useEffect(() => {
@@ -209,9 +214,12 @@ export default function AddStaffForm({ onSaved, onCancel, onDirtyChange }: AddSt
     });
   };
 
-  const setText = (key: keyof typeof EMPTY_FORM, value: string) => {
+  const handleFiltered = (
+    key: keyof typeof EMPTY_FORM,
+    filter: (value: string) => string,
+  ) => (e: React.ChangeEvent<HTMLInputElement>) => {
     markDirty();
-    setForm((prev) => ({ ...prev, [key]: upperText(value) }));
+    commitFilteredInputChange(e, filter, (v) => set(key, v));
   };
 
   useEffect(() => {
@@ -266,6 +274,14 @@ export default function AddStaffForm({ onSaved, onCancel, onDirtyChange }: AddSt
 
   const selectedDesig = designations.find((d) => d.name === form.designation_name);
 
+  const resolvedStaffGroup = resolveStaffGroup({
+    designationName: form.designation_name || undefined,
+    categoryCode: selectedDesig?.category_code,
+    departmentCode: form.department_code || undefined,
+  });
+
+  const staffGroupLocked = !manualEmpCode && Boolean(resolvedStaffGroup);
+
   const applyStaffGroup = (staffGroup: string | null | undefined) => {
     if (!staffGroup) return;
     setForm((prev) => (prev.staff_group === staffGroup ? prev : { ...prev, staff_group: staffGroup }));
@@ -315,6 +331,43 @@ export default function AddStaffForm({ onSaved, onCancel, onDirtyChange }: AddSt
   };
 
   useEffect(() => {
+    if (manualEmpCode || !resolvedStaffGroup) return;
+    applyStaffGroup(resolvedStaffGroup);
+  }, [manualEmpCode, resolvedStaffGroup, form.designation_name, form.department_code]);
+
+  useEffect(() => {
+    if (!manualEmpCode) {
+      setStaffNumberError('');
+      setStaffNumberChecking(false);
+      return;
+    }
+    const code = form.emp_code.trim();
+    if (!code || !form.staff_group) {
+      setStaffNumberError('');
+      return;
+    }
+    let cancelled = false;
+    setStaffNumberChecking(true);
+    const timer = window.setTimeout(() => {
+      void checkStaffNumberAvailable(code, { staff_group: form.staff_group })
+        .then((result) => {
+          if (cancelled) return;
+          setStaffNumberError(result.available ? '' : (result.message || 'Staff number is not available'));
+        })
+        .catch(() => {
+          if (!cancelled) setStaffNumberError('');
+        })
+        .finally(() => {
+          if (!cancelled) setStaffNumberChecking(false);
+        });
+    }, 350);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [manualEmpCode, form.emp_code, form.staff_group]);
+
+  useEffect(() => {
     if (manualEmpCode || !form.staff_group) {
       if (!form.staff_group) setPreviewCode('');
       return;
@@ -346,8 +399,8 @@ export default function AddStaffForm({ onSaved, onCancel, onDirtyChange }: AddSt
         }>;
         setLeaveCredits(rows.map((row) => ({
           ...row,
-          suggested_credit: Number(row.suggested_credit) || 0,
-          credited: Number(row.suggested_credit) || 0,
+          suggested_credit: roundLeaveDays(Number(row.suggested_credit) || 0),
+          credited: roundLeaveDays(Number(row.suggested_credit) || 0),
         })));
       } catch {
         if (!cancelled) setLeaveCredits([]);
@@ -436,6 +489,24 @@ export default function AddStaffForm({ onSaved, onCancel, onDirtyChange }: AddSt
       setSaving(false);
       return;
     }
+    if (manualEmpCode) {
+      if (staffNumberChecking) {
+        setError('Checking staff number availability…');
+        setSaving(false);
+        return;
+      }
+      if (staffNumberError) {
+        setError(staffNumberError);
+        setSaving(false);
+        return;
+      }
+      const liveCheck = await checkStaffNumberAvailable(form.emp_code, { staff_group: form.staff_group });
+      if (!liveCheck.available) {
+        setError(liveCheck.message || 'Staff number is not available');
+        setSaving(false);
+        return;
+      }
+    }
 
     const presentParts = presentSameAsPermanent ? permanentAddress : presentAddress;
 
@@ -485,9 +556,7 @@ export default function AddStaffForm({ onSaved, onCancel, onDirtyChange }: AddSt
         </div>
       )}
 
-      <p className="text-xs text-slate-500 mb-3 leading-relaxed">
-        Staff numbers use a group prefix and 4-digit sequence (e.g. FAC0001, NUR0002). The number stays with the employee for life.
-      </p>
+      <p className="text-xs text-slate-500 mb-3">Prefix + 4 digits (e.g. FAC0001). Permanent.</p>
 
       <form
         onSubmit={handleSubmit}
@@ -503,10 +572,10 @@ export default function AddStaffForm({ onSaved, onCancel, onDirtyChange }: AddSt
             </select>
           </Field>
           <Field label="Full Name" required cols={6}>
-            <input required value={form.name} onChange={(e) => set('name', filterName(e.target.value))} className={inputCls} />
+            <input required value={form.name} onChange={handleFiltered('name', filterName)} className={`${inputCls} uppercase`} />
           </Field>
           <Field label="Father's Name" cols={4}>
-            <input value={form.father_name} onChange={(e) => setText('father_name', e.target.value.replace(/[^A-Za-z\s.]/g, ''))} className={inputCls} />
+            <input value={form.father_name} onChange={handleFiltered('father_name', filterName)} className={`${inputCls} uppercase`} />
           </Field>
           <Field label="Date of Birth" cols={3}>
             <ValidatedDateInput value={form.dob} onChange={(v) => set('dob', v)} onInvalid={showDateError} />
@@ -527,7 +596,7 @@ export default function AddStaffForm({ onSaved, onCancel, onDirtyChange }: AddSt
             </select>
           </Field>
           <Field label="Religion" cols={3}>
-            <input value={form.religion} onChange={(e) => setText('religion', e.target.value)} className={inputCls} />
+            <input value={form.religion} onChange={handleFiltered('religion', upperText)} className={`${inputCls} uppercase`} />
           </Field>
           <Field label="Caste Category" cols={2}>
             <select value={form.caste_category} onChange={(e) => set('caste_category', e.target.value)} className={inputCls}>
@@ -562,10 +631,10 @@ export default function AddStaffForm({ onSaved, onCancel, onDirtyChange }: AddSt
             onSameToggle={handlePresentSameToggle}
           />
           <Field label="Mobile" cols={3}>
-            <input type="tel" inputMode="numeric" autoComplete="tel" value={form.mobile} onChange={(e) => set('mobile', filterDigits(e.target.value, 10))} className={codeCls} placeholder="10-digit" maxLength={10} />
+            <input type="tel" inputMode="numeric" autoComplete="tel" value={form.mobile} onChange={handleFiltered('mobile', (v) => filterDigits(v, 10))} className={codeCls} placeholder="10-digit" maxLength={10} />
           </Field>
           <Field label="Alt Mobile" cols={3}>
-            <input type="tel" inputMode="numeric" value={form.alt_mobile} onChange={(e) => set('alt_mobile', filterDigits(e.target.value, 10))} className={codeCls} maxLength={10} />
+            <input type="tel" inputMode="numeric" value={form.alt_mobile} onChange={handleFiltered('alt_mobile', (v) => filterDigits(v, 10))} className={codeCls} maxLength={10} />
           </Field>
           <Field label="Email" cols={3}>
             <ValidatedTextInput
@@ -609,7 +678,13 @@ export default function AddStaffForm({ onSaved, onCancel, onDirtyChange }: AddSt
             {selectedDesig && <p className="mt-0.5 text-[11px] text-indigo-600 font-medium">{selectedDesig.category_code}</p>}
           </Field>
           <Field label="Staff Group" required cols={4}>
-            <select required value={form.staff_group} onChange={(e) => set('staff_group', e.target.value)} className={inputCls}>
+            <select
+              required
+              value={form.staff_group}
+              disabled={staffGroupLocked}
+              onChange={(e) => set('staff_group', e.target.value)}
+              className={`${inputCls}${staffGroupLocked ? ' opacity-70 cursor-not-allowed' : ''}`}
+            >
               <option value="">Select staff group…</option>
               {staffGroups.map((g) => (
                 <option key={g.code} value={g.code}>{g.label}</option>
@@ -622,10 +697,16 @@ export default function AddStaffForm({ onSaved, onCancel, onDirtyChange }: AddSt
               readOnly={!manualEmpCode}
               tabIndex={manualEmpCode ? 0 : -1}
               value={manualEmpCode ? form.emp_code : (previewCode || form.emp_code)}
-              onChange={(e) => set('emp_code', upperText(e.target.value))}
+              onChange={handleFiltered('emp_code', upperText)}
               className={codeCls}
               placeholder={previewLoading ? 'Loading…' : form.staff_group ? 'Auto-assigned' : 'Select staff group first'}
             />
+            {manualEmpCode && staffNumberChecking && (
+              <p className="mt-0.5 text-[11px] text-slate-500">Checking availability…</p>
+            )}
+            {manualEmpCode && staffNumberError && (
+              <p className="mt-0.5 text-[11px] text-red-600">{staffNumberError}</p>
+            )}
             <label className="mt-1 flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -653,14 +734,14 @@ export default function AddStaffForm({ onSaved, onCancel, onDirtyChange }: AddSt
           <Field
             label="Pay Level"
             cols={4}
-            hint={selectedDesig?.grade_pay_level ? 'Default from designation — update on promotion/increment.' : undefined}
+            hint={selectedDesig?.grade_pay_level ? 'From designation' : undefined}
           >
-            <input value={form.pay_level} onChange={(e) => setText('pay_level', e.target.value)} className={inputCls} placeholder="e.g. Level 12" />
+            <input value={form.pay_level} onChange={handleFiltered('pay_level', upperText)} className={`${inputCls} uppercase`} placeholder="e.g. Level 12" />
           </Field>
           <Field label="Last Qualification" cols={6}>
-            <input value={form.last_qualification} onChange={(e) => setText('last_qualification', e.target.value)} className={inputCls} placeholder="MD, M.SC…" />
+            <input value={form.last_qualification} onChange={handleFiltered('last_qualification', upperText)} className={`${inputCls} uppercase`} placeholder="MD, M.SC…" />
           </Field>
-          <Field label="Next Increment" cols={4} hint="Jul 2–Jan 1 joiners → 1 Jul cycle; Jan 2–Jul 1 → 1 Jan cycle. Editable if needed.">
+          <Field label="Next Increment" cols={4} hint="Jul/Jan cycle by join date">
             <ValidatedDateInput value={form.next_increment_date} onChange={(v) => set('next_increment_date', v)} onInvalid={showDateError} />
           </Field>
           <Field label="Last Working Day" cols={4}>
@@ -671,9 +752,7 @@ export default function AddStaffForm({ onSaved, onCancel, onDirtyChange }: AddSt
             <>
               <Section title="Opening Leave Credits" />
               <div className="col-span-2 md:col-span-6 xl:col-span-12">
-                <p className="text-[11px] text-slate-500 mb-2 leading-relaxed">
-                  Auto-calculated from category entitlement and date of joining. Adjust if needed — later credits run through scheduled postings.
-                </p>
+                <p className="text-[11px] text-slate-500 mb-2">From join date & entitlements. Edit if needed.</p>
                 {leaveCreditsLoading ? (
                   <p className="text-xs text-slate-400">Calculating leave credits…</p>
                 ) : (
@@ -702,10 +781,10 @@ export default function AddStaffForm({ onSaved, onCancel, onDirtyChange }: AddSt
                               <input
                                 type="number"
                                 min={0}
-                                step={0.5}
+                                step={1}
                                 value={row.credited}
                                 onChange={(e) => {
-                                  const value = e.target.value === '' ? 0 : Number(e.target.value);
+                                  const value = e.target.value === '' ? 0 : roundLeaveDays(Number(e.target.value));
                                   markDirty();
                                   setLeaveCredits((prev) => prev.map((item) => (
                                     item.leave_type_code === row.leave_type_code
@@ -739,7 +818,7 @@ export default function AddStaffForm({ onSaved, onCancel, onDirtyChange }: AddSt
             />
           </Field>
           <Field label="Aadhaar" cols={3}>
-            <input inputMode="numeric" value={form.aadhaar} onChange={(e) => set('aadhaar', filterDigits(e.target.value, 12))} className={codeCls} maxLength={12} />
+            <input inputMode="numeric" value={form.aadhaar} onChange={handleFiltered('aadhaar', (v) => filterDigits(v, 12))} className={codeCls} maxLength={12} />
           </Field>
           <Field label="IFSC" cols={3}>
             <ValidatedTextInput
@@ -753,10 +832,10 @@ export default function AddStaffForm({ onSaved, onCancel, onDirtyChange }: AddSt
             />
           </Field>
           <Field label="NPS Number" cols={3}>
-            <input inputMode="numeric" value={form.nps_or_gpf_no} onChange={(e) => set('nps_or_gpf_no', filterDigits(e.target.value, 12))} className={codeCls} maxLength={12} />
+            <input inputMode="numeric" value={form.nps_or_gpf_no} onChange={handleFiltered('nps_or_gpf_no', (v) => filterDigits(v, 12))} className={codeCls} maxLength={12} />
           </Field>
           <Field label="PFMS Code" cols={3}>
-            <input value={form.pfms_code} onChange={(e) => set('pfms_code', filterAlphanumUpper(e.target.value, 14))} className={codeCls} maxLength={14} />
+            <input value={form.pfms_code} onChange={handleFiltered('pfms_code', (v) => filterAlphanumUpper(v, 14))} className={`${codeCls} uppercase`} maxLength={14} />
           </Field>
           <Field label="Bank A/C" cols={3}>
             <ValidatedTextInput
@@ -771,7 +850,7 @@ export default function AddStaffForm({ onSaved, onCancel, onDirtyChange }: AddSt
             />
           </Field>
           <Field label="Bank Name" cols={6}>
-            <input value={form.bank_name} onChange={(e) => setText('bank_name', e.target.value)} className={inputCls} />
+            <input value={form.bank_name} onChange={handleFiltered('bank_name', upperText)} className={`${inputCls} uppercase`} />
           </Field>
         </div>
 

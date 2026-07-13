@@ -264,6 +264,54 @@ async def get_maintenance_mode(
     return {"maintenance_mode": is_enabled}
 
 
+@router.get("/email-settings")
+async def get_email_settings(_: dict = Depends(require_role("ADMIN")), db: AsyncSession = Depends(get_db)):
+    from app.services.email_config import load_email_config, mask_email_config
+
+    config = await load_email_config(db)
+    return mask_email_config(config)
+
+
+@router.put("/email-settings")
+async def update_email_settings(
+    body: dict,
+    _: dict = Depends(require_role("ADMIN")),
+    db: AsyncSession = Depends(get_db),
+):
+    import json
+
+    from app.services.email_config import EMAIL_CONFIG_KEY, load_email_config
+
+    current = await load_email_config(db)
+    updated = {
+        "smtp_host": str(body.get("smtp_host") or current.smtp_host),
+        "smtp_port": int(body.get("smtp_port") or current.smtp_port),
+        "from_email": str(body.get("from_email") or current.from_email),
+        "app_password": current.app_password,
+        "sending_enabled": bool(body.get("sending_enabled", current.sending_enabled)),
+    }
+    new_password = body.get("app_password")
+    if isinstance(new_password, str) and new_password.strip():
+        updated["app_password"] = new_password.strip()
+
+    payload = json.dumps(updated)
+    existing = await db.execute(text("SELECT key FROM system_settings WHERE key = :key"), {"key": EMAIL_CONFIG_KEY})
+    if existing.fetchone():
+        await db.execute(
+            text("UPDATE system_settings SET value = :val::jsonb, updated_at = now() WHERE key = :key"),
+            {"key": EMAIL_CONFIG_KEY, "val": payload},
+        )
+    else:
+        await db.execute(
+            text("INSERT INTO system_settings (key, value) VALUES (:key, :val::jsonb)"),
+            {"key": EMAIL_CONFIG_KEY, "val": payload},
+        )
+    await db.commit()
+    from app.services.email_config import mask_email_config
+
+    return mask_email_config(await load_email_config(db))
+
+
 @router.get("/workflow/{leave_id}")
 async def get_workflow_diagnostics(
     leave_id: str,

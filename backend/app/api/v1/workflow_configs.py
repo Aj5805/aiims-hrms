@@ -9,6 +9,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_role
 from app.core.database import get_db
+from app.services.leave_rules import is_category_leave_type_eligible
+from app.services.workflow_resolver import (
+    entitlement_blocked_message,
+    list_workflow_configs_with_steps,
+    no_match_message,
+    normalize_code,
+    resolve_workflow_config,
+    simulation_requires_both_message,
+)
 
 router = APIRouter(prefix="/workflow-configs", tags=["workflow-configs"])
 
@@ -21,22 +30,7 @@ async def list_configs(
     _: dict = Depends(require_role(*_MASTER_VIEWER_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(text("""
-        SELECT wc.*, c.code AS category_code, lt.code AS leave_type_code
-        FROM workflow_configs wc
-        LEFT JOIN employee_categories c ON wc.category_id = c.id
-        LEFT JOIN leave_types lt ON wc.leave_type_id = lt.id
-        ORDER BY wc.config_name
-    """))
-    configs = []
-    for r in result.fetchall():
-        cfg = dict(r._mapping)
-        steps_result = await db.execute(
-            text("SELECT * FROM workflow_steps WHERE config_id = :cid ORDER BY step_order"),
-            {"cid": cfg["id"]})
-        cfg["steps"] = [dict(s._mapping) for s in steps_result.fetchall()]
-        configs.append(cfg)
-    return configs
+    return await list_workflow_configs_with_steps(db)
 
 
 @router.post("", status_code=201)
@@ -95,13 +89,18 @@ async def add_step(
 ):
     sid = str(uuid.uuid4())
     await db.execute(text("""
-        INSERT INTO workflow_steps (id, config_id, step_order, approver_role, approver_office, specific_approver_id, sla_hours, is_final_authority)
-        VALUES (:id, :cid, :so, :role, :office, :specific_id, :sla, :final)
+        INSERT INTO workflow_steps (
+            id, config_id, step_order, approver_role, approver_office,
+            specific_approver_id, sla_hours, is_final_authority, skip_if_self_applicant
+        )
+        VALUES (:id, :cid, :so, :role, :office, :specific_id, :sla, :final, :skip_self)
     """), {
         "id": sid, "cid": config_id, "so": body["step_order"],
         "role": body["approver_role"], "office": body.get("approver_office"),
         "specific_id": body.get("specific_approver_id"),
-        "sla": body.get("sla_hours", 48), "final": body.get("is_final_authority", False),
+        "sla": body.get("sla_hours", 48),
+        "final": body.get("is_final_authority", False),
+        "skip_self": body.get("skip_if_self_applicant", True),
     })
     await db.commit()
     return {"id": sid, "message": "Step added"}
@@ -150,33 +149,43 @@ async def simulate_workflow(
     db: AsyncSession = Depends(get_db),
 ):
     """Given category_code, leave_type_code, and days, return the matching workflow chain."""
-    cat_code = body.get("category_code")
-    lt_code = body.get("leave_type_code")
-    days = int(body.get("days", 1))
+    cat_code = normalize_code(body.get("category_code"))
+    lt_code = normalize_code(body.get("leave_type_code"))
+    days = float(body.get("days", 1) or 1)
+    criteria = {
+        "category_code": cat_code,
+        "leave_type_code": lt_code,
+        "days": days,
+    }
 
-    query = """
-        SELECT wc.* FROM workflow_configs wc
-        LEFT JOIN employee_categories c ON wc.category_id = c.id
-        LEFT JOIN leave_types lt ON wc.leave_type_id = lt.id
-        WHERE wc.is_active = true
-          AND (wc.category_id IS NULL OR c.code = :cat)
-          AND (wc.leave_type_id IS NULL OR lt.code = :lt)
-          AND wc.min_days <= :days
-          AND (wc.max_days IS NULL OR wc.max_days >= :days)
-        ORDER BY
-          (CASE WHEN wc.category_id IS NOT NULL THEN 1 ELSE 0 END) DESC,
-          (CASE WHEN wc.leave_type_id IS NOT NULL THEN 1 ELSE 0 END) DESC,
-          wc.min_days DESC
-        LIMIT 1
-    """
-    result = await db.execute(text(query), {"cat": cat_code, "lt": lt_code, "days": days})
-    cfg = result.fetchone()
+    if not cat_code or not lt_code:
+        return {
+            "matched": False,
+            "eligible": False,
+            "message": simulation_requires_both_message(),
+            "criteria": criteria,
+        }
+
+    if not await is_category_leave_type_eligible(db, cat_code, lt_code):
+        return {
+            "matched": False,
+            "eligible": False,
+            "message": entitlement_blocked_message(cat_code, lt_code),
+            "criteria": criteria,
+        }
+
+    cfg = await resolve_workflow_config(db, cat_code, lt_code, days)
     if not cfg:
-        return {"matched": False, "message": "No workflow config matched"}
+        return {
+            "matched": False,
+            "eligible": True,
+            "message": no_match_message(cat_code, lt_code, days),
+            "criteria": criteria,
+        }
 
-    cfg_dict = dict(cfg._mapping)
-    steps = await db.execute(
-        text("SELECT * FROM workflow_steps WHERE config_id = :cid ORDER BY step_order"),
-        {"cid": cfg_dict["id"]})
-    cfg_dict["steps"] = [dict(s._mapping) for s in steps.fetchall()]
-    return {"matched": True, "config": cfg_dict}
+    return {
+        "matched": True,
+        "eligible": True,
+        "config": cfg,
+        "criteria": criteria,
+    }

@@ -10,6 +10,9 @@ from fastapi import HTTPException
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.working_days import is_non_working_day as _is_non_working_day
+from app.services.working_days import is_weekend
+
 CL_CODE = "CL"
 DEFAULT_CL_INCOMPATIBLE = frozenset({"EL", "HPL", "EOL"})
 DEFAULT_MAX_ABSENCE_SPAN = 8
@@ -28,7 +31,7 @@ def _parse_rules(raw: Any) -> dict:
 
 
 def is_non_working_day(d: date, holidays: set[date]) -> bool:
-    return d.weekday() >= 5 or d in holidays
+    return _is_non_working_day(d, holidays)
 
 
 def count_leave_days(
@@ -48,9 +51,9 @@ def count_leave_days(
     d = from_date
     while d <= to_date:
         if count_holidays:
-            if d.weekday() < 5:
+            if not is_weekend(d):
                 total += 1
-        elif d.weekday() < 5 and d not in holidays:
+        elif not is_non_working_day(d, holidays):
             total += 1
         d += timedelta(days=1)
     return float(total)
@@ -122,9 +125,9 @@ def check_prefix_suffix(
             return "Leave cannot be suffixed to a holiday"
 
     if block_weekends:
-        if prev_day.weekday() >= 5:
+        if is_weekend(prev_day):
             return "Leave cannot be prefixed to a weekend"
-        if next_day.weekday() >= 5:
+        if is_weekend(next_day):
             return "Leave cannot be suffixed to a weekend"
 
     return None

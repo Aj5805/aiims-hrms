@@ -1,6 +1,6 @@
-import type { ReactNode } from 'react';
+import type { ReactNode, ChangeEvent } from 'react';
 import type { AddressParts } from '../utils/employeeForm';
-import { filterDigits, INDIAN_STATES, upperText } from '../utils/employeeForm';
+import { commitFilteredInputChange, filterDigits, INDIAN_STATES, upperText } from '../utils/employeeForm';
 
 const inputCls = 'dense-field-input';
 const labelCls = 'dense-field-label';
@@ -26,12 +26,8 @@ function updatePart(
   parts: AddressParts,
   key: keyof AddressParts,
   value: string,
-  pin?: boolean,
 ): AddressParts {
-  return {
-    ...parts,
-    [key]: pin ? filterDigits(value, 6) : upperText(value),
-  };
+  return { ...parts, [key]: value };
 }
 
 function FieldCell({
@@ -77,9 +73,12 @@ function ColumnFields({
           ) : (
             <input
               value={parts[key]}
-              onChange={(e) => onChange(updatePart(parts, key, e.target.value, pin))}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                const filterFn = pin ? (v: string) => filterDigits(v, 6) : upperText;
+                commitFilteredInputChange(e, filterFn, (v) => onChange(updatePart(parts, key, v)));
+              }}
               disabled={disabled}
-              className={`${inputCls}${disabled ? ' opacity-60' : ''}`}
+              className={`${inputCls}${disabled ? ' opacity-60' : ''}${pin ? '' : ' uppercase'}`}
               maxLength={pin ? 6 : undefined}
               placeholder={pin ? '6-digit PIN' : undefined}
               inputMode={pin ? 'numeric' : undefined}

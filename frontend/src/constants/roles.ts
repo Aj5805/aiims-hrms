@@ -1,12 +1,12 @@
 /** Canonical system roles — keep in sync with backend app/auth/roles.py */
 
 export const SYSTEM_ROLES = [
-  { code: 'ADMIN', label: 'Super Admin', description: 'Full system access, admin console, impersonation, all masters' },
-  { code: 'DIRECTOR', label: 'Executive Director', description: 'Read-only institutional view across all staff and reports' },
-  { code: 'NODAL_OFFICER', label: 'Nodal Officer', description: 'Final leave approver for staff in assigned nodal office (Establishment/CCS or Registrar/residents)' },
-  { code: 'NODAL_OFFICE', label: 'Nodal Office (Clerical)', description: 'Clerical staff under a nodal officer — onboarding, directory, reports, profile edit, manual leave entries; no leave approval' },
-  { code: 'HOD', label: 'Head of Department', description: 'First-stage leave approver for own department' },
-  { code: 'STAFF', label: 'Staff', description: 'Apply leave, view own balances and profile, edit non-critical personal fields' },
+  { code: 'ADMIN', label: 'Super Admin', description: 'Full access' },
+  { code: 'DIRECTOR', label: 'Executive Director', description: 'Read-only institution view' },
+  { code: 'NODAL_OFFICER', label: 'Nodal Officer', description: 'Final leave approver (nodal office)' },
+  { code: 'NODAL_OFFICE', label: 'Nodal Office (Clerical)', description: 'Onboarding, directory, reports; no approval' },
+  { code: 'HOD', label: 'Head of Department', description: 'First-stage approver' },
+  { code: 'STAFF', label: 'Staff', description: 'Apply leave, view profile' },
 ] as const;
 
 export type SystemRoleCode = (typeof SYSTEM_ROLES)[number]['code'];

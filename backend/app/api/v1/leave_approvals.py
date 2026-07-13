@@ -306,6 +306,7 @@ def _build_notification_context(app_row, base_status: str, reason: str | None = 
         "app_number": app_row.app_number,
         "employee_name": app_row.employee_name,
         "applicant_name": app_row.employee_name,
+        "emp_code": getattr(app_row, "emp_code", None),
         "approver_name": None,
         "leave_type": app_row.leave_type_name or app_row.leave_type_code,
         "from_date": _format_date(app_row.from_date),
@@ -313,6 +314,7 @@ def _build_notification_context(app_row, base_status: str, reason: str | None = 
         "days": float(app_row.applied_days) if app_row.applied_days is not None else None,
         "status": base_status,
         "reason": reason,
+        "remarks": reason,
     }
 
 
@@ -681,7 +683,7 @@ async def approve_action(application_id: str, body: dict, current_user: dict = D
                 await notify_event(db, "APP_APPROVED", application_id, base_notify_context)
             elif action == "APPROVED" and not step_dict.get("is_final_authority", False):
                 next_approver_id = await _resolve_approver_user(db, str(app_row.config_id), app_row.current_step_order + 1, str(app_row.employee_id))
-                base_notify_context.update({"status": "UNDER_REVIEW", "approver_id": next_approver_id})
+                base_notify_context.update({"status": "UNDER_REVIEW", "recipient_id": next_approver_id})
                 await notify_event(db, "APPROVAL_REQUEST", application_id, base_notify_context)
 
         await db.commit()

@@ -47,7 +47,19 @@ npm run typecheck:e2e
 
 ## Optional sample staff seed
 
-Seed `012_sample_staff.py` **no longer purges** employees unless you set `PURGE_DEV_STAFF=1`. Use that only when you want a clean demo dataset.
+**Default:** `python seeds/run.py` does **not** add demo employees. Owner adds staff via the onboard form only.
+
+To load 20 named demo staff (Dr. Ananya Sharma, etc.):
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe scripts/purge_test_data.py --reseed
+# or: $env:SEED_SAMPLE_STAFF=1; .\.venv\Scripts\python.exe seeds/run.py
+```
+
+To wipe all employees except admin first: set `PURGE_DEV_STAFF=1` before running seeds (destructive — use only when you want a clean slate).
+
+To remove agent/demo rows but keep your `test*` staff: `python scripts/purge_non_test_staff.py`.
 
 ## Core Playwright journeys (`J1`–`J6`)
 

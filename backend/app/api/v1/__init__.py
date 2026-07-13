@@ -31,3 +31,16 @@ for r in [auth_router, employees_router, departments_router, designations_router
 @router.get("/ping")
 async def ping():
     return {"ping": "pong"}
+
+
+@router.get("/system/time")
+async def system_time():
+    """Server clock for UI — returns local server timezone."""
+    from datetime import datetime
+
+    now = datetime.now().astimezone()
+    return {
+        "server_time": now.isoformat(),
+        "timezone": str(now.tzinfo),
+        "unix_ms": int(now.timestamp() * 1000),
+    }

@@ -206,5 +206,9 @@ def run(session):
         _purge_test_data(session)
     else:
         print("  Skipping purge (set PURGE_DEV_STAFF=1 to wipe employees).")
-    _seed_sample_staff(session)
+
+    if os.environ.get("SEED_SAMPLE_STAFF") == "1":
+        _seed_sample_staff(session)
+    else:
+        print("  Skipping sample staff (set SEED_SAMPLE_STAFF=1 or purge_test_data.py --reseed).")
     print("Seed 012 complete.")

@@ -17,18 +17,31 @@ router = APIRouter(prefix="/designations", tags=["designations"])
 @router.get("", response_model=list[DesignationResponse])
 async def list_designations(
     include_inactive: bool = Query(False),
+    department_code: str | None = Query(None, max_length=50),
     _: dict = Depends(require_role("ADMIN", "DIRECTOR", "NODAL_OFFICER", "NODAL_OFFICE", "HOD", "STAFF")),
     db: AsyncSession = Depends(get_db),
 ):
     inactive_clause = "" if include_inactive else " AND d.is_active = true"
+    dept_clause = ""
+    params: dict = {}
+    if department_code:
+        dept_clause = """
+            AND EXISTS (
+                SELECT 1 FROM employees e
+                JOIN departments dept ON e.department_id = dept.id
+                WHERE e.designation_id = d.id AND dept.code = :dept_code
+            )
+        """
+        params["dept_code"] = department_code
     result = await db.execute(
         text(f"""
-            SELECT d.id, d.name, d.grade_pay_level, d.is_active, c.code AS category_code
+            SELECT DISTINCT d.id, d.name, d.grade_pay_level, d.is_active, c.code AS category_code
             FROM designations d
             LEFT JOIN employee_categories c ON d.category_id = c.id
-            WHERE 1=1{inactive_clause}
+            WHERE 1=1{inactive_clause}{dept_clause}
             ORDER BY d.name
-        """)
+        """),
+        params,
     )
     return [
         DesignationResponse(

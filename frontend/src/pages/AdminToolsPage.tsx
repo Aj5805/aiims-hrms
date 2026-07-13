@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Navigate, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores';
-import { usersApi, authApi, adminApi, broadcastsApi } from '../api/endpoints';
+import { usersApi, authApi, adminApi, broadcastsApi, notificationsApi } from '../api/endpoints';
 import { PageHeader } from '../components/PageHeader';
 import { ASSIGNABLE_ROLES, roleLabel } from '../constants/roles';
 
@@ -49,6 +49,17 @@ export default function AdminToolsPage() {
   const [newBroadcastType, setNewBroadcastType] = useState('info');
   const [broadcastLoading, setBroadcastLoading] = useState(false);
 
+  const [emailSettings, setEmailSettings] = useState({
+    smtp_host: 'smtp.zoho.in',
+    smtp_port: 587,
+    from_email: '',
+    app_password: '',
+    sending_enabled: false,
+    app_password_set: false,
+  });
+  const [emailLog, setEmailLog] = useState<any[]>([]);
+  const [emailLoading, setEmailLoading] = useState(false);
+
   // Fetch logic
   const fetchUsers = async () => {
     try {
@@ -85,6 +96,53 @@ export default function AdminToolsPage() {
     }
   };
 
+  const fetchEmailSettings = async () => {
+    try {
+      setEmailLoading(true);
+      const [settingsRes, logRes] = await Promise.all([
+        adminApi.getEmailSettings(),
+        notificationsApi.emailLog(),
+      ]);
+      setEmailSettings((prev) => ({ ...prev, ...settingsRes.data, app_password: '' }));
+      setEmailLog(logRes.data || []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setEmailLoading(false);
+    }
+  };
+
+  const saveEmailSettings = async () => {
+    try {
+      setEmailLoading(true);
+      const payload: Record<string, unknown> = {
+        smtp_host: emailSettings.smtp_host,
+        smtp_port: emailSettings.smtp_port,
+        from_email: emailSettings.from_email,
+        sending_enabled: emailSettings.sending_enabled,
+      };
+      if (emailSettings.app_password.trim()) {
+        payload.app_password = emailSettings.app_password.trim();
+      }
+      const { data } = await adminApi.updateEmailSettings(payload);
+      setEmailSettings((prev) => ({ ...prev, ...data, app_password: '' }));
+      alert('Email settings saved.');
+    } catch (err) {
+      alert('Failed to save email settings.');
+    } finally {
+      setEmailLoading(false);
+    }
+  };
+
+  const retryEmail = async (id: string) => {
+    try {
+      await notificationsApi.retryEmail(id);
+      await fetchEmailSettings();
+    } catch (err) {
+      alert('Retry failed.');
+    }
+  };
+
   const fetchAuditLogs = async () => {
     try {
       setAuditLoading(true);
@@ -101,6 +159,7 @@ export default function AdminToolsPage() {
     if (activeTab === 'impersonate' || activeTab === 'roles') fetchUsers();
     if (activeTab === 'maintenance') fetchMaintenance();
     if (activeTab === 'broadcast') fetchBroadcasts();
+    if (activeTab === 'email') fetchEmailSettings();
     if (activeTab === 'audit') fetchAuditLogs();
   }, [activeTab]);
 
@@ -225,22 +284,24 @@ export default function AdminToolsPage() {
 
   const titles: Record<string, string> = {
     broadcast: 'Broadcast Manager',
+    email: 'Email Settings & Log',
     workflow: 'Workflow Diagnostics',
     audit: 'Audit Log Explorer',
     roles: 'Bulk Role Matrix'
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       <PageHeader 
         title={titles[activeTab] || 'Admin Tools'}
         breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Admin Console', to: '/admin' }, { label: titles[activeTab] || 'Tool' }]}
+        hideTitle
       />
       
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden p-6 max-w-4xl mx-auto">
+      <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden p-4 max-w-4xl">
         {activeTab === 'impersonate' && (
           <div className="space-y-4">
-            <p className="text-sm text-slate-600">Select a user to temporarily log in as them without needing their password. All actions will be audited.</p>
+            <p className="text-sm text-slate-600">Impersonate a user (audited).</p>
             <input
               type="text"
               placeholder="Search users by name, username, or role..."
@@ -379,6 +440,74 @@ export default function AdminToolsPage() {
           </div>
         )}
 
+        {activeTab === 'email' && (
+          <div className="space-y-6">
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
+              <h3 className="font-medium text-slate-900 text-sm">Master email (SMTP)</h3>
+              <p className="text-xs text-slate-500">Configure the institutional sender. Only admins can view outbound email log.</p>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="form-label">SMTP host</label>
+                  <input className="form-input" value={emailSettings.smtp_host}
+                    onChange={(e) => setEmailSettings({ ...emailSettings, smtp_host: e.target.value })} />
+                </div>
+                <div>
+                  <label className="form-label">SMTP port</label>
+                  <input type="number" className="form-input" value={emailSettings.smtp_port}
+                    onChange={(e) => setEmailSettings({ ...emailSettings, smtp_port: Number(e.target.value) })} />
+                </div>
+                <div>
+                  <label className="form-label">From email</label>
+                  <input type="email" className="form-input" value={emailSettings.from_email}
+                    onChange={(e) => setEmailSettings({ ...emailSettings, from_email: e.target.value })} />
+                </div>
+                <div>
+                  <label className="form-label">App password {emailSettings.app_password_set ? '(saved — leave blank to keep)' : ''}</label>
+                  <input type="password" className="form-input" value={emailSettings.app_password}
+                    onChange={(e) => setEmailSettings({ ...emailSettings, app_password: e.target.value })} />
+                </div>
+              </div>
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" checked={emailSettings.sending_enabled}
+                  onChange={(e) => setEmailSettings({ ...emailSettings, sending_enabled: e.target.checked })} />
+                Enable outbound email
+              </label>
+              <button type="button" onClick={() => void saveEmailSettings()} disabled={emailLoading}
+                className="btn-primary btn-sm">
+                {emailLoading ? 'Saving…' : 'Save settings'}
+              </button>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <h3 className="font-medium text-slate-900 mb-3 text-sm">Email log (last 100)</h3>
+              {emailLog.length === 0 ? (
+                <p className="text-sm text-slate-500">No outbound emails yet.</p>
+              ) : (
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {emailLog.map((row) => (
+                    <div key={row.id} className="rounded-lg border border-slate-200 p-3 text-xs">
+                      <div className="flex justify-between gap-2">
+                        <span className="font-semibold text-slate-800 truncate">{row.subject}</span>
+                        <span className={`shrink-0 px-1.5 py-0.5 rounded font-bold uppercase ${
+                          row.status === 'SENT' ? 'bg-emerald-100 text-emerald-800' :
+                          row.status === 'FAILED' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'
+                        }`}>{row.status}</span>
+                      </div>
+                      <div className="text-slate-500 mt-1">{row.recipient_name || row.recipient_id} · {formatDateTime(row.created_at)}</div>
+                      {row.error_message && <div className="text-red-600 mt-1">{row.error_message}</div>}
+                      {row.status === 'FAILED' && (
+                        <button type="button" className="mt-2 text-indigo-700 font-medium" onClick={() => void retryEmail(row.id)}>
+                          Retry
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {activeTab === 'workflow' && (
           <div className="space-y-6">
             <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -457,7 +586,7 @@ export default function AdminToolsPage() {
                     >
                       {workflowLoading ? 'Processing...' : 'FORCE APPROVE WORKFLOW'}
                     </button>
-                    <p className="text-center text-xs text-slate-500 mt-2">This will bypass remaining steps and record an Admin Override in the Audit Log.</p>
+                    <p className="text-center text-xs text-slate-500 mt-2">Bypasses remaining steps (audited).</p>
                   </div>
                 )}
               </div>
@@ -468,7 +597,7 @@ export default function AdminToolsPage() {
         {activeTab === 'audit' && (
           <div className="space-y-4">
             <div className="flex justify-between items-center">
-              <p className="text-sm text-slate-600">Recent system actions and overrides.</p>
+              <p className="text-sm text-slate-600">Recent actions.</p>
               <button
                 onClick={() => void fetchAuditLogs()}
                 disabled={auditLoading}
@@ -484,18 +613,18 @@ export default function AdminToolsPage() {
             {auditLoading && auditLogs.length === 0 ? (
               <div className="py-8 text-center text-sm text-slate-500 animate-pulse">Loading audit logs...</div>
             ) : (
-              <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+              <div className="card overflow-hidden">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm whitespace-nowrap">
-                    <thead className="bg-slate-50 text-slate-500 font-medium">
+                  <table className="data-table data-table-compact whitespace-nowrap">
+                    <thead>
                       <tr>
-                        <th className="px-4 py-3 border-b border-slate-200">Date/Time</th>
-                        <th className="px-4 py-3 border-b border-slate-200">Actor</th>
-                        <th className="px-4 py-3 border-b border-slate-200">Action</th>
-                        <th className="px-4 py-3 border-b border-slate-200">Entity</th>
+                        <th>Date/Time</th>
+                        <th>Actor</th>
+                        <th>Action</th>
+                        <th>Entity</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody>
                       {auditLogs.length === 0 ? (
                         <tr>
                           <td colSpan={4} className="px-4 py-8 text-center text-slate-500">No logs found.</td>
@@ -538,7 +667,7 @@ export default function AdminToolsPage() {
         {activeTab === 'roles' && (
           <div className="space-y-4">
             <div className="flex justify-between items-center">
-              <p className="text-sm text-slate-600">Quickly assign roles to multiple users at once.</p>
+              <p className="text-sm text-slate-600">Bulk role assignment.</p>
               <button
                 onClick={() => void handleSaveBulkRoles()}
                 disabled={savingRoles}
@@ -559,16 +688,16 @@ export default function AdminToolsPage() {
             {loadingUsers ? (
               <div className="py-8 text-center text-sm text-slate-500 animate-pulse">Loading users...</div>
             ) : (
-              <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+              <div className="card overflow-hidden">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm whitespace-nowrap">
-                    <thead className="bg-slate-50 text-slate-500 font-medium">
+                  <table className="data-table data-table-compact whitespace-nowrap">
+                    <thead>
                       <tr>
-                        <th className="px-4 py-3 border-b border-slate-200">User</th>
-                        <th className="px-4 py-3 border-b border-slate-200">Role</th>
+                        <th>User</th>
+                        <th>Role</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody>
                       {filteredUsers.map((u) => {
                         const originalRole = u.role;
                         const currentAssignedRole = roleAssignments[u.id] || originalRole;

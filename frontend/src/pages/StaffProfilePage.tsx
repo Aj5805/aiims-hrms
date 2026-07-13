@@ -31,7 +31,7 @@ export default function StaffProfilePage() {
   }
 
   return (
-    <div className="page max-w-5xl mx-auto space-y-6">
+    <div className="page space-y-6">
       <EmployeeProfileContent
         emp={emp}
         editMode="self"
@@ -40,7 +40,6 @@ export default function StaffProfilePage() {
           { label: 'My Profile', to: '/profile-dashboard' },
           { label: 'View Profile' },
         ]}
-        description="Official e-Service Book — view your record and update contact details"
         onUpdated={setEmp}
       />
 
@@ -50,8 +49,7 @@ export default function StaffProfilePage() {
           <Link to="/dependents" className="text-sm font-semibold text-blue-600 hover:text-blue-800">+ Add Dependent</Link>
         </div>
         <div className="text-center py-8">
-          <p className="text-sm text-slate-500 mb-2">No dependents added to your service record yet.</p>
-          <p className="text-xs text-slate-400">Dependent records are mandatory for processing EHS health cards and LTC claims.</p>
+          <p className="text-sm text-slate-500">No dependents yet.</p>
         </div>
       </div>
     </div>

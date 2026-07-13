@@ -36,12 +36,21 @@
   --text-lg:  1rem;       /* 16px */
   --text-xl:  1.125rem;   /* 18px */
   --text-2xl: 1.25rem;    /* 20px */
+
+  /* Scrollbar — visible track so users see when content extends below the fold */
+  --scrollbar-size: 10px;
+  --scrollbar-track: #e2e8f0;
+  --scrollbar-thumb: #94a3b8;
+  --scrollbar-thumb-hover: #64748b;
 }
 
 /* ─── Base ───────────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 
-html { font-size: 14px; }
+html {
+  font-size: 14px;
+  scrollbar-gutter: stable;
+}
 
 body {
   margin: 0;
@@ -55,47 +64,64 @@ body {
 }
 
 /* ─── Scrollbar ──────────────────────────────────────────────────────────── */
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
-::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 9999px;
+  border: 2px solid var(--scrollbar-track);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
 
 /* ─── Reusable Component Layer ───────────────────────────────────────────── */
 @layer components {
   /* ── Page wrapper — replaces per-page max-w-* ── */
-  .page { @apply space-y-5; }
+  .page { @apply space-y-3; }
 
   /* ── Cards ── */
   .card {
-    @apply rounded-xl border shadow-sm;
+    @apply rounded-lg border shadow-sm;
     background: var(--color-surface);
     border-color: var(--color-border);
   }
   .card-header {
-    @apply px-5 py-3 border-b border-slate-100 flex items-center justify-between gap-3 shrink-0;
+    @apply px-3 py-2 border-b border-slate-100 flex items-center justify-between gap-2 shrink-0;
   }
   .card-title  { @apply text-sm font-semibold text-slate-800; }
-  .card-body   { @apply p-5; }
+  .card-body   { @apply p-3 sm:p-4; }
 
-  /* ── Uniform data table ── */
+  /* ── Uniform data table (dense by default) ── */
   .data-table {
-    @apply w-full text-sm text-left;
+    @apply w-full text-left text-xs;
   }
   .data-table thead {
     @apply bg-slate-50 border-b border-slate-200;
   }
   .data-table th {
-    @apply px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap;
+    @apply px-2 py-1.5 text-[10px] font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap;
   }
   .data-table td {
-    @apply px-4 py-3 text-slate-700;
+    @apply px-2 py-1.5 text-slate-700;
   }
   .data-table tbody tr {
     @apply border-b border-slate-100 hover:bg-slate-50/80 transition-colors;
   }
   .data-table tbody tr:last-child { @apply border-b-0; }
-  .data-table-compact th { @apply px-2 py-1.5 text-[10px]; }
-  .data-table-compact td { @apply px-2 py-1.5 text-xs; }
+  .data-table-compact th { @apply px-1.5 py-1 text-[10px]; }
+  .data-table-compact td { @apply px-1.5 py-1 text-[11px]; }
 
   /* ── Dense registration form (employee onboard) ── */
   .dense-form {
@@ -172,6 +198,29 @@ body {
   .badge-purple { @apply badge bg-purple-50 text-purple-700 border border-purple-100; }
   .badge-slate  { @apply badge bg-slate-100 text-slate-600  border border-slate-200; }
 
+  /* ── Sidebar Staff / Desk toggle ── */
+  .work-mode-toggle__btn {
+    @apply relative z-10 flex items-center justify-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold uppercase tracking-wide transition-colors;
+    color: #94a3b8;
+  }
+  .work-mode-toggle__btn:hover:not(.work-mode-toggle__btn--active) {
+    color: #e2e8f0;
+  }
+  .work-mode-toggle__btn--active {
+    color: #fff;
+  }
+
+  /* ── Sidebar show/hide control ── */
+  .sidebar-menu-toggle {
+    @apply flex h-7 w-7 items-center justify-center rounded-md border transition-colors shrink-0;
+  }
+  .sidebar-menu-toggle--dark {
+    @apply border-slate-600/80 bg-slate-800 text-slate-200 hover:bg-slate-700 hover:text-white hover:border-slate-500;
+  }
+  .sidebar-menu-toggle--light {
+    @apply border-slate-300 bg-white text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-900 hover:border-slate-400;
+  }
+
   /* ── Empty state ── */
   .empty-state {
     @apply flex flex-col items-center justify-center py-16 text-center;
@@ -186,6 +235,18 @@ body {
   .defer-render {
     content-visibility: auto;
     contain-intrinsic-size: auto none auto 72px;
+  }
+
+  /* Primary vertical scroll regions — flex-safe + always show scrollbar track */
+  .app-scroll-y {
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  /* Horizontal overflow (tables, wide forms) */
+  .app-scroll-x {
+    overflow-x: auto;
+    scrollbar-gutter: stable;
   }
 }
 

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { AxiosResponse } from 'axios';
 import { departmentsApi, designationsApi, reportsApi } from '../api/endpoints';
 import { PageHeader } from '../components/PageHeader';
+import { SearchableSelect } from '../components/SearchableSelect';
 import { useAuthStore } from '../stores';
 import { formatHttpError, PAYROLL_EXPORT_ROLES } from '../constants/roles';
 
@@ -36,37 +37,37 @@ const REPORTS: ReportDef[] = [
   {
     id: 'leave-register',
     label: 'Leave Register',
-    description: 'All leave applications in the selected date range.',
+    description: 'Applications in date range.',
     exports: ['xlsx', 'pdf'],
   },
   {
     id: 'category-summary',
     label: 'Category Summary',
-    description: 'Staff category totals and approved leave days by type.',
+    description: 'Leave days by category.',
     exports: ['xlsx'],
   },
   {
     id: 'pending',
     label: 'Pending (Aged)',
-    description: 'Applications still awaiting approval, sorted by age.',
+    description: 'Awaiting approval, by age.',
     exports: ['pdf'],
   },
   {
     id: 'balance',
     label: 'Balance Summary',
-    description: 'Opening, credit, availed, and closing balances for the year.',
+    description: 'Year balances.',
     exports: ['xlsx'],
   },
   {
     id: 'calendar',
     label: 'Leave Calendar',
-    description: 'Approved leave rows for a department and month.',
+    description: 'Dept leave by month.',
     exports: ['xlsx'],
   },
   {
     id: 'payroll',
     label: 'Payroll (LOP)',
-    description: 'Approved EOL/LOP rows for finance handoff (NIC mapping placeholder).',
+    description: 'EOL/LOP for finance.',
     exports: ['csv'],
   },
 ];
@@ -140,14 +141,47 @@ export function ReportsPage() {
 
   const report = visibleReports.find((r) => r.id === activeReport) ?? visibleReports[0];
 
+  const departmentOptions = useMemo(
+    () => [
+      { value: '', label: 'All departments' },
+      ...departments.map((dept) => ({
+        value: dept.code,
+        label: `${dept.code} — ${dept.name}`,
+        searchText: dept.name,
+      })),
+    ],
+    [departments],
+  );
+
+  const designationOptions = useMemo(
+    () => [
+      { value: '', label: 'All designations' },
+      ...designations.map((desg) => ({ value: desg.name, label: desg.name })),
+    ],
+    [designations],
+  );
+
   useEffect(() => {
-    const loadFilters = async () => {
-      const [deptResponse, desgResponse] = await Promise.all([departmentsApi.list(), designationsApi.list()]);
+    const loadDepartments = async () => {
+      const deptResponse = await departmentsApi.list();
       setDepartments(deptResponse.data || []);
-      setDesignations(desgResponse.data || []);
     };
-    void loadFilters();
+    void loadDepartments();
   }, []);
+
+  useEffect(() => {
+    const loadDesignations = async () => {
+      const params: Record<string, string> = {};
+      if (filters.department_code) params.department_code = filters.department_code;
+      const { data } = await designationsApi.list(params);
+      const rows = data || [];
+      setDesignations(rows);
+      if (filters.designation_name && !rows.some((d: DesignationOption) => d.name === filters.designation_name)) {
+        setFilters((prev) => ({ ...prev, designation_name: '' }));
+      }
+    };
+    void loadDesignations();
+  }, [filters.department_code]);
 
   useEffect(() => {
     setPreview(null);
@@ -270,10 +304,9 @@ export function ReportsPage() {
       <PageHeader
         breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Reports & Data' }, { label: 'Reports' }]}
         title="Reports"
-        description="Preview leave and payroll reports on screen, then export when ready."
       />
 
-      <div className="max-w-6xl space-y-4">
+      <div className="space-y-4">
         <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-1">
           {visibleReports.map((item) => (
             <button
@@ -294,7 +327,6 @@ export function ReportsPage() {
         <div className="card card-body space-y-4">
           <div>
             <h3 className="text-base font-semibold text-slate-900">{report.label}</h3>
-            <p className="mt-1 text-sm text-slate-600">{report.description}</p>
           </div>
 
           {(needsDateRange || needsDepartment || needsMonth || needsAsOf || needsDesignation) && (
@@ -347,35 +379,30 @@ export function ReportsPage() {
               {needsDepartment && (
                 <div>
                   <label className="form-label">Department</label>
-                  <select
+                  <SearchableSelect
+                    options={departmentOptions}
                     value={filters.department_code}
-                    onChange={(e) => setFilters({ ...filters, department_code: e.target.value })}
-                    className="form-select min-w-[200px]"
-                  >
-                    <option value="">All departments</option>
-                    {departments.map((dept) => (
-                      <option key={dept.id} value={dept.code}>
-                        {dept.code} — {dept.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(department_code) =>
+                      setFilters({ ...filters, department_code, designation_name: '' })
+                    }
+                    placeholder="All departments"
+                    className="min-w-[200px]"
+                  />
                 </div>
               )}
               {needsDesignation && (
                 <div>
                   <label className="form-label">Designation</label>
-                  <select
+                  <SearchableSelect
+                    options={designationOptions}
                     value={filters.designation_name}
-                    onChange={(e) => setFilters({ ...filters, designation_name: e.target.value })}
-                    className="form-select min-w-[200px]"
-                  >
-                    <option value="">All designations</option>
-                    {designations.map((desg) => (
-                      <option key={desg.id} value={desg.name}>
-                        {desg.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(designation_name) => setFilters({ ...filters, designation_name })}
+                    placeholder="All designations"
+                    className="min-w-[200px]"
+                  />
+                  {filters.department_code && designations.length === 0 && (
+                    <p className="text-[11px] text-slate-500 mt-1">No designations mapped to this department.</p>
+                  )}
                 </div>
               )}
             </div>

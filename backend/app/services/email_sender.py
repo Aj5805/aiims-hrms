@@ -2,44 +2,42 @@
 
 import asyncio
 import logging
-import os
 import smtplib
 from email.message import EmailMessage
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import text
 
-from app.core.config import settings
 from app.core.database import async_session_factory
+from app.services.email_config import EmailConfig, load_email_config
 
 logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler()
 
-_EMAIL_GATING_LOGGED = False
 
-
-async def send_email_message(to_email: str, subject: str, body: str) -> None:
-    if not settings.EMAIL_SENDING_ENABLED or not settings.ZOHO_EMAIL or not settings.ZOHO_APP_PASSWORD:
+def send_email_message_sync(config: EmailConfig, to_email: str, subject: str, body: str) -> None:
+    if not config.sending_enabled or not config.from_email or not config.app_password:
         raise RuntimeError("SMTP sending is disabled or credentials are missing")
 
     message = EmailMessage()
-    message["From"] = settings.ZOHO_EMAIL
+    message["From"] = config.from_email
     message["To"] = to_email
     message["Subject"] = subject
-    message.set_content(body, subtype="html")
+    message.set_content(body, subtype="plain")
 
-    with smtplib.SMTP(settings.ZOHO_SMTP_HOST, settings.ZOHO_SMTP_PORT, timeout=20) as smtp:
+    with smtplib.SMTP(config.smtp_host, config.smtp_port, timeout=20) as smtp:
         smtp.starttls()
-        smtp.login(settings.ZOHO_EMAIL, settings.ZOHO_APP_PASSWORD)
+        smtp.login(config.from_email, config.app_password)
         smtp.send_message(message)
 
 
 async def send_email_batch():
     """Process up to 5 PENDING EMAIL notifications per poll with advisory-lock protection."""
-    if not settings.EMAIL_SENDING_ENABLED:
-        return
-
     async with async_session_factory() as db:
+        config = await load_email_config(db)
+        if not config.sending_enabled:
+            return
+
         lock_result = await db.execute(text("SELECT pg_try_advisory_lock(123456789)"))
         if not lock_result.scalar_one():
             return
@@ -65,7 +63,13 @@ async def send_email_batch():
                             {"id": str(row.id)},
                         )
                         continue
-                    await send_email_message(str(email_row[0]), row.subject or "HRMS Notification", row.body or "")
+                    await asyncio.to_thread(
+                        send_email_message_sync,
+                        config,
+                        str(email_row[0]),
+                        row.subject or "HRMS Notification",
+                        row.body or "",
+                    )
                     await db.execute(
                         text("UPDATE notification_queue SET status = 'SENT', sent_at = now(), error_message = NULL WHERE id = :id"),
                         {"id": str(row.id)},

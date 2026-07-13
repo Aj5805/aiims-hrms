@@ -5,43 +5,43 @@ from sqlalchemy import text
 TEMPLATES = [
     {
         "event_code": "APP_SUBMITTED",
-        "subject": "Leave Application Submitted — {{app_number}}",
-        "body": "<p>Dear {{employee_name}},</p><p>Your leave application <strong>{{app_number}}</strong> has been submitted successfully.</p><p><strong>Leave Type:</strong> {{leave_type}}<br><strong>Dates:</strong> {{from_date}} to {{to_date}} ({{days}} days)<br><strong>Status:</strong> {{status}}</p><p>You will be notified when your application is reviewed.</p><p>— AIIMS HRMS, Bibinagar</p>",
+        "subject": "Leave submitted — {{app_number}}",
+        "body": "{{leave_type}} {{from_date}}–{{to_date}} ({{days}}d) submitted. Awaiting approval.",
     },
     {
         "event_code": "APP_APPROVED",
-        "subject": "Leave Application Approved — {{app_number}}",
-        "body": "<p>Dear {{employee_name}},</p><p>Your leave application <strong>{{app_number}}</strong> has been <strong>APPROVED</strong>.</p><p><strong>Leave Type:</strong> {{leave_type}}<br><strong>Dates:</strong> {{from_date}} to {{to_date}} ({{days}} days)</p><p>You may download your leave sanction copy from the HRMS portal.</p><p>— AIIMS HRMS, Bibinagar</p>",
+        "subject": "Leave approved — {{app_number}}",
+        "body": "{{leave_type}} {{from_date}}–{{to_date}} ({{days}}d) approved.",
     },
     {
         "event_code": "APP_REJECTED",
-        "subject": "Leave Application Rejected — {{app_number}}",
-        "body": "<p>Dear {{employee_name}},</p><p>Your leave application <strong>{{app_number}}</strong> has been <strong>REJECTED</strong>.</p><p><strong>Remarks:</strong> {{remarks}}</p><p>Please contact your approving authority for further clarification.</p><p>— AIIMS HRMS, Bibinagar</p>",
+        "subject": "Leave rejected — {{app_number}}",
+        "body": "{{leave_type}} {{from_date}}–{{to_date}} rejected.{% if remarks %} Remarks: {{remarks}}.{% endif %}",
     },
     {
         "event_code": "APP_MODIFIED",
-        "subject": "Leave Application Modified — {{app_number}}",
-        "body": "<p>Dear {{employee_name}},</p><p>Your leave application <strong>{{app_number}}</strong> has been <strong>MODIFIED</strong> by the approving authority.</p><p><strong>Original Dates:</strong> {{original_from}} to {{original_to}}<br><strong>Modified Dates:</strong> {{modified_from}} to {{modified_to}}</p><p>Please review the changes on the HRMS portal.</p><p>— AIIMS HRMS, Bibinagar</p>",
+        "subject": "Leave dates changed — {{app_number}}",
+        "body": "Dates updated to {{modified_from}}–{{modified_to}} (was {{original_from}}–{{original_to}}).",
     },
     {
         "event_code": "APP_WITHDRAWN",
-        "subject": "Leave Application Withdrawn — {{app_number}}",
-        "body": "<p>Dear Sir/Madam,</p><p>Leave application <strong>{{app_number}}</strong> submitted by <strong>{{employee_name}}</strong> has been <strong>WITHDRAWN</strong>.</p><p>No further action is required.</p><p>— AIIMS HRMS, Bibinagar</p>",
+        "subject": "Leave withdrawn — {{app_number}}",
+        "body": "{{employee_name}} withdrew {{app_number}}.",
     },
     {
         "event_code": "APPROVAL_REQUEST",
-        "subject": "Leave Approval Request — {{app_number}} — {{employee_name}}",
-        "body": "<p>Dear {{approver_name}},</p><p>A leave application requires your approval.</p><p><strong>Application:</strong> {{app_number}}<br><strong>Employee:</strong> {{employee_name}} ({{emp_code}})<br><strong>Leave Type:</strong> {{leave_type}}<br><strong>Dates:</strong> {{from_date}} to {{to_date}} ({{days}} days)<br><strong>Reason:</strong> {{reason}}</p><p>Please log in to the HRMS portal to take action.</p><p>— AIIMS HRMS, Bibinagar</p>",
+        "subject": "Approval needed — {{app_number}}",
+        "body": "{{employee_name}} ({{emp_code}}): {{leave_type}} {{from_date}}–{{to_date}} ({{days}}d).",
     },
     {
         "event_code": "SLA_BREACH",
-        "subject": "ACTION REQUIRED — Leave Application {{app_number}} pending beyond SLA",
-        "body": "<p>Dear {{approver_name}},</p><p>Leave application <strong>{{app_number}}</strong> from <strong>{{employee_name}}</strong> has been pending your approval for <strong>{{pending_hours}} hours</strong> (SLA: {{sla_hours}} hours).</p><p>Please take immediate action on the HRMS portal.</p><p>— AIIMS HRMS, Bibinagar</p>",
+        "subject": "SLA overdue — {{app_number}}",
+        "body": "{{app_number}} pending {{pending_hours}}h (SLA {{sla_hours}}h). Action needed.",
     },
     {
         "event_code": "BALANCE_LOW",
-        "subject": "Low Leave Balance Alert — {{leave_type}}",
-        "body": "<p>Dear {{employee_name}},</p><p>Your <strong>{{leave_type}}</strong> balance is running low.</p><p><strong>Current Balance:</strong> {{balance}} days</p><p>Please plan your leave applications accordingly.</p><p>— AIIMS HRMS, Bibinagar</p>",
+        "subject": "Low {{leave_type}} balance",
+        "body": "{{leave_type}} balance is {{balance}} days.",
     },
 ]
 

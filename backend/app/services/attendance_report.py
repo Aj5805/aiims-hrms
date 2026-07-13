@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.leave_validation import load_holidays_in_range
+from app.services.working_days import is_weekend
 
 
 async def _fetch_holidays(db: AsyncSession, start: date, end: date) -> set[date]:
@@ -43,7 +44,7 @@ def _default_final_status(on_date: date, holidays: set[date], on_leave: bool) ->
         return "ON_LEAVE"
     if on_date in holidays:
         return "HOLIDAY"
-    if on_date.weekday() >= 5:
+    if is_weekend(on_date):
         return "WEEKEND"
     return "ON_DUTY"
 

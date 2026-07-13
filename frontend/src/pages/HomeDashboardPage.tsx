@@ -5,6 +5,7 @@ import { approvalsApi, leaveAppApi } from '../api/endpoints';
 import { PageHeader } from '../components/PageHeader';
 import { useAuthStore } from '../stores';
 import { canToggleWorkMode, effectiveWorkMode } from '../utils/workMode';
+import { balanceLink, dedupeLatestPerLeaveType } from '../utils/leaveBalances';
 
 import { APPROVER_ROLES, EMPLOYEE_MASTER_ROLES as HR_ROLES } from '../constants/roles';
 
@@ -84,12 +85,7 @@ export default function HomeDashboardPage() {
           tasks.push(
             api.get(`/leave-balances/${employeeId}`).then((res) => {
               const raw: BalanceRow[] = Array.isArray(res.data) ? res.data : (res.data?.balances ?? []);
-              const latest = new Map<string, BalanceRow>();
-              raw.forEach((b) => {
-                const ex = latest.get(b.leave_type_code);
-                if (!ex || b.leave_year > ex.leave_year) latest.set(b.leave_type_code, b);
-              });
-              setBalances(Array.from(latest.values()));
+              setBalances(dedupeLatestPerLeaveType(raw));
             }),
             leaveAppApi.list({ limit: '8' }).then((res) => {
               setApps(res.data ?? []);
@@ -115,10 +111,9 @@ export default function HomeDashboardPage() {
 
   const stats = useMemo(() => {
     const pending = apps.filter((a) => ['SUBMITTED', 'UNDER_REVIEW'].includes(a.status)).length;
-    const available = balances.reduce((s, b) => s + num(b.closing_balance), 0);
     const el = balances.find((b) => b.leave_type_code === 'EL');
     const cl = balances.find((b) => b.leave_type_code === 'CL');
-    return { pending, available, el: num(el?.closing_balance), cl: num(cl?.closing_balance) };
+    return { pending, el: num(el?.closing_balance), cl: num(cl?.closing_balance) };
   }, [apps, balances]);
 
   const displayName = user?.name || user?.username || 'there';
@@ -134,21 +129,20 @@ export default function HomeDashboardPage() {
       <PageHeader
         breadcrumbs={[{ label: 'Home' }]}
         title={`${greeting}, ${displayName}`}
-        description="Your leave status, pending tasks, and shortcuts in one place."
       />
 
-      {/* Key numbers */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {employeeId && (
           <>
-            <StatTile label="Leave available" value={loading ? '…' : String(stats.available)} tone="green" />
-            <StatTile label="EL balance" value={loading ? '…' : String(stats.el)} />
-            <StatTile label="CL balance" value={loading ? '…' : String(stats.cl)} />
+            <StatTile label="EL balance" value={loading ? '…' : String(stats.el)} to={balanceLink('EL')} />
+            <StatTile label="CL balance" value={loading ? '…' : String(stats.cl)} to={balanceLink('CL')} />
             <StatTile
               label="My pending apps"
               value={loading ? '…' : String(stats.pending)}
               tone={stats.pending > 0 ? 'amber' : 'default'}
+              to="/my-apps"
             />
+            <StatTile label="Leave hub" value="→" to="/leave-dashboard" />
           </>
         )}
         {isApprover && (
@@ -162,7 +156,6 @@ export default function HomeDashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Primary actions */}
         <section className="card p-4 lg:col-span-1">
           <h2 className="text-sm font-bold text-slate-800 mb-3">Quick actions</h2>
           <div className="space-y-2">
@@ -173,7 +166,7 @@ export default function HomeDashboardPage() {
                 <ActionLink to="/leave-account">Leave ledger</ActionLink>
               </>
             )}
-            <ActionLink to="/profile">View profile</ActionLink>
+            <ActionLink to="/profile-dashboard">View profile</ActionLink>
             {isApprover && <ActionLink to="/approvals" primary>Open approval inbox</ActionLink>}
             {isApprover && <ActionLink to="/hod">Nodal desk</ActionLink>}
             {isHr && <ActionLink to="/employees?tab=onboard">Onboard employee</ActionLink>}
@@ -184,7 +177,6 @@ export default function HomeDashboardPage() {
           </div>
         </section>
 
-        {/* My leave activity */}
         {employeeId && (
           <section className="card p-0 lg:col-span-1 flex flex-col overflow-hidden">
             <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
@@ -201,7 +193,7 @@ export default function HomeDashboardPage() {
                 </div>
               ) : (
                 apps.slice(0, 5).map((app) => (
-                  <div key={app.id} className="px-4 py-2.5 hover:bg-slate-50">
+                  <Link key={app.id} to={`/my-apps?app=${app.id}`} className="block px-4 py-2.5 hover:bg-slate-50">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-mono font-semibold text-slate-700">{app.leave_type_code}</span>
                       <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${STATUS_STYLE[app.status] ?? 'bg-slate-100 text-slate-600'}`}>
@@ -211,14 +203,13 @@ export default function HomeDashboardPage() {
                     <p className="text-xs text-slate-500 mt-0.5">
                       {fmtDate(app.from_date)} – {fmtDate(app.to_date)} · {app.applied_days ?? '—'} day(s)
                     </p>
-                  </div>
+                  </Link>
                 ))
               )}
             </div>
           </section>
         )}
 
-        {/* Approver inbox preview */}
         {isApprover && (
           <section className="card p-0 lg:col-span-1 flex flex-col overflow-hidden">
             <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
@@ -235,7 +226,7 @@ export default function HomeDashboardPage() {
                 </div>
               ) : (
                 inbox.slice(0, 5).map((item) => (
-                  <Link key={item.id} to="/approvals" className="block px-4 py-2.5 hover:bg-slate-50">
+                  <Link key={item.id} to={`/approvals?app=${item.id}`} className="block px-4 py-2.5 hover:bg-slate-50">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-sm font-semibold text-slate-800 truncate">
                         {item.emp_name || item.employee_name}
@@ -258,27 +249,8 @@ export default function HomeDashboardPage() {
             )}
           </section>
         )}
-
-        {/* Balance snapshot when no approver column */}
-        {employeeId && balances.length > 0 && !isApprover && (
-          <section className="card p-4 lg:col-span-2">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-bold text-slate-800">Leave balances</h2>
-              <Link to="/leave-dashboard" className="text-xs font-bold text-indigo-600 hover:underline">Leave hub →</Link>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {balances.slice(0, 8).map((b) => (
-                <div key={b.leave_type_code} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 min-w-[5rem]">
-                  <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{b.leave_type_code}</div>
-                  <div className="text-lg font-black text-slate-900">{num(b.closing_balance)}</div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
       </div>
 
-      {/* Module shortcuts — compact secondary row */}
       <section>
         <h2 className="text-xs font-bold uppercase tracking-wide text-slate-400 mb-2">More modules</h2>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">

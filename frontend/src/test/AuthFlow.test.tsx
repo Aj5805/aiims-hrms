@@ -37,6 +37,13 @@ const server = setupServer(
     return HttpResponse.json({ id: 'uuid-1', username: 'HRMS001', role: 'STAFF', must_change_password: false });
   }),
   http.get('*/api/v1/broadcasts/active', () => HttpResponse.json([])),
+  http.get('*/api/v1/system/time', () =>
+    HttpResponse.json({
+      server_time: new Date().toISOString(),
+      timezone: 'UTC',
+      unix_ms: Date.now(),
+    }),
+  ),
   http.get('*/api/v1/notifications/unread-count', () => HttpResponse.json({ count: 0 })),
   http.get('*/api/v1/employees', () => {
     // Return 403 to trigger interceptor

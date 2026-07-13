@@ -254,6 +254,7 @@ async def create_clerical_login(
     _: dict = Depends(require_role(*_ADMIN_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
+    """Assign an onboarded employee as nodal office (clerical) staff, or legacy username login."""
     from app.auth.jwt import hash_password
 
     office = await db.execute(
@@ -266,9 +267,45 @@ async def create_clerical_login(
     if not o.officer_user_id:
         raise HTTPException(status_code=400, detail="Assign a nodal officer to this office first")
 
+    employee_id = body.get("employee_id")
+    if employee_id:
+        user_id, role = await _user_id_for_employee(db, employee_id)
+        if role == "NODAL_OFFICER":
+            raise HTTPException(status_code=400, detail="This staff member is the nodal officer — pick someone else")
+        if role == "HOD":
+            raise HTTPException(status_code=400, detail="HOD cannot be assigned as nodal office staff")
+        if role not in ("STAFF", "NODAL_OFFICE"):
+            raise HTTPException(status_code=400, detail=f"Cannot assign staff with role {role} as nodal office staff")
+        if role == "NODAL_OFFICE":
+            existing = await db.execute(
+                text("""
+                    SELECT nodal_office_id FROM users
+                    WHERE id = :uid AND role = 'NODAL_OFFICE' AND is_active = true
+                """),
+                {"uid": user_id},
+            )
+            ex = existing.fetchone()
+            if ex and str(ex.nodal_office_id) != office_id:
+                raise HTTPException(status_code=409, detail="Staff already assigned to another nodal office")
+            if ex and str(ex.nodal_office_id) == office_id:
+                raise HTTPException(status_code=409, detail="Staff already assigned to this office")
+        await db.execute(
+            text("""
+                UPDATE users
+                SET role = 'NODAL_OFFICE',
+                    parent_nodal_user_id = :parent,
+                    nodal_office_id = :office_id,
+                    is_active = true
+                WHERE id = :uid
+            """),
+            {"uid": user_id, "parent": str(o.officer_user_id), "office_id": office_id},
+        )
+        await db.commit()
+        return {"id": user_id, "message": "Office staff assigned"}
+
     username = (body.get("username") or "").strip()
     if not username:
-        raise HTTPException(status_code=400, detail="username is required")
+        raise HTTPException(status_code=400, detail="employee_id or username is required")
     password = body.get("password") or username
 
     uid = str(uuid.uuid4())
@@ -295,6 +332,31 @@ async def create_clerical_login(
     return {"id": uid, "message": "Clerical login created"}
 
 
+@router.delete("/{office_id}/office-staff/{user_id}")
+async def remove_office_staff(
+    office_id: str,
+    user_id: str,
+    _: dict = Depends(require_role(*_ADMIN_ROLES)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove nodal office staff assignment — reverts login role to STAFF."""
+    result = await db.execute(
+        text("""
+            UPDATE users
+            SET role = 'STAFF', parent_nodal_user_id = NULL, nodal_office_id = NULL
+            WHERE id = :uid AND role = 'NODAL_OFFICE'
+              AND (nodal_office_id = :oid
+                   OR parent_nodal_user_id IN (SELECT officer_user_id FROM nodal_offices WHERE id = :oid))
+            RETURNING id
+        """),
+        {"uid": user_id, "oid": office_id},
+    )
+    if not result.fetchone():
+        raise HTTPException(status_code=404, detail="Office staff assignment not found")
+    await db.commit()
+    return {"message": "Office staff removed"}
+
+
 @router.get("/{office_id}/clerical-logins")
 async def list_clerical_logins(
     office_id: str,
@@ -303,14 +365,16 @@ async def list_clerical_logins(
 ):
     result = await db.execute(
         text("""
-            SELECT u.id, u.username, u.is_active, u.last_login,
+            SELECT u.id, u.username, u.is_active, u.last_login, u.employee_id,
+                   e.emp_code, e.name AS employee_name,
                    pn.username AS parent_nodal_username
             FROM users u
+            LEFT JOIN employees e ON e.id = u.employee_id
             LEFT JOIN users pn ON pn.id = u.parent_nodal_user_id
             WHERE u.role = 'NODAL_OFFICE'
               AND (u.nodal_office_id = :oid
                    OR u.parent_nodal_user_id IN (SELECT officer_user_id FROM nodal_offices WHERE id = :oid))
-            ORDER BY u.username
+            ORDER BY COALESCE(e.name, u.username)
         """),
         {"oid": office_id},
     )

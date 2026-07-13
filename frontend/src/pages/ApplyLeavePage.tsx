@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import { leaveAppApi, employeesApi } from '../api/endpoints';
 import { useAuthStore } from '../stores';
 import { PageHeader } from '../components/PageHeader';
+import { isStaffPersonalView } from '../utils/workMode';
 
 type LeaveTypeRow = Record<string, unknown>;
 type EmployeeProfile = {
@@ -35,7 +37,10 @@ function ReadOnlyField({ label, value }: { label: string; value?: string | null 
 }
 
 export function ApplyLeavePage() {
+  const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
+  const workMode = useAuthStore((state) => state.workMode);
+  const personalView = isStaffPersonalView(user?.role, user?.employee_id, workMode);
   const [form, setForm] = useState({
     employee_id: user?.employee_id || '',
     leave_type_code: '',
@@ -169,6 +174,11 @@ export function ApplyLeavePage() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user?.employee_id) {
+      setMsgTone('err');
+      setMsg('Your login is not linked to an employee record. Contact HR to apply for leave.');
+      return;
+    }
     if (form.is_commuted && !form.mc_attached) {
       setMsgTone('err');
       setMsg('Medical certificate is required for commuted HPL.');
@@ -180,6 +190,7 @@ export function ApplyLeavePage() {
       const toDate = form.single_day ? form.from_date : form.to_date;
       const payload: Record<string, unknown> = {
         ...form,
+        employee_id: user.employee_id,
         to_date: toDate,
       };
       delete payload.single_day;
@@ -189,8 +200,7 @@ export function ApplyLeavePage() {
         payload.reason = `[Emergency continuation] ${form.reason}`;
       }
       const { data } = await leaveAppApi.submit(payload);
-      setMsgTone('ok');
-      setMsg(`Submitted successfully — App #${data.app_number}, ${data.applied_days} day(s)${data.balance_debit_days != null && data.balance_debit_days !== data.applied_days ? ` (${data.balance_debit_days} HPL debited)` : ''}.`);
+      navigate(`/my-apps?app=${data.id}`);
     } catch (err: unknown) {
       setMsgTone('err');
       setMsg((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Submission failed. Check dates and balance.');
@@ -203,17 +213,22 @@ export function ApplyLeavePage() {
     <div className="page">
       <PageHeader
         breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Leave & Attendance', to: '/leave-dashboard' }, { label: 'Apply for Leave' }]}
-        title="Leave Application"
-        description="Submit your leave request online. Fields match the institutional leave application proforma."
+        hideTitle
       />
 
       {msg && (
-        <div className={`px-4 py-3 rounded-lg mb-4 text-sm max-w-3xl border ${
+        <div className={`px-4 py-3 rounded-lg mb-4 text-sm border ${
           msgTone === 'ok' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'
         }`}>{msg}</div>
       )}
 
-      <form onSubmit={submit} className="max-w-3xl space-y-5">
+      {!user?.employee_id && personalView && (
+        <div className="px-4 py-3 rounded-lg mb-4 text-sm border bg-amber-50 border-amber-200 text-amber-900">
+          Your account is not linked to an employee profile, so leave cannot be applied online. Contact HR.
+        </div>
+      )}
+
+      <form onSubmit={submit} className="space-y-5">
         {user?.role === 'ADMIN' && (
           <div className="card card-body">
             <label className="form-label">Employee ID (UUID)</label>
@@ -256,7 +271,7 @@ export function ApplyLeavePage() {
               ))}
             </select>
             {selectedType?.year_ref === 'TENURE' && (
-              <p className="text-xs text-slate-500 mt-1">Tenure-based leave — limited occasions and total days over entire service.</p>
+              <p className="text-xs text-slate-500 mt-1">Tenure pool — fixed occasions over service.</p>
             )}
           </div>
 
@@ -272,7 +287,7 @@ export function ApplyLeavePage() {
                 <span>
                   <span className="font-medium text-violet-900">Commute HPL to full pay (medical certificate required)</span>
                   <span className="block text-xs text-slate-600 mt-0.5">
-                    Whole days only. Each commuted day uses 2 days from your HPL balance. Lifetime cap 180 commuted days.
+                    Whole days only. 2× HPL debit; 180-day lifetime cap.
                   </span>
                 </span>
               </label>
@@ -280,13 +295,8 @@ export function ApplyLeavePage() {
           )}
 
           {isCl && (
-            <div className="rounded-lg border border-indigo-100 bg-indigo-50/60 p-3 text-sm text-slate-700 space-y-1">
-              <p className="font-medium text-indigo-900">Casual Leave (DoPT)</p>
-              <ul className="list-disc list-inside text-xs text-slate-600 space-y-0.5">
-                <li>Weekends and holidays attached to CL are not debited.</li>
-                <li>Total absence span capped at 8 calendar days.</li>
-                <li>Cannot sandwich CL with EL/HPL across holidays/weekends only.</li>
-              </ul>
+            <div className="rounded-lg border border-indigo-100 bg-indigo-50/60 p-3 text-xs text-slate-600">
+              <span className="font-medium text-indigo-900">CL (DoPT):</span> weekends/holidays free; 8-day span cap; no EL/HPL sandwich.
             </div>
           )}
 
@@ -365,14 +375,11 @@ export function ApplyLeavePage() {
               />
               <span>
                 <span className="font-medium">Emergency continuation on regular leave</span>
-                <span className="block text-xs text-slate-500 mt-0.5">Half-day CL (afternoon) followed by EL/HPL from next day.</span>
+                <span className="block text-xs text-slate-500 mt-0.5">Half-day CL + EL/HPL from next day.</span>
               </span>
             </label>
           )}
 
-          <p className="text-xs text-slate-500">
-            Past dates are allowed when the absence date is before today.
-          </p>
         </FormSection>
 
         <FormSection title="3. Leave account">
@@ -454,7 +461,7 @@ export function ApplyLeavePage() {
         </FormSection>
 
         <div className="flex items-center gap-3 pt-1">
-          <button type="submit" disabled={submitting || !form.leave_type_code} className="btn-primary">
+          <button type="submit" disabled={submitting || !form.leave_type_code || !user?.employee_id} className="btn-primary">
             {submitting ? 'Submitting…' : 'Submit application'}
           </button>
           <p className="text-xs text-slate-500">

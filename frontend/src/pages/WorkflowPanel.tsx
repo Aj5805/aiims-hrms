@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { entitlementRulesApi, leaveTypesApi, workflowApi } from '../api/endpoints';
-import { formatApiError, WORKFLOW_APPROVER_ROLES } from '../constants/roles';
+import { formatApiError, formatHttpError, WORKFLOW_APPROVER_ROLES } from '../constants/roles';
 import type { LeaveTypeRow } from './LeaveTypesPanel';
 
 const CATEGORY_CODES = ['FACULTY', 'NURSING', 'ADMIN', 'JR_ACAD', 'SR_ACAD', 'JR_NA', 'SR_NA'] as const;
@@ -47,6 +47,26 @@ type WorkflowStepDraft = {
   skip_if_self_applicant: boolean;
 };
 
+type SimCriteria = {
+  category_code?: string | null;
+  leave_type_code?: string | null;
+  days?: number;
+};
+
+type SimResult = {
+  matched: boolean;
+  eligible?: boolean;
+  message?: string;
+  config?: WorkflowConfigRow;
+  criteria?: SimCriteria;
+};
+
+type EntitlementRuleRow = {
+  category_code?: string;
+  category_id?: string;
+  leave_type_code?: string;
+};
+
 function configToDraft(cfg: WorkflowConfigRow): WorkflowConfigDraft {
   return {
     config_name: cfg.config_name,
@@ -80,42 +100,64 @@ function emptyStepDraft(order: number): WorkflowStepDraft {
   };
 }
 
+function formatDayRange(minDays?: number, maxDays?: number | null): string {
+  const min = minDays ?? 1;
+  if (maxDays == null) return `${min}+ days`;
+  if (min === maxDays) return `${min} day${min === 1 ? '' : 's'}`;
+  return `${min}–${maxDays} days`;
+}
+
+function formatScope(cfg: WorkflowConfigRow): string {
+  const cat = cfg.category_code || 'all categories';
+  const lt = cfg.leave_type_code || 'all leave types';
+  return `${cat} · ${lt} · ${formatDayRange(cfg.min_days, cfg.max_days)}`;
+}
+
+function criteriaLabel(criteria?: SimCriteria): string {
+  if (!criteria?.category_code || !criteria?.leave_type_code) return '';
+  const days = criteria.days ?? 1;
+  return `${criteria.category_code} · ${criteria.leave_type_code} · ${days} day${days === 1 ? '' : 's'}`;
+}
+
+function isTestWorkflow(cfg: WorkflowConfigRow): boolean {
+  const name = cfg.config_name || '';
+  return name.startsWith('E2E_') || name.startsWith('ASCII Test');
+}
+
+function sortWorkflowConfigs(configs: WorkflowConfigRow[]): WorkflowConfigRow[] {
+  return [...configs].sort((a, b) => {
+    const aActive = a.is_active !== false ? 0 : 1;
+    const bActive = b.is_active !== false ? 0 : 1;
+    if (aActive !== bActive) return aActive - bActive;
+
+    const aSteps = (a.steps?.length || 0) > 0 ? 0 : 1;
+    const bSteps = (b.steps?.length || 0) > 0 ? 0 : 1;
+    if (aSteps !== bSteps) return aSteps - bSteps;
+
+    return a.config_name.localeCompare(b.config_name);
+  });
+}
+
 export function WorkflowPanel() {
   const [configs, setConfigs] = useState<WorkflowConfigRow[]>([]);
   const [leaveTypes, setLeaveTypes] = useState<LeaveTypeRow[]>([]);
   const [categoryIds, setCategoryIds] = useState<Record<string, string>>({});
+  const [entitlementRules, setEntitlementRules] = useState<EntitlementRuleRow[]>([]);
   const [newName, setNewName] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [configDraft, setConfigDraft] = useState<WorkflowConfigDraft | null>(null);
   const [stepDrafts, setStepDrafts] = useState<Record<string, WorkflowStepDraft>>({});
   const [newStep, setNewStep] = useState<WorkflowStepDraft>(emptyStepDraft(1));
-  const [simResult, setSimResult] = useState<Record<string, unknown> | null>(null);
+  const [simResult, setSimResult] = useState<SimResult | null>(null);
   const [simCat, setSimCat] = useState('');
   const [simLt, setSimLt] = useState('');
   const [simDays, setSimDays] = useState('3');
+  const [simLoading, setSimLoading] = useState(false);
+  const [showInactive, setShowInactive] = useState(false);
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const load = useCallback(async () => {
-    const [cfgRes, ltRes, rulesRes] = await Promise.all([
-      workflowApi.list(),
-      leaveTypesApi.list({ include_inactive: true }),
-      entitlementRulesApi.list(),
-    ]);
-    setConfigs(cfgRes.data as WorkflowConfigRow[]);
-    setLeaveTypes(ltRes.data as LeaveTypeRow[]);
-    const map: Record<string, string> = {};
-    for (const row of rulesRes.data as { category_code?: string; category_id?: string }[]) {
-      if (row.category_code && row.category_id) {
-        map[row.category_code] = row.category_id;
-      }
-    }
-    setCategoryIds(map);
-  }, []);
-
-  useEffect(() => { void load(); }, [load]);
-
-  const startEdit = (cfg: WorkflowConfigRow) => {
+  const applyEditState = useCallback((cfg: WorkflowConfigRow) => {
     setEditingId(cfg.id);
     setConfigDraft(configToDraft(cfg));
     const drafts: Record<string, WorkflowStepDraft> = {};
@@ -124,6 +166,39 @@ export function WorkflowPanel() {
     }
     setStepDrafts(drafts);
     setNewStep(emptyStepDraft((cfg.steps?.length || 0) + 1));
+  }, []);
+
+  const load = useCallback(async (): Promise<WorkflowConfigRow[]> => {
+    const [cfgRes, ltRes, rulesRes] = await Promise.all([
+      workflowApi.list(),
+      leaveTypesApi.list({ include_inactive: true }),
+      entitlementRulesApi.list(),
+    ]);
+    const rows = cfgRes.data as WorkflowConfigRow[];
+    setConfigs(rows);
+    setLeaveTypes(ltRes.data as LeaveTypeRow[]);
+    const rules = rulesRes.data as EntitlementRuleRow[];
+    setEntitlementRules(rules);
+    const map: Record<string, string> = {};
+    for (const row of rules) {
+      if (row.category_code && row.category_id) {
+        map[row.category_code] = row.category_id;
+      }
+    }
+    setCategoryIds(map);
+    return rows;
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const reloadEditing = async (configId: string) => {
+    const rows = await load();
+    const current = rows.find((c) => c.id === configId);
+    if (current) applyEditState(current);
+  };
+
+  const startEdit = (cfg: WorkflowConfigRow) => {
+    applyEditState(cfg);
     setMessage('');
   };
 
@@ -143,7 +218,7 @@ export function WorkflowPanel() {
       setMessage('Workflow created. Click Edit to add matching rules and approval steps.');
       await load();
     } catch (err: unknown) {
-      setMessage(formatApiError((err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail) || 'Failed to create workflow.');
+      setMessage(formatHttpError(err, 'Failed to create workflow.'));
     } finally {
       setSaving(false);
     }
@@ -163,12 +238,9 @@ export function WorkflowPanel() {
         is_active: configDraft.is_active,
       });
       setMessage('Workflow settings saved.');
-      await load();
-      const refreshed = (await workflowApi.list()).data as WorkflowConfigRow[];
-      const current = refreshed.find((c) => c.id === editingId);
-      if (current) startEdit(current);
+      await reloadEditing(editingId);
     } catch (err: unknown) {
-      setMessage(formatApiError((err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail) || 'Failed to save workflow.');
+      setMessage(formatHttpError(err, 'Failed to save workflow.'));
     } finally {
       setSaving(false);
     }
@@ -190,12 +262,9 @@ export function WorkflowPanel() {
         skip_if_self_applicant: draft.skip_if_self_applicant,
       });
       setMessage('Step saved.');
-      await load();
-      const refreshed = (await workflowApi.list()).data as WorkflowConfigRow[];
-      const current = refreshed.find((c) => c.id === editingId);
-      if (current) startEdit(current);
+      await reloadEditing(editingId);
     } catch (err: unknown) {
-      setMessage(formatApiError((err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail) || 'Failed to save step.');
+      setMessage(formatHttpError(err, 'Failed to save step.'));
     } finally {
       setSaving(false);
     }
@@ -215,12 +284,9 @@ export function WorkflowPanel() {
         skip_if_self_applicant: newStep.skip_if_self_applicant,
       });
       setMessage('Step added.');
-      await load();
-      const refreshed = (await workflowApi.list()).data as WorkflowConfigRow[];
-      const current = refreshed.find((c) => c.id === editingId);
-      if (current) startEdit(current);
+      await reloadEditing(editingId);
     } catch (err: unknown) {
-      setMessage(formatApiError((err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail) || 'Failed to add step.');
+      setMessage(formatHttpError(err, 'Failed to add step.'));
     } finally {
       setSaving(false);
     }
@@ -233,24 +299,40 @@ export function WorkflowPanel() {
     try {
       await workflowApi.deleteStep(editingId, stepId);
       setMessage('Step deleted.');
-      await load();
-      const refreshed = (await workflowApi.list()).data as WorkflowConfigRow[];
-      const current = refreshed.find((c) => c.id === editingId);
-      if (current) startEdit(current);
+      await reloadEditing(editingId);
     } catch (err: unknown) {
-      setMessage(formatApiError((err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail) || 'Failed to delete step.');
+      setMessage(formatHttpError(err, 'Failed to delete step.'));
     } finally {
       setSaving(false);
     }
   };
 
   const simulate = async () => {
-    const { data } = await workflowApi.simulate({
-      category_code: simCat,
-      leave_type_code: simLt,
-      days: Number(simDays) || 1,
-    });
-    setSimResult(data as Record<string, unknown>);
+    if (!simCat || !simLt) {
+      setSimResult({
+        matched: false,
+        eligible: false,
+        message: 'Select both employee category and leave type.',
+      });
+      return;
+    }
+    setSimLoading(true);
+    setSimResult(null);
+    try {
+      const { data } = await workflowApi.simulate({
+        category_code: simCat,
+        leave_type_code: simLt,
+        days: Number(simDays) || 1,
+      });
+      setSimResult(data as SimResult);
+    } catch (err: unknown) {
+      setSimResult({
+        matched: false,
+        message: formatHttpError(err, 'Simulation failed.'),
+      });
+    } finally {
+      setSimLoading(false);
+    }
   };
 
   const patchStepDraft = (stepId: string, partial: Partial<WorkflowStepDraft>) => {
@@ -260,6 +342,18 @@ export function WorkflowPanel() {
     }));
   };
 
+  const activeLeaveTypes = leaveTypes.filter((lt) => lt.is_active !== false);
+  const entitledLeaveCodes = new Set(
+    entitlementRules
+      .filter((r) => r.category_code === simCat && r.leave_type_code)
+      .map((r) => r.leave_type_code as string),
+  );
+  const simLeaveTypeOptions = activeLeaveTypes.filter((lt) => entitledLeaveCodes.has(lt.code));
+  const canSimulate = Boolean(simCat && simLt);
+  const inactiveCount = configs.filter((c) => c.is_active === false).length;
+  const visibleConfigs = sortWorkflowConfigs(
+    showInactive ? configs : configs.filter((c) => c.is_active !== false),
+  );
   const editingConfig = configs.find((c) => c.id === editingId);
 
   return (
@@ -278,18 +372,33 @@ export function WorkflowPanel() {
         <button type="button" onClick={() => void createCfg()} disabled={saving} className="btn-primary">Create</button>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-2">
-        <div className="border border-slate-200 rounded-lg p-5 space-y-3">
-          <h3 className="text-sm font-semibold text-slate-800">Workflow Chains</h3>
-          {configs.map((c) => (
+      <div className="grid gap-5 xl:grid-cols-2 xl:items-start">
+        <div className="border border-slate-200 rounded-lg p-5 space-y-3 max-h-[min(70vh,42rem)] overflow-y-auto app-scroll-y">
+          <div className="flex flex-wrap items-center justify-between gap-2 sticky top-0 z-10 bg-white pb-2 -mt-1 pt-1">
+            <h3 className="text-sm font-semibold text-slate-800">Workflow Chains</h3>
+            {inactiveCount > 0 && (
+              <label className="flex items-center gap-2 text-xs text-slate-500 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showInactive}
+                  onChange={(e) => setShowInactive(e.target.checked)}
+                />
+                Show inactive ({inactiveCount})
+              </label>
+            )}
+          </div>
+          {visibleConfigs.map((c) => (
             <div key={c.id} className={`border rounded-lg ${editingId === c.id ? 'border-indigo-300 bg-indigo-50/40' : 'border-slate-200'}`}>
               <div className="px-4 py-3 flex justify-between items-start gap-3">
-                <div>
-                  <div className="font-medium text-sm">{c.config_name}</div>
-                  <div className="text-xs text-slate-500 mt-1">
-                    {(c.steps?.length || 0)} steps
-                    {c.category_code ? ` · ${c.category_code}` : ' · all categories'}
-                    {c.leave_type_code ? ` · ${c.leave_type_code}` : ' · all leave types'}
+                <div className="min-w-0">
+                  <div className="font-medium text-sm flex flex-wrap items-center gap-2">
+                    <span>{c.config_name}</span>
+                    {showInactive && isTestWorkflow(c) && (
+                      <span className="badge text-[10px] bg-amber-100 text-amber-800">test</span>
+                    )}
+                  </div>
+                  <div className="text-xs text-slate-500 mt-1 truncate" title={formatScope(c)}>
+                    {(c.steps?.length || 0)} steps · {formatScope(c)}
                     {c.is_active === false ? ' · inactive' : ''}
                   </div>
                 </div>
@@ -304,46 +413,124 @@ export function WorkflowPanel() {
               {editingId !== c.id && (
                 <div className="px-4 pb-3 text-xs space-y-1">
                   {(c.steps || []).map((s) => (
-                    <div key={s.id} className="flex gap-2 text-slate-600">
+                    <div key={s.id} className="flex flex-wrap gap-2 text-slate-600">
                       <span className="font-mono text-slate-400">{s.step_order}.</span>
                       <span className="font-medium">{s.approver_role}</span>
                       {s.approver_office && <span className="text-slate-400">({s.approver_office})</span>}
                       {s.is_final_authority && <span className="badge badge-green text-[10px]">Final</span>}
                     </div>
                   ))}
+                  {(c.steps?.length || 0) === 0 && (
+                    <p className="text-slate-400">No approval steps — edit to add.</p>
+                  )}
                 </div>
               )}
             </div>
           ))}
-          {configs.length === 0 && <p className="text-slate-400 text-sm">No workflows configured.</p>}
+          {visibleConfigs.length === 0 && (
+            <p className="text-slate-400 text-sm">
+              {configs.length === 0
+                ? 'No workflows configured.'
+                : 'No active workflows. Enable "Show inactive" to see test or retired configs.'}
+            </p>
+          )}
         </div>
 
-        <div className="border border-slate-200 rounded-lg p-5">
-          <h3 className="text-sm font-semibold text-slate-800 mb-4">Simulate Routing</h3>
-          <div className="grid grid-cols-3 gap-2 mb-3">
-            <input placeholder="Category e.g. FACULTY" value={simCat} onChange={(e) => setSimCat(e.target.value)} className="form-input" />
-            <input placeholder="Leave type e.g. EL" value={simLt} onChange={(e) => setSimLt(e.target.value)} className="form-input" />
-            <input type="number" value={simDays} onChange={(e) => setSimDays(e.target.value)} min={1} className="form-input" />
+        <div className="border border-slate-200 rounded-lg p-5 xl:sticky xl:top-4">
+          <h3 className="text-sm font-semibold text-slate-800 mb-1">Simulate Routing</h3>
+          <p className="text-xs text-slate-500 mb-4">
+            Mirrors leave apply: only combinations configured in Entitlements for that staff category, then workflow rules.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-3 mb-3">
+            <div>
+              <label className="form-label">Category</label>
+              <select
+                value={simCat}
+                onChange={(e) => {
+                  setSimCat(e.target.value);
+                  setSimLt('');
+                  setSimResult(null);
+                }}
+                className="form-select"
+              >
+                <option value="">Select category…</option>
+                {CATEGORY_CODES.map((code) => (
+                  <option key={code} value={code}>{code}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="form-label">Leave type</label>
+              <select
+                value={simLt}
+                onChange={(e) => {
+                  setSimLt(e.target.value);
+                  setSimResult(null);
+                }}
+                className="form-select"
+                disabled={!simCat}
+              >
+                <option value="">{simCat ? 'Select leave type…' : 'Choose category first'}</option>
+                {simLeaveTypeOptions.map((lt) => (
+                  <option key={lt.id} value={lt.code}>{lt.code}</option>
+                ))}
+              </select>
+              {simCat && simLeaveTypeOptions.length === 0 && (
+                <p className="text-xs text-amber-700 mt-1">No leave types entitled for this category.</p>
+              )}
+            </div>
+            <div>
+              <label className="form-label">Days</label>
+              <input
+                type="number"
+                value={simDays}
+                onChange={(e) => setSimDays(e.target.value)}
+                min={0.5}
+                step={0.5}
+                className="form-input"
+              />
+            </div>
           </div>
-          <button type="button" onClick={() => void simulate()} className="btn-secondary w-full">Run Simulation</button>
+          <button
+            type="button"
+            onClick={() => void simulate()}
+            disabled={simLoading || !canSimulate}
+            className="btn-secondary w-full"
+          >
+            {simLoading ? 'Running…' : 'Run Simulation'}
+          </button>
           {simResult && (
             <div className="mt-4 text-sm border-t border-slate-100 pt-4">
-              {simResult.matched ? (
+              {simResult.matched && simResult.config ? (
                 <div>
-                  <p className="text-emerald-700 font-semibold mb-3">
-                    Matched: {(simResult.config as Record<string, unknown>).config_name as string}
+                  {criteriaLabel(simResult.criteria) && (
+                    <p className="text-xs text-slate-500 mb-2">Input: {criteriaLabel(simResult.criteria)}</p>
+                  )}
+                  <p className="text-emerald-700 font-semibold mb-1">
+                    Matched: {simResult.config.config_name}
                   </p>
+                  <p className="text-xs text-slate-500 mb-3">{formatScope(simResult.config)}</p>
                   <div className="space-y-2">
-                    {((simResult.config as Record<string, unknown>).steps as Record<string, unknown>[])?.map((s) => (
-                      <div key={s.id as string} className="flex gap-3 text-slate-600">
-                        <span className="font-mono text-slate-400">Step {s.step_order as number}</span>
-                        <span className="font-medium">{s.approver_role as string}</span>
+                    {(simResult.config.steps || []).map((s) => (
+                      <div key={s.id} className="flex flex-wrap gap-2 text-slate-600">
+                        <span className="font-mono text-slate-400">Step {s.step_order}</span>
+                        <span className="font-medium">{s.approver_role}</span>
+                        {s.approver_office && <span className="text-slate-400">({s.approver_office})</span>}
+                        {s.is_final_authority && <span className="badge badge-green text-[10px]">Final</span>}
+                        {s.skip_if_self_applicant && <span className="text-slate-400 text-xs">skip if self</span>}
                       </div>
                     ))}
                   </div>
                 </div>
               ) : (
-                <p className="text-red-600">No workflow matched for the given inputs.</p>
+                <div>
+                  {simResult.criteria && criteriaLabel(simResult.criteria) && (
+                    <p className="text-xs text-slate-500 mb-2">Input: {criteriaLabel(simResult.criteria)}</p>
+                  )}
+                  <p className="text-red-600">
+                    {simResult.message || formatApiError(simResult.message) || 'No workflow matched for the given inputs.'}
+                  </p>
+                </div>
               )}
             </div>
           )}

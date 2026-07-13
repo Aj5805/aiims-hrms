@@ -23,7 +23,7 @@ export default function LoginPage() {
       if (data.user.role === 'ADMIN') {
         await authApi.logout().catch(() => {});
         clearAuth();
-        setError('Administrators must use the secure Admin Portal (/admin-login).');
+        setError('Use Admin Portal (/admin-login).');
         setLoading(false);
         return;
       }
@@ -118,7 +118,7 @@ export default function LoginPage() {
           </div>
           
           <div className="bg-slate-900/80 py-4 text-center border-t border-white/10">
-            <p className="text-[10px] text-slate-500 uppercase tracking-widest">Secure internal portal • Authorized access only</p>
+            <p className="text-[10px] text-slate-500 uppercase tracking-widest">Authorized access only</p>
           </div>
         </div>
       </div>

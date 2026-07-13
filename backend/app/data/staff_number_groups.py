@@ -16,7 +16,8 @@ STAFF_NUMBER_GROUPS: dict[str, StaffGroupDef] = {
     "FAC": {"label": "Faculty", "prefix": "FAC", "pad_width": 4},
     "NUR": {"label": "Nursing Officer", "prefix": "NUR", "pad_width": 4},
     "NFS": {"label": "Senior Nursing Officer", "prefix": "NFS", "pad_width": 4},
-    "DEP": {"label": "Administration / Department", "prefix": "DEP", "pad_width": 4},
+    "ADM": {"label": "Administration (Non-Faculty)", "prefix": "ADM", "pad_width": 4},
+    "DEP": {"label": "Legacy department series", "prefix": "DEP", "pad_width": 4},
     "CON": {"label": "College of Nursing", "prefix": "CON", "pad_width": 4},
     "PGJR": {"label": "Junior Resident (Academic)", "prefix": "PGJR", "pad_width": 4},
     "PGNA": {"label": "Junior Resident (Non-Academic)", "prefix": "PGNA", "pad_width": 4},
@@ -45,7 +46,7 @@ DESIGNATION_STAFF_GROUP: dict[str, str] = {
 CATEGORY_STAFF_GROUP_FALLBACK: dict[str, str] = {
     "FACULTY": "FAC",
     "NURSING": "NUR",
-    "ADMIN": "DEP",
+    "ADMIN": "ADM",
     "JR_ACAD": "PGJR",
     "SR_ACAD": "SRAC",
     "JR_NA": "PGNA",

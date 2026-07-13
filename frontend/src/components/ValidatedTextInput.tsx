@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent } from 'react';
+import { commitFilteredInputChange } from '../utils/employeeForm';
 
 const inputCls = 'dense-field-input';
 const codeCls = 'dense-field-input--code';
@@ -51,11 +52,18 @@ export function ValidatedTextInput({
     onInvalid?.(msg);
   };
 
-  const handleChange = (raw: string) => {
-    onChange(filter ? filter(raw) : raw);
-    if (fieldError) {
-      setFieldError(null);
-      onInvalid?.(null);
+  const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const apply = (raw: string) => {
+      onChange(filter ? filter(raw) : raw);
+      if (fieldError) {
+        setFieldError(null);
+        onInvalid?.(null);
+      }
+    };
+    if (filter) {
+      commitFilteredInputChange(e, filter, apply);
+    } else {
+      apply(e.target.value);
     }
   };
 
@@ -78,7 +86,7 @@ export function ValidatedTextInput({
         {...inputProps}
         required={required}
         value={value}
-        onChange={(e) => handleChange(e.target.value)}
+        onChange={handleChange}
         onFocus={handleFocus}
         onBlur={handleBlur}
         className={cls}

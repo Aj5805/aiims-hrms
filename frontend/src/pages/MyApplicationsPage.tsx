@@ -1,13 +1,20 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { leaveAppApi, approvalsApi } from '../api/endpoints';
 import { useAuthStore } from '../stores';
 import { PageHeader } from '../components/PageHeader';
 import { LeaveStatusBadge } from '../components/LeaveStatusBadge';
+import { ApprovalTrailPanel } from '../components/ApprovalTrailPanel';
 
 import { formatHttpError, hasSystemRole, HR_EDITOR_ROLES } from '../constants/roles';
+import { isStaffPersonalView } from '../utils/workMode';
 
 export function MyApplicationsPage() {
   const user = useAuthStore((state) => state.user);
+  const workMode = useAuthStore((state) => state.workMode);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selectedAppId = searchParams.get('app');
+  const detailRef = useRef<HTMLDivElement | null>(null);
   const canRecall = hasSystemRole(user?.role, HR_EDITOR_ROLES);
   const [apps, setApps] = useState<Record<string, unknown>[]>([]);
   const [status, setStatus] = useState('');
@@ -15,17 +22,24 @@ export function MyApplicationsPage() {
   const [activeChange, setActiveChange] = useState<{ id: string; kind: string } | null>(null);
   const [error, setError] = useState('');
 
+  const personalView = isStaffPersonalView(user?.role, user?.employee_id, workMode);
+
   const load = async () => {
-    const { data } = await leaveAppApi.list(status ? { status } : {});
+    const params: Record<string, string> = {};
+    if (status) params.status = status;
+    if (personalView && user?.employee_id) params.employee_id = user.employee_id;
+    const { data } = await leaveAppApi.list(params);
     setApps(data);
   };
-  useEffect(() => { load(); }, [status]);
+  useEffect(() => { load(); }, [status, personalView, user?.employee_id]);
 
-  const withdraw = async (id: string) => {
-    if (!confirm('Withdraw this application?')) return;
-    await leaveAppApi.withdraw(id);
-    load();
-  };
+  useEffect(() => {
+    if (selectedAppId && detailRef.current) {
+      detailRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [selectedAppId, apps]);
+
+  const selectedApp = apps.find((a) => a.id === selectedAppId);
 
   const recall = async (id: string) => {
     if (!confirm('Recall approved leave and restore balance? This is for nodal/admin correction only.')) return;
@@ -73,8 +87,12 @@ export function MyApplicationsPage() {
   return (
     <div className="page">
       <PageHeader
-        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Leave & Attendance', to: '/leave-dashboard' }, { label: 'My Applications' }]}
-        title="My Applications"
+        breadcrumbs={[
+          { label: 'Home', to: '/' },
+          { label: 'Leave & Attendance', to: '/leave-dashboard' },
+          { label: 'My Applications' },
+        ]}
+        hideTitle
       />
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4 text-sm max-w-3xl">{error}</div>
@@ -103,7 +121,12 @@ export function MyApplicationsPage() {
             </thead>
             <tbody>
               {apps.map((a) => (
-                <tr key={a.id as string}>
+                <tr
+                  key={a.id as string}
+                  className={selectedAppId === a.id ? 'bg-indigo-50/60' : ''}
+                  onClick={() => setSearchParams({ app: a.id as string })}
+                  style={{ cursor: 'pointer' }}
+                >
                   <td className="font-mono text-xs">{a.app_number as string}</td>
                   <td><span className="badge badge-blue">{a.leave_type_code as string}</span></td>
                   <td className="text-xs">
@@ -116,9 +139,6 @@ export function MyApplicationsPage() {
                   <td className="text-xs">{(a.application_kind as string) || 'NEW'}</td>
                   <td><LeaveStatusBadge status={a.status as string} /></td>
                   <td className="space-x-2 whitespace-nowrap">
-                    {['SUBMITTED', 'UNDER_REVIEW'].includes(a.status as string) && (
-                      <button onClick={() => withdraw(a.id as string)} className="text-red-500 text-xs font-medium">Withdraw</button>
-                    )}
                     {(a.status as string) === 'APPROVED' && (a.application_kind as string || 'NEW') === 'NEW' && (
                       <>
                         <button onClick={() => setActiveChange({ id: a.id as string, kind: 'CANCELLATION' })} className="text-amber-600 text-xs font-medium">Cancel</button>
@@ -140,6 +160,26 @@ export function MyApplicationsPage() {
         </div>
       </div>
 
+      {selectedApp && (
+        <div ref={detailRef} className="card card-body max-w-2xl mt-4 space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="font-semibold text-slate-900">Application {selectedApp.app_number as string}</h3>
+            <button type="button" className="text-xs text-slate-500 hover:text-slate-800" onClick={() => setSearchParams({})}>Close</button>
+          </div>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div><span className="text-slate-500">Leave type</span><div className="font-medium">{selectedApp.leave_type_code as string}</div></div>
+            <div><span className="text-slate-500">Status</span><div><LeaveStatusBadge status={selectedApp.status as string} /></div></div>
+            <div><span className="text-slate-500">From</span><div className="font-medium">{selectedApp.from_date as string}</div></div>
+            <div><span className="text-slate-500">To</span><div className="font-medium">{selectedApp.to_date as string}</div></div>
+            <div><span className="text-slate-500">Days</span><div className="font-medium">{String(selectedApp.applied_days)}</div></div>
+            <div><span className="text-slate-500">Kind</span><div className="font-medium">{(selectedApp.application_kind as string) || 'NEW'}</div></div>
+          </div>
+          <div className="border-t border-slate-100 pt-4">
+            <ApprovalTrailPanel applicationId={selectedApp.id as string} />
+          </div>
+        </div>
+      )}
+
       {activeChange && (
         <div className="card card-body max-w-lg mt-4 space-y-3">
           <h3 className="font-semibold">{changeTitle(activeChange.kind)}</h3>
@@ -153,14 +193,12 @@ export function MyApplicationsPage() {
                 onChange={(e) => setChangeForm({ ...changeForm, [`${activeChange.id}_rejoin`]: e.target.value })}
                 required
               />
-              <p className="text-xs text-slate-500 mt-1">
-                Enter the first day you were back at work. Unused leave days will be credited after approval.
-              </p>
+              <p className="text-xs text-slate-500 mt-1">First day back at work.</p>
             </div>
           )}
           {activeChange.kind === 'MODIFICATION' && (
             <>
-              <p className="text-xs text-slate-500">Change dates to extend leave or adjust the period. For early return, use Rejoin instead.</p>
+              <p className="text-xs text-slate-500">Extend dates only. Early return → Rejoin.</p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="form-label">From</label>
@@ -178,7 +216,7 @@ export function MyApplicationsPage() {
             </>
           )}
           {activeChange.kind === 'CANCELLATION' && (
-            <p className="text-xs text-slate-500">Cancel approved leave you have not taken (or will not take). Requires HOD and nodal approval.</p>
+            <p className="text-xs text-slate-500">Cancel unused approved leave (needs approval).</p>
           )}
           <textarea className="form-input h-20" placeholder="Reason for change..."
             value={changeForm[activeChange.id] || ''}

@@ -17,6 +17,8 @@ interface AuthState {
   dismissPasswordChange: () => void;
 }
 
+export { useUiStore } from './ui';
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({

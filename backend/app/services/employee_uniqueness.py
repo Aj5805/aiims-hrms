@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 # field key -> (label, db columns to match)
 _UNIQUE_CHECKS: dict[str, tuple[str, tuple[str, ...]]] = {
+    "emp_code": ("Staff number", ("emp_code",)),
     "pan": ("PAN", ("pan",)),
     "aadhaar": ("Aadhaar", ("aadhaar",)),
     "nps_or_gpf_no": ("NPS number", ("nps_or_gpf_no",)),
@@ -19,7 +20,9 @@ _UNIQUE_CHECKS: dict[str, tuple[str, tuple[str, ...]]] = {
 }
 
 
-def _column_match(col: str, *, case_insensitive: bool) -> str:
+def _column_match(col: str, *, case_insensitive: bool, emp_code: bool = False) -> str:
+    if emp_code:
+        return f"(UPPER(TRIM({col})) = :val AND {col} IS NOT NULL AND TRIM({col}) <> '')"
     if case_insensitive:
         return f"(LOWER({col}) = :val AND {col} IS NOT NULL AND TRIM({col}) <> '')"
     return f"({col} = :val AND {col} IS NOT NULL AND TRIM({col}) <> '')"
@@ -42,11 +45,14 @@ async def find_duplicate_employee(
 
     _label, columns = spec
     val = str(value).strip()
-    case_insensitive = field in ("email", "personal_email")
+    case_insensitive = field in ("email", "personal_email", "emp_code")
     if case_insensitive:
-        val = val.lower()
+        val = val.upper() if field == "emp_code" else val.lower()
 
-    conditions = [_column_match(col, case_insensitive=case_insensitive) for col in columns]
+    conditions = [
+        _column_match(col, case_insensitive=case_insensitive, emp_code=(field == "emp_code"))
+        for col in columns
+    ]
     where = f"({' OR '.join(conditions)})"
     params: dict = {"val": val}
     if exclude_employee_id:

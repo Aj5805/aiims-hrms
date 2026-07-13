@@ -188,6 +188,13 @@ class EmployeeCreate(EmployeeBase):
             raise ValueError("staff_group is required for auto staff number allotment")
         return code
 
+    @field_validator("emp_code")
+    @classmethod
+    def _validate_emp_code_create(cls, v):
+        if v is None or not str(v).strip():
+            return v
+        return str(v).strip().upper()
+
     @field_validator("aadhaar")
     @classmethod
     def _validate_aadhaar_create(cls, v):
@@ -237,12 +244,19 @@ class StaffNumberPreview(BaseModel):
     next_emp_code: str
 
 
+class StaffNumberCheck(BaseModel):
+    available: bool
+    emp_code: str | None = None
+    message: str | None = None
+
+
 class StaffGroupSuggestion(BaseModel):
     staff_group: str | None
     label: str | None = None
 
 
 class EmployeeUpdate(BaseModel):
+    emp_code: Optional[str] = Field(None, max_length=20)
     name: Optional[str] = None
     gender: Optional[str] = Field(None, pattern="^(MALE|FEMALE|OTHER)$")
     dob: Optional[date] = None
@@ -282,6 +296,16 @@ class EmployeeUpdate(BaseModel):
     @classmethod
     def _validate_name(cls, v):
         return normalize_name(v) if v is not None else v
+
+    @field_validator("emp_code")
+    @classmethod
+    def _validate_emp_code(cls, v):
+        if v is None:
+            return v
+        code = v.strip().upper()
+        if not code:
+            raise ValueError("Staff number cannot be empty")
+        return code
 
     @field_validator("email", "personal_email")
     @classmethod

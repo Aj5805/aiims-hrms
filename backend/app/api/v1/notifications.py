@@ -43,7 +43,17 @@ async def mark_all_read(current_user: dict = Depends(get_current_user), db: Asyn
 
 @router.get("/email-log")
 async def email_log(_: dict = Depends(require_role("ADMIN")), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(text("SELECT * FROM notification_queue WHERE channel = 'EMAIL' ORDER BY created_at DESC LIMIT 100"))
+    result = await db.execute(text("""
+        SELECT n.id, n.application_id, n.recipient_id, n.subject, n.body, n.status,
+               n.retry_count, n.scheduled_at, n.sent_at, n.error_message, n.created_at,
+               a.app_number, COALESCE(e.name, u.username) AS recipient_name
+        FROM notification_queue n
+        LEFT JOIN leave_applications a ON n.application_id = a.id
+        LEFT JOIN users u ON n.recipient_id = u.id
+        LEFT JOIN employees e ON u.employee_id = e.id
+        WHERE n.channel = 'EMAIL'
+        ORDER BY n.created_at DESC LIMIT 100
+    """))
     return [dict(r._mapping) for r in result.fetchall()]
 
 

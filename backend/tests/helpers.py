@@ -21,7 +21,7 @@ CATEGORY_STAFF_GROUP = dict(CATEGORY_STAFF_GROUP_FALLBACK)
 
 
 def staff_group_for_category(category_code: str) -> str:
-    return CATEGORY_STAFF_GROUP.get(category_code, "DEP")
+    return CATEGORY_STAFF_GROUP.get(category_code, "ADM")
 
 
 def employee_payload(

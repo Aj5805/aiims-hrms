@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { attendanceApi } from '../api/endpoints';
 import { useAuthStore } from '../stores';
 import { PageHeader } from '../components/PageHeader';
+import { isStaffPersonalView } from '../utils/workMode';
 
 type AttendanceRow = {
   attendance_date: string;
@@ -36,6 +37,7 @@ function monthBounds(): { from: string; to: string } {
 
 export function AttendancePage() {
   const user = useAuthStore((s) => s.user);
+  const workMode = useAuthStore((s) => s.workMode);
   const bounds = useMemo(() => monthBounds(), []);
   const [fromDate, setFromDate] = useState(bounds.from);
   const [toDate, setToDate] = useState(bounds.to);
@@ -45,14 +47,25 @@ export function AttendancePage() {
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState('');
 
-  const canSync = ['ADMIN', 'NODAL_OFFICER', 'NODAL_OFFICE'].includes(user?.role || '');
+  const isPersonalView = isStaffPersonalView(user?.role, user?.employee_id, workMode);
+  const canSync = !isPersonalView && ['ADMIN', 'NODAL_OFFICER', 'NODAL_OFFICE'].includes(user?.role || '');
+  const isStaffView = isPersonalView;
+  const showPipeline = !isStaffView;
 
   const load = useCallback(async (sync = true) => {
     setLoading(true);
     setError('');
     try {
+      const reportParams: Record<string, string | boolean> = {
+        from_date: fromDate,
+        to_date: toDate,
+        sync,
+      };
+      if (isPersonalView && user?.employee_id) {
+        reportParams.employee_id = user.employee_id;
+      }
       const [reportRes, pipelineRes] = await Promise.all([
-        attendanceApi.report({ from_date: fromDate, to_date: toDate, sync }),
+        attendanceApi.report(reportParams),
         attendanceApi.pipelineStatus(),
       ]);
       setRows(reportRes.data.rows || []);
@@ -63,7 +76,7 @@ export function AttendancePage() {
     } finally {
       setLoading(false);
     }
-  }, [fromDate, toDate]);
+  }, [fromDate, toDate, isPersonalView, user?.employee_id]);
 
   useEffect(() => {
     void load(true);
@@ -92,12 +105,11 @@ export function AttendancePage() {
     <div className="page">
       <PageHeader
         breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Leave & Attendance', to: '/leave-dashboard' }, { label: 'My Attendance' }]}
-        title="Attendance"
-        description="Stage 1 uses approved leave. Biometric import and final attendance are planned next."
+        hideTitle
       />
 
-      <div className="max-w-6xl space-y-4">
-        {stages.length > 0 && (
+      <div className="space-y-4">
+        {showPipeline && stages.length > 0 && (
           <div className="card card-body">
             <h3 className="text-sm font-semibold text-slate-800 mb-3">Attendance pipeline</h3>
             <ol className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 text-xs">
@@ -107,7 +119,6 @@ export function AttendancePage() {
                   <div className={`mt-1 inline-block px-1.5 py-0.5 rounded ${stage.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'}`}>
                     {stage.status}
                   </div>
-                  <p className="text-slate-500 mt-1">{stage.description}</p>
                 </li>
               ))}
             </ol>
@@ -141,30 +152,32 @@ export function AttendancePage() {
               <thead className="bg-slate-50 text-slate-600">
                 <tr>
                   <th className="text-left px-4 py-2 font-medium">Date</th>
-                  <th className="text-left px-4 py-2 font-medium">Employee</th>
-                  <th className="text-left px-4 py-2 font-medium">Department</th>
+                  {!isStaffView && <th className="text-left px-4 py-2 font-medium">Employee</th>}
+                  {!isStaffView && <th className="text-left px-4 py-2 font-medium">Department</th>}
                   <th className="text-left px-4 py-2 font-medium">Leave</th>
-                  <th className="text-left px-4 py-2 font-medium">Biometric</th>
-                  <th className="text-left px-4 py-2 font-medium">Review</th>
-                  <th className="text-left px-4 py-2 font-medium">Final</th>
+                  {!isStaffView && <th className="text-left px-4 py-2 font-medium">Biometric</th>}
+                  {!isStaffView && <th className="text-left px-4 py-2 font-medium">Review</th>}
+                  <th className="text-left px-4 py-2 font-medium">Status</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.length === 0 && !loading && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
-                      No attendance rows for this period. Approved leave will appear after sync.
+                    <td colSpan={isStaffView ? 3 : 7} className="px-4 py-8 text-center text-slate-400">
+                      No attendance rows for this period.
                     </td>
                   </tr>
                 )}
                 {rows.map((row, idx) => (
                   <tr key={`${row.attendance_date}-${row.emp_code}-${idx}`} className="border-t border-slate-100">
                     <td className="px-4 py-2 whitespace-nowrap">{row.attendance_date}</td>
-                    <td className="px-4 py-2">
-                      <div className="font-medium text-slate-800">{row.employee_name}</div>
-                      <div className="text-xs text-slate-500">{row.emp_code}</div>
-                    </td>
-                    <td className="px-4 py-2 text-slate-600">{row.department_name || '—'}</td>
+                    {!isStaffView && (
+                      <td className="px-4 py-2">
+                        <div className="font-medium text-slate-800">{row.employee_name}</div>
+                        <div className="text-xs text-slate-500">{row.emp_code}</div>
+                      </td>
+                    )}
+                    {!isStaffView && <td className="px-4 py-2 text-slate-600">{row.department_name || '—'}</td>}
                     <td className="px-4 py-2">
                       {row.leave_type_code ? (
                         <span>
@@ -175,8 +188,8 @@ export function AttendancePage() {
                         <span className="text-slate-400">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-2 text-slate-500">{row.biometric_status || '—'}</td>
-                    <td className="px-4 py-2 text-slate-500">{row.review_status || 'PENDING'}</td>
+                    {!isStaffView && <td className="px-4 py-2 text-slate-500">{row.biometric_status || '—'}</td>}
+                    {!isStaffView && <td className="px-4 py-2 text-slate-500">{row.review_status || 'PENDING'}</td>}
                     <td className="px-4 py-2">
                       <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${statusClass(row.final_status)}`}>
                         {row.final_status.replace(/_/g, ' ')}
